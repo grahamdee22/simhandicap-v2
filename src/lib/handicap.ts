@@ -117,3 +117,10 @@ export function scoreToParStyle(
   if (d === 1) return 'bogey';
   return 'double_plus';
 }
+
+/** WHS-style label: plain "4.3" for typical index; "+2.1" only when value is below scratch (stored negative). */
+export function formatHandicapIndexDisplay(i: number | null | undefined): string {
+  if (i == null || Number.isNaN(i) || !Number.isFinite(i)) return '—';
+  if (i < 0) return `+${Math.abs(i).toFixed(1)}`;
+  return i.toFixed(1);
+}

@@ -17,7 +17,7 @@ import { IconTrashOutline } from '../../../src/components/SvgUiIcons';
 import { colors } from '../../../src/lib/constants';
 import { mergeViewStyles } from '../../../src/lib/mergeStyles';
 import { useResponsive } from '../../../src/lib/responsive';
-import { scoreToParStyle } from '../../../src/lib/handicap';
+import { formatHandicapIndexDisplay, scoreToParStyle } from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
 
@@ -208,9 +208,9 @@ export default function RoundDetailScreen() {
               </View>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
                 <Text style={styles.hstatLbl}>Index after</Text>
-                <Text style={styles.hstatVal}>{r.indexAfter != null ? r.indexAfter.toFixed(1) : '—'}</Text>
+                <Text style={styles.hstatVal}>{formatHandicapIndexDisplay(r.indexAfter)}</Text>
                 <Text style={styles.hstatSub}>
-                  {r.indexDelta != null ? `${r.indexDelta >= 0 ? '+' : ''}${r.indexDelta.toFixed(1)} this round` : '—'}
+                  {r.indexDelta != null ? `${r.indexDelta.toFixed(1)} this round` : '—'}
                 </Text>
               </View>
             </View>

@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop, Text as SvgText } from 'react-native-svg';
 import { colors } from '../lib/constants';
+import { formatHandicapIndexDisplay } from '../lib/handicap';
 
 export type TrendRange = '1M' | '3M' | '1Y';
 
@@ -142,7 +143,7 @@ export function TrendChart({
               fill={colors.sage}
               fontWeight="600"
             >
-              {pts.last.index.toFixed(1)}
+              {formatHandicapIndexDisplay(pts.last.index)}
             </SvgText>
           ) : null}
         </Svg>

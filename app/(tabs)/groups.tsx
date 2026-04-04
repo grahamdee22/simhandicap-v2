@@ -16,6 +16,7 @@ import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconPlus } from '../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { colors } from '../../src/lib/constants';
+import { formatHandicapIndexDisplay } from '../../src/lib/handicap';
 import { headToHeadFromLoggedRound } from '../../src/lib/h2hFromRound';
 import { useResponsive } from '../../src/lib/responsive';
 import {
@@ -386,7 +387,7 @@ export default function GroupsScreen() {
                       </View>
                       <View style={styles.lbRight}>
                         <Text style={styles.lbIdx}>
-                          {m.index != null && Number.isFinite(m.index) ? m.index.toFixed(1) : '—'}
+                          {formatHandicapIndexDisplay(m.index)}
                         </Text>
                         <Text style={tr.style}>{tr.text}</Text>
                       </View>

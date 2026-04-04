@@ -11,7 +11,7 @@ import {
 } from '../../src/components/SvgUiIcons';
 import { SimCapLogoHero, SIM_CAP_LOGO_ASPECT } from '../../src/components/SimCapLogoHero';
 import { colors } from '../../src/lib/constants';
-import { indexHistoryFromRounds } from '../../src/lib/handicap';
+import { formatHandicapIndexDisplay, indexHistoryFromRounds } from '../../src/lib/handicap';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
 import {
@@ -25,13 +25,6 @@ function greetingFromHour(h: number): string {
   if (h < 12) return 'Good morning';
   if (h < 17) return 'Good afternoon';
   return 'Good evening';
-}
-
-function formatSimIndex(i: number | null): string {
-  if (i == null) return '—';
-  const t = i.toFixed(1);
-  if (i > 0) return `+${t}`;
-  return t;
 }
 
 function trendBadge(rounds: SimRound[]): string | null {
@@ -213,7 +206,7 @@ export default function HomeScreen() {
         </View>
         <View style={[styles.indexRow, isCompactHome && styles.indexRowWrap]}>
           <Text style={[styles.indexNum, isWide && styles.indexNumLg, isVeryWide && styles.indexNumXL]}>
-            {formatSimIndex(index)}
+            {formatHandicapIndexDisplay(index)}
           </Text>
           <Text style={[styles.indexLbl, isWide && styles.indexLblLg]}>Sim handicap index</Text>
         </View>
@@ -275,7 +268,7 @@ export default function HomeScreen() {
                         })}{' '}
                         · Gross {latest.grossScore} · Diff {latest.adjustedDiff.toFixed(1)}
                         {latest.indexDelta != null
-                          ? ` · Index ${latest.indexDelta >= 0 ? '+' : ''}${latest.indexDelta.toFixed(1)}`
+                          ? ` · Index ${latest.indexDelta.toFixed(1)}`
                           : ''}
                       </Text>
                     </View>
@@ -355,7 +348,7 @@ export default function HomeScreen() {
                       })}{' '}
                       · Gross {latest.grossScore} · Diff {latest.adjustedDiff.toFixed(1)}
                       {latest.indexDelta != null
-                        ? ` · Index ${latest.indexDelta >= 0 ? '+' : ''}${latest.indexDelta.toFixed(1)}`
+                        ? ` · Index ${latest.indexDelta.toFixed(1)}`
                         : ''}
                     </Text>
                   </View>

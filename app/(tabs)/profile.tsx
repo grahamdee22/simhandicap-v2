@@ -8,6 +8,7 @@ import { DualIndexChart } from '../../src/components/DualIndexChart';
 import { IconAddCircleOutline, IconCheckmark, IconChevronForward } from '../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
+import { formatHandicapIndexDisplay } from '../../src/lib/handicap';
 import { upsertMyProfile } from '../../src/lib/profiles';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useResponsive } from '../../src/lib/responsive';
@@ -222,12 +223,12 @@ export default function ProfileScreen() {
                 <View style={styles.compareRow}>
                   <View style={styles.compareCell}>
                     <Text style={styles.compareK}>Sim index</Text>
-                    <Text style={styles.compareV}>{simIndex != null ? simIndex.toFixed(1) : '—'}</Text>
+                    <Text style={styles.compareV}>{formatHandicapIndexDisplay(simIndex)}</Text>
                   </View>
                   <View style={styles.compareDivider} />
                   <View style={styles.compareCell}>
                     <Text style={styles.compareK}>GHIN (real)</Text>
-                    <Text style={styles.compareV}>{ghinLatest.toFixed(1)}</Text>
+                    <Text style={styles.compareV}>{formatHandicapIndexDisplay(ghinLatest)}</Text>
                   </View>
                 </View>
                 {simIndex != null ? (

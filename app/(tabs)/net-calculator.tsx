@@ -23,7 +23,14 @@ import {
   strokeGiftBetweenPlayers,
   strokeIndexForCourse,
 } from '../../src/lib/netHandicap';
-import { difficultyProduct, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
+import {
+  difficultyProduct,
+  formatHandicapIndexDisplay,
+  type Mulligans,
+  type PinDay,
+  type PuttingMode,
+  type Wind,
+} from '../../src/lib/handicap';
 import { useResponsive } from '../../src/lib/responsive';
 import { initialsFrom } from '../../src/store/useAppStore';
 
@@ -60,7 +67,7 @@ function slotToForm(slot: PlayerSlot): { name: string; indexStr: string } {
   if (slot.kind === 'empty') return { name: '', indexStr: '' };
   if (slot.kind === 'manual') return { name: slot.name, indexStr: slot.index };
   const g = dummyGolferById(slot.golferId);
-  return g ? { name: g.displayName, indexStr: g.index.toFixed(1) } : { name: '', indexStr: '' };
+  return g ? { name: g.displayName, indexStr: formatHandicapIndexDisplay(g.index) } : { name: '', indexStr: '' };
 }
 
 function giftPhrase(
@@ -254,7 +261,7 @@ export default function NetCalculatorScreen() {
             </Text>
             <View style={styles.slotMetaRow}>
               <View style={styles.slotIdxPill}>
-                <Text style={styles.slotIdxPillTxt}>{g.index.toFixed(1)}</Text>
+                <Text style={styles.slotIdxPillTxt}>{formatHandicapIndexDisplay(g.index)}</Text>
               </View>
               <Text style={styles.slotPlat} numberOfLines={1}>
                 {g.platform}

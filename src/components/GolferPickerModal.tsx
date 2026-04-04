@@ -11,6 +11,7 @@ import {
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../lib/constants';
+import { formatHandicapIndexDisplay } from '../lib/handicap';
 import type { DummyNetGolfer } from '../lib/dummyNetGolfers';
 
 type Props = {
@@ -95,7 +96,7 @@ export function GolferPickerModal({
                   </Text>
                 </View>
                 <View style={styles.idxBadge}>
-                  <Text style={styles.idxBadgeTxt}>{item.index.toFixed(1)}</Text>
+                  <Text style={styles.idxBadgeTxt}>{formatHandicapIndexDisplay(item.index)}</Text>
                 </View>
               </Pressable>
             )}

@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
 import { colors } from '../lib/constants';
+import { formatHandicapIndexDisplay } from '../lib/handicap';
 import type { ChartPoint } from '../lib/realVsSim';
 
 type Props = {
@@ -77,10 +78,10 @@ function DualIndexChartInner({ width, height, simPts, realPts, yMin, yMax, tMin,
         ) : null}
 
         <SvgText x={4} y={PAD_T + 10} fontSize={9} fill={colors.subtle}>
-          {yMax.toFixed(1)}
+          {formatHandicapIndexDisplay(yMax)}
         </SvgText>
         <SvgText x={4} y={y0 - 4} fontSize={9} fill={colors.subtle}>
-          {yMin.toFixed(1)}
+          {formatHandicapIndexDisplay(yMin)}
         </SvgText>
         <SvgText x={PAD_L} y={height - 6} fontSize={9} fill={colors.subtle}>
           {fmtShort(tMin)}
