@@ -1,0 +1,9 @@
+# Surge: correct font MIME + CORS for Expo-exported Ionicons (headers, other screens).
+# Tab bar uses SVG and no longer depends on this; keeps rest of the app safer on static hosts.
+/assets/node_modules/@expo/vector-icons/build/vendor/react-native-vector-icons/Fonts/*
+  Content-Type: font/ttf
+  Access-Control-Allow-Origin: *
+
+/assets/assets/fonts/*
+  Content-Type: font/ttf
+  Access-Control-Allow-Origin: *

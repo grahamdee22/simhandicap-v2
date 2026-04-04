@@ -1,0 +1,420 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { create } from 'zustand';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { Platform } from 'react-native';
+import type { PlatformId } from '../lib/constants';
+import {
+  adjustedDifferential,
+  grossFromHoles,
+  handicapIndexFromDifferentials,
+  type Mulligans,
+  type PinDay,
+  type PuttingMode,
+  type Wind,
+} from '../lib/handicap';
+import { COURSE_SEEDS, getCourseById, ratingForCourse, type CourseSeed } from '../lib/courses';
+import type { GhinSnapshot } from '../lib/realVsSim';
+import { isSupabaseConfigured } from '../lib/supabase';
+
+export type SimRound = {
+  id: string;
+  courseId: string;
+  courseName: string;
+  platform: PlatformId;
+  grossScore: number;
+  holeScores: (number | null)[];
+  putting: PuttingMode;
+  pin: PinDay;
+  wind: Wind;
+  mulligans: Mulligans;
+  playedAt: string;
+  courseRating: number;
+  slope: number;
+  teeName?: string;
+  rawDiff: number;
+  adjustedDiff: number;
+  difficultyModifier: number;
+  indexAfter: number | null;
+  indexDelta: number | null;
+  /** Optional: logged as a head-to-head vs someone in this crew (Social tab). */
+  h2hGroupId?: string;
+  h2hOpponentMemberId?: string;
+  h2hOpponentDisplayName?: string;
+};
+
+export type GroupMember = {
+  id: string;
+  displayName: string;
+  initials: string;
+  platform: PlatformId;
+  roundsLogged: number;
+  /** Sim / GHIN index when known; null shows as — in UI. */
+  index: number | null;
+  trend: 'up' | 'down' | 'flat';
+  isYou?: boolean;
+};
+
+export type FriendGroup = {
+  id: string;
+  name: string;
+  members: GroupMember[];
+  lastRoundSummary?: string;
+  headToHead?: HeadToHead[];
+};
+
+export type HeadToHead = {
+  id: string;
+  courseName: string;
+  playedAt: string;
+  /** When null, UI hides the net line (e.g. you only logged your side). */
+  left: { name: string; gross: number; net: number | null; won: boolean };
+  right: { name: string; gross: number | null; net: number | null; won: boolean };
+  conditionsLine: string;
+};
+
+function newId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Oldest first; stable when several rounds share the same calendar `playedAt` (noon ISO). */
+function compareRoundsByPlayedAtAsc(a: SimRound, b: SimRound): number {
+  const dt = new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime();
+  if (dt !== 0) return dt;
+  return a.id.localeCompare(b.id);
+}
+
+/** Newest first; tie-break so list order doesn’t shuffle after recalc. */
+function compareRoundsByPlayedAtDesc(a: SimRound, b: SimRound): number {
+  const dt = new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime();
+  if (dt !== 0) return dt;
+  return b.id.localeCompare(a.id);
+}
+
+export type NewRoundInput = Omit<
+  SimRound,
+  | 'id'
+  | 'rawDiff'
+  | 'adjustedDiff'
+  | 'difficultyModifier'
+  | 'indexAfter'
+  | 'indexDelta'
+  | 'courseRating'
+  | 'slope'
+>;
+
+type AppState = {
+  hydrated: boolean;
+  displayName: string;
+  /** Default sim platform on the Log tab (synced to Supabase profile when signed in). */
+  preferredLogPlatform: PlatformId;
+  rounds: SimRound[];
+  groups: FriendGroup[];
+  pendingH2hMatchup: PendingH2hMatchup | null;
+  /** Manual GHIN snapshots (e.g. monthly updates) for Real vs Sim profile chart. */
+  ghinSnapshots: GhinSnapshot[];
+  hydrate: () => Promise<void>;
+  setDisplayName: (name: string) => void;
+  setPreferredLogPlatform: (platform: PlatformId) => void;
+  addRound: (input: NewRoundInput) => SimRound;
+  updateRound: (roundId: string, patch: Partial<SimRound>) => void;
+  deleteRound: (roundId: string) => void;
+  addGroup: (name: string) => void;
+  setGroups: (groups: FriendGroup[]) => void;
+  recomputeGroupsFromYou: () => void;
+  setPendingH2hMatchup: (p: PendingH2hMatchup | null) => void;
+  recordGhinIndex: (index: number) => void;
+};
+
+function computeRoundMath(
+  course: CourseSeed,
+  platform: PlatformId,
+  gross: number,
+  putting: PuttingMode,
+  pin: PinDay,
+  wind: Wind,
+  mulligans: Mulligans
+) {
+  const { rating, slope } = ratingForCourse(course, platform);
+  const { raw, adjusted, modifier } = adjustedDifferential(gross, rating, slope, putting, pin, wind, mulligans);
+  return { courseRating: rating, slope, rawDiff: raw, adjustedDiff: adjusted, difficultyModifier: modifier };
+}
+
+function indexBeforeNewRound(sortedRounds: SimRound[]): number | null {
+  return handicapIndexFromDifferentials(sortedRounds.map((r) => r.adjustedDiff));
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
+}
+
+export function initialsFrom(name: string): string {
+  const p = name.trim().split(/\s+/);
+  if (p.length === 0) return '??';
+  if (p.length === 1) return p[0].slice(0, 2).toUpperCase();
+  return (p[0][0] + p[p.length - 1][0]).toUpperCase();
+}
+
+/** Pre-filled head-to-head from Net calculator → Log round (not persisted). */
+export type PendingH2hMatchup = {
+  player1Name: string;
+  player2Name: string;
+  player1PlayingHcp: number;
+  player2PlayingHcp: number;
+  strokesPhrase: string;
+  strokeHolesSummary: string;
+  courseId: string;
+  courseName: string;
+  platform: PlatformId;
+  putting: PuttingMode;
+  pin: PinDay;
+  wind: Wind;
+  mulligans: Mulligans;
+  h2hGroupId?: string;
+  h2hOpponentMemberId?: string;
+  h2hOpponentDisplayName?: string;
+};
+
+export function currentIndexFromRounds(rounds: SimRound[]): number | null {
+  const sorted = [...rounds].sort(compareRoundsByPlayedAtAsc);
+  return handicapIndexFromDifferentials(sorted.map((r) => r.adjustedDiff));
+}
+
+function groupSummaryLine(g: FriendGroup, rounds: SimRound[]): string | undefined {
+  const last = rounds[0];
+  if (!last) return `${g.members.length} member${g.members.length === 1 ? '' : 's'}`;
+  const when = new Date(last.playedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${g.members.length} member${g.members.length === 1 ? '' : 's'} · Your last round ${when}`;
+}
+
+function syncYouInGroups(groups: FriendGroup[], displayName: string, rounds: SimRound[]): FriendGroup[] {
+  const idx = currentIndexFromRounds(rounds);
+  const n = rounds.length;
+  const ini = initialsFrom(displayName);
+  return groups.map((g) => ({
+    ...g,
+    lastRoundSummary: groupSummaryLine(g, rounds),
+    members: [...g.members]
+      .map((m) =>
+        m.isYou
+          ? {
+              ...m,
+              displayName: `${displayName} (you)`,
+              initials: ini,
+              index: idx ?? m.index,
+              roundsLogged: n,
+            }
+          : m
+      )
+      .sort((a, b) => {
+        const ai = a.index ?? 999;
+        const bi = b.index ?? 999;
+        return ai - bi;
+      }),
+  }));
+}
+
+function recalcAllRounds(rounds: SimRound[]): SimRound[] {
+  const sorted = [...rounds].sort(compareRoundsByPlayedAtAsc);
+  const diffsSoFar: number[] = [];
+  const out: SimRound[] = [];
+  const fallbackCourse = COURSE_SEEDS[0];
+  for (const r of sorted) {
+    const course = getCourseById(r.courseId) ?? fallbackCourse;
+    const fromHoles = grossFromHoles(r.holeScores);
+    const gross = fromHoles != null ? fromHoles : r.grossScore;
+    const math = computeRoundMath(course, r.platform, gross, r.putting, r.pin, r.wind, r.mulligans);
+    diffsSoFar.push(math.adjustedDiff);
+    const before = handicapIndexFromDifferentials(diffsSoFar.slice(0, -1));
+    const after = handicapIndexFromDifferentials(diffsSoFar);
+    out.push({
+      ...r,
+      grossScore: gross,
+      courseName: r.courseName || course.name,
+      ...math,
+      indexAfter: after,
+      indexDelta: before != null && after != null ? round1(after - before) : null,
+    });
+  }
+  return out.sort(compareRoundsByPlayedAtDesc);
+}
+
+export const useAppStore = create<AppState>()(
+  persist(
+    (set, get) => ({
+      hydrated: false,
+      displayName: 'Golfer',
+      preferredLogPlatform: 'Trackman',
+      rounds: [],
+      groups: [],
+      pendingH2hMatchup: null,
+      ghinSnapshots: [],
+
+      hydrate: async () => {
+        set({ hydrated: true });
+      },
+
+      setDisplayName: (displayName) =>
+        set((s) => ({
+          displayName,
+          groups: syncYouInGroups(s.groups, displayName, s.rounds),
+        })),
+
+      setPreferredLogPlatform: (preferredLogPlatform) => set({ preferredLogPlatform }),
+
+      addRound: (input) => {
+        const course = getCourseById(input.courseId);
+        if (!course) throw new Error('Unknown course');
+        const holeScores = [...input.holeScores];
+        while (holeScores.length < 18) holeScores.push(null);
+        const grossForMath = grossFromHoles(holeScores) ?? input.grossScore;
+        const sorted = [...get().rounds].sort(compareRoundsByPlayedAtAsc);
+        const before = indexBeforeNewRound(sorted);
+        const math = computeRoundMath(
+          course,
+          input.platform,
+          grossForMath,
+          input.putting,
+          input.pin,
+          input.wind,
+          input.mulligans
+        );
+        const trialDiffs = [...sorted.map((r) => r.adjustedDiff), math.adjustedDiff];
+        const after = handicapIndexFromDifferentials(trialDiffs);
+        const round: SimRound = {
+          ...input,
+          holeScores,
+          grossScore: grossForMath,
+          id: newId(),
+          courseName: course.name,
+          teeName: input.teeName ?? course.defaultTee,
+          ...math,
+          indexAfter: after,
+          indexDelta: before != null && after != null ? round1(after - before) : null,
+        };
+        set((s) => {
+          const newRounds = [round, ...s.rounds];
+          return {
+            rounds: newRounds,
+            groups: syncYouInGroups(s.groups, s.displayName, newRounds),
+          };
+        });
+        if (isSupabaseConfigured() && round.h2hGroupId) {
+          const dn = get().displayName;
+          void import('../lib/socialGroups').then(({ insertSocialMatchFromRound }) => {
+            void insertSocialMatchFromRound(round, dn);
+          });
+        }
+        return round;
+      },
+
+      updateRound: (roundId, patch) => {
+        set((s) => {
+          const rounds = s.rounds.map((r) => (r.id === roundId ? { ...r, ...patch } : r));
+          const full = recalcAllRounds(rounds);
+          return {
+            rounds: full,
+            groups: syncYouInGroups(s.groups, s.displayName, full),
+          };
+        });
+      },
+
+      deleteRound: (roundId) => {
+        set((s) => {
+          const rounds = s.rounds.filter((r) => r.id !== roundId);
+          const full = recalcAllRounds(rounds);
+          return {
+            rounds: full,
+            groups: syncYouInGroups(s.groups, s.displayName, full),
+          };
+        });
+      },
+
+      addGroup: (name) => {
+        const you = get().displayName;
+        const ini = initialsFrom(you);
+        const idx = currentIndexFromRounds(get().rounds);
+        set((s) => ({
+          groups: [
+            ...s.groups,
+            {
+              id: newId(),
+              name,
+              lastRoundSummary: '1 member',
+              members: [
+                {
+                  id: newId(),
+                  displayName: `${you} (you)`,
+                  initials: ini,
+                  platform: 'Trackman',
+                  roundsLogged: s.rounds.length,
+                  index: idx,
+                  trend: 'flat',
+                  isYou: true,
+                },
+              ],
+              headToHead: [],
+            },
+          ],
+        }));
+      },
+
+      setGroups: (groups) => set({ groups }),
+
+      recomputeGroupsFromYou: () => {
+        const s = get();
+        set({ groups: syncYouInGroups(s.groups, s.displayName, s.rounds) });
+      },
+
+      setPendingH2hMatchup: (p) => set({ pendingH2hMatchup: p }),
+
+      recordGhinIndex: (index) => {
+        if (!Number.isFinite(index) || index < 0 || index > 54) return;
+        const n = Math.round(index * 10) / 10;
+        set((s) => {
+          const day = new Date().toISOString().slice(0, 10);
+          const list = [...s.ghinSnapshots];
+          const sameDay = list.findIndex((g) => g.recordedAt.slice(0, 10) === day);
+          const entry: GhinSnapshot = {
+            id: sameDay >= 0 ? list[sameDay].id : newId(),
+            recordedAt: new Date().toISOString(),
+            index: n,
+          };
+          if (sameDay >= 0) list[sameDay] = entry;
+          else list.push(entry);
+          list.sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
+          return { ghinSnapshots: list };
+        });
+      },
+    }),
+    {
+      name: 'simhandicap-storage',
+      storage: createJSONStorage(() => AsyncStorage),
+      partialize: (s) => ({
+        displayName: s.displayName,
+        preferredLogPlatform: s.preferredLogPlatform,
+        rounds: s.rounds,
+        groups: s.groups,
+        ghinSnapshots: s.ghinSnapshots,
+      }),
+      onRehydrateStorage: () => (state) => {
+        if (state?.groups?.length) {
+          state.groups = state.groups.filter((g) => g.id !== 'g1' && g.id !== 'g2');
+        }
+        state?.hydrate();
+      },
+      // Web static export: avoid rehydrate-before-paint mismatch. With Supabase, defer rehydrate
+      // until auth resolves so each user gets a separate persist key (see rebindPersistToUser).
+      skipHydration: Platform.OS === 'web' || isSupabaseConfigured(),
+    }
+  )
+);
+
+const GUEST_PERSIST_NAME = 'simhandicap-guest';
+
+export async function rebindPersistToUser(userId: string | null): Promise<void> {
+  const name = userId ? `simhandicap-u-${userId}` : GUEST_PERSIST_NAME;
+  await useAppStore.persist.setOptions({ name });
+  await useAppStore.persist.rehydrate();
+}
+
+export { formatRoundMeta, headToHeadFromLoggedRound } from '../lib/h2hFromRound';

@@ -1,0 +1,18 @@
+import { Stack } from 'expo-router';
+import { colors } from '@/src/lib/constants';
+
+export default function AuthLayout() {
+  return (
+    <Stack
+      screenOptions={{
+        headerStyle: { backgroundColor: colors.header },
+        headerTintColor: '#fff',
+        headerTitleStyle: { fontWeight: '600', fontSize: 15 },
+        contentStyle: { flex: 1, backgroundColor: colors.bg },
+      }}
+    >
+      <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} />
+      <Stack.Screen name="sign-up" options={{ title: 'Create account' }} />
+    </Stack>
+  );
+}
