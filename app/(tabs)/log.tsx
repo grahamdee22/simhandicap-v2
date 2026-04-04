@@ -348,7 +348,7 @@ export default function LogRoundScreen() {
       return;
     }
 
-    const finishSave = () => {
+    const finishSave = async () => {
       const snap = latestSaveRef.current;
       if (!snap?.course) return;
 
@@ -415,10 +415,10 @@ export default function LogRoundScreen() {
       };
       try {
         if (snap.existing) {
-          updateRound(snap.existing.id, base);
+          await updateRound(snap.existing.id, base);
           resetLogForm();
         } else {
-          addRound(base);
+          await addRound(base);
           resetLogForm();
         }
         router.replace('/(tabs)/analyze');
@@ -429,11 +429,11 @@ export default function LogRoundScreen() {
 
     if (scoreFocusedRef.current) {
       grossScoreInputRef.current?.blur();
-      setTimeout(finishSave, 48);
+      setTimeout(() => void finishSave(), 48);
       return;
     }
 
-    finishSave();
+    void finishSave();
   };
 
   const pars = course?.pars ?? [];

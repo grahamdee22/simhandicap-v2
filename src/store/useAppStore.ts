@@ -13,8 +13,14 @@ import {
   type Wind,
 } from '../lib/handicap';
 import { COURSE_SEEDS, getCourseById, ratingForCourse, type CourseSeed } from '../lib/courses';
+import {
+  deleteRoundInSupabase,
+  insertRoundInSupabase,
+  isCloudRoundId,
+  updateRoundInSupabase,
+} from '../lib/rounds';
 import type { GhinSnapshot } from '../lib/realVsSim';
-import { isSupabaseConfigured } from '../lib/supabase';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
 
 export type SimRound = {
   id: string;
@@ -72,6 +78,14 @@ export type HeadToHead = {
   conditionsLine: string;
 };
 
+function latestGhinSnapshotIndex(snapshots: GhinSnapshot[]): number | null {
+  if (snapshots.length === 0) return null;
+  const sorted = [...snapshots].sort(
+    (a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime()
+  );
+  return sorted[sorted.length - 1].index;
+}
+
 function newId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
@@ -115,14 +129,18 @@ type AppState = {
   hydrate: () => Promise<void>;
   setDisplayName: (name: string) => void;
   setPreferredLogPlatform: (platform: PlatformId) => void;
-  addRound: (input: NewRoundInput) => SimRound;
-  updateRound: (roundId: string, patch: Partial<SimRound>) => void;
-  deleteRound: (roundId: string) => void;
+  /** Replace rounds from Supabase (or server); recomputes differentials and index fields. */
+  replaceRoundsFromRemote: (rounds: SimRound[]) => void;
+  addRound: (input: NewRoundInput) => Promise<SimRound>;
+  updateRound: (roundId: string, patch: Partial<SimRound>) => Promise<void>;
+  deleteRound: (roundId: string) => Promise<void>;
   addGroup: (name: string) => void;
   setGroups: (groups: FriendGroup[]) => void;
   recomputeGroupsFromYou: () => void;
   setPendingH2hMatchup: (p: PendingH2hMatchup | null) => void;
   recordGhinIndex: (index: number) => void;
+  /** Apply server GHIN only when it differs from the latest local snapshot (avoids chart noise on refetch). */
+  syncGhinFromProfileIfChanged: (index: number) => void;
 };
 
 function computeRoundMath(
@@ -261,7 +279,15 @@ export const useAppStore = create<AppState>()(
 
       setPreferredLogPlatform: (preferredLogPlatform) => set({ preferredLogPlatform }),
 
-      addRound: (input) => {
+      replaceRoundsFromRemote: (incoming) => {
+        const full = recalcAllRounds(incoming);
+        set((s) => ({
+          rounds: full,
+          groups: syncYouInGroups(s.groups, s.displayName, full),
+        }));
+      },
+
+      addRound: async (input) => {
         const course = getCourseById(input.courseId);
         if (!course) throw new Error('Unknown course');
         const holeScores = [...input.holeScores];
@@ -280,17 +306,32 @@ export const useAppStore = create<AppState>()(
         );
         const trialDiffs = [...sorted.map((r) => r.adjustedDiff), math.adjustedDiff];
         const after = handicapIndexFromDifferentials(trialDiffs);
-        const round: SimRound = {
+        const withoutId: Omit<SimRound, 'id'> = {
           ...input,
           holeScores,
           grossScore: grossForMath,
-          id: newId(),
           courseName: course.name,
           teeName: input.teeName ?? course.defaultTee,
           ...math,
           indexAfter: after,
           indexDelta: before != null && after != null ? round1(after - before) : null,
         };
+
+        let id = newId();
+        if (supabase) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user) {
+            const ins = await insertRoundInSupabase(user.id, withoutId);
+            if ('error' in ins) {
+              throw new Error(ins.error);
+            }
+            id = ins.id;
+          }
+        }
+
+        const round: SimRound = { ...withoutId, id };
         set((s) => {
           const newRounds = [round, ...s.rounds];
           return {
@@ -307,18 +348,40 @@ export const useAppStore = create<AppState>()(
         return round;
       },
 
-      updateRound: (roundId, patch) => {
-        set((s) => {
-          const rounds = s.rounds.map((r) => (r.id === roundId ? { ...r, ...patch } : r));
-          const full = recalcAllRounds(rounds);
-          return {
-            rounds: full,
-            groups: syncYouInGroups(s.groups, s.displayName, full),
-          };
-        });
+      updateRound: async (roundId, patch) => {
+        const s = get();
+        const rounds = s.rounds.map((r) => (r.id === roundId ? { ...r, ...patch } : r));
+        const full = recalcAllRounds(rounds);
+        const updated = full.find((r) => r.id === roundId);
+        if (!updated) return;
+
+        if (isCloudRoundId(roundId) && supabase) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user) {
+            const errMsg = await updateRoundInSupabase(updated);
+            if (errMsg) throw new Error(errMsg);
+          }
+        }
+
+        set((st) => ({
+          rounds: full,
+          groups: syncYouInGroups(st.groups, st.displayName, full),
+        }));
       },
 
-      deleteRound: (roundId) => {
+      deleteRound: async (roundId) => {
+        if (isCloudRoundId(roundId) && supabase) {
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user) {
+            const errMsg = await deleteRoundInSupabase(roundId);
+            if (errMsg) throw new Error(errMsg);
+          }
+        }
+
         set((s) => {
           const rounds = s.rounds.filter((r) => r.id !== roundId);
           const full = recalcAllRounds(rounds);
@@ -384,6 +447,14 @@ export const useAppStore = create<AppState>()(
           list.sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
           return { ghinSnapshots: list };
         });
+      },
+
+      syncGhinFromProfileIfChanged: (index) => {
+        if (!Number.isFinite(index) || index < 0 || index > 54) return;
+        const n = Math.round(index * 10) / 10;
+        const latest = latestGhinSnapshotIndex(get().ghinSnapshots);
+        if (latest != null && Math.abs(latest - n) < 0.05) return;
+        get().recordGhinIndex(n);
       },
     }),
     {

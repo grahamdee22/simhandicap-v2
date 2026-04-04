@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { IconTrashOutline } from '../../../src/components/SvgUiIcons';
+import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { mergeViewStyles } from '../../../src/lib/mergeStyles';
 import { useResponsive } from '../../../src/lib/responsive';
@@ -153,8 +154,14 @@ export default function RoundDetailScreen() {
       'This will recalculate your sim index.',
       'Delete',
       () => {
-        deleteRound(r.id);
-        router.replace('/');
+        void (async () => {
+          try {
+            await deleteRound(r.id);
+            router.replace('/');
+          } catch (e) {
+            showAppAlert('Could not delete', String(e));
+          }
+        })();
       }
     );
   };

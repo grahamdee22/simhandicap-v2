@@ -3,6 +3,7 @@ import { usePathname, useRootNavigationState, useRouter, useSegments } from 'exp
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { applyProfileRowToStore, fetchMyProfile } from '../lib/profiles';
+import { fetchMyRoundsForUser } from '../lib/rounds';
 import { fetchMySocialGroupsIntoStore } from '../lib/socialGroups';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
@@ -26,8 +27,8 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 async function syncProfileIntoStore(): Promise<void> {
   const p = await fetchMyProfile();
-  const { setDisplayName, setPreferredLogPlatform, recordGhinIndex } = useAppStore.getState();
-  applyProfileRowToStore(p, { setDisplayName, setPreferredLogPlatform, recordGhinIndex });
+  const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged } = useAppStore.getState();
+  applyProfileRowToStore(p, { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged });
 }
 
 /** Expo Router may omit route groups from segments; pathname is usually `/sign-in`, `/sign-up`. */
@@ -63,6 +64,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (cancelled) return;
       await rebindPersistToUser(data.session?.user.id ?? null);
       if (data.session?.user) {
+        const remoteRounds = await fetchMyRoundsForUser();
+        if (remoteRounds !== null) {
+          useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
+        }
         await syncProfileIntoStore();
         await fetchMySocialGroupsIntoStore();
         useAppStore.getState().recomputeGroupsFromYou();
@@ -78,6 +83,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const syncProfile =
         event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED';
       if (syncProfile && next?.user) {
+        const remoteRounds = await fetchMyRoundsForUser();
+        if (remoteRounds !== null) {
+          useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
+        }
         await syncProfileIntoStore();
         await fetchMySocialGroupsIntoStore();
         useAppStore.getState().recomputeGroupsFromYou();
@@ -126,6 +135,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (!configured || !session) return;
+    const remoteRounds = await fetchMyRoundsForUser();
+    if (remoteRounds !== null) {
+      useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
+    }
     await syncProfileIntoStore();
     await fetchMySocialGroupsIntoStore();
     useAppStore.getState().recomputeGroupsFromYou();

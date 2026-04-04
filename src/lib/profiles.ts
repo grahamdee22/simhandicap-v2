@@ -31,7 +31,24 @@ export async function fetchMyProfile(): Promise<UserProfileRow | null> {
     console.warn('[profiles] fetch', error.message);
     return null;
   }
-  return data as UserProfileRow | null;
+  if (!data) return null;
+  const row = data as {
+    id: string;
+    display_name: string;
+    preferred_platform: string | null;
+    ghin_index: number | string | null;
+  };
+  const rawGhin = row.ghin_index;
+  const ghin_index =
+    rawGhin === null || rawGhin === undefined || rawGhin === ''
+      ? null
+      : Number(rawGhin);
+  return {
+    id: row.id,
+    display_name: row.display_name,
+    preferred_platform: row.preferred_platform,
+    ghin_index: Number.isFinite(ghin_index) ? ghin_index : null,
+  };
 }
 
 export type ProfilePatch = {
@@ -79,7 +96,8 @@ export function applyProfileRowToStore(
   actions: {
     setDisplayName: (n: string) => void;
     setPreferredLogPlatform: (plat: PlatformId) => void;
-    recordGhinIndex: (n: number) => void;
+    /** Only updates GHIN snapshots when the server value differs (avoids duplicate chart points on refetch). */
+    syncGhinFromProfileIfChanged: (n: number) => void;
   }
 ): void {
   if (!p) return;
@@ -87,7 +105,8 @@ export function applyProfileRowToStore(
   if (p.preferred_platform && isPlatformId(p.preferred_platform)) {
     actions.setPreferredLogPlatform(p.preferred_platform);
   }
-  if (p.ghin_index != null && Number.isFinite(Number(p.ghin_index))) {
-    actions.recordGhinIndex(Number(p.ghin_index));
+  const g = p.ghin_index != null ? Number(p.ghin_index) : NaN;
+  if (Number.isFinite(g)) {
+    actions.syncGhinFromProfileIfChanged(g);
   }
 }

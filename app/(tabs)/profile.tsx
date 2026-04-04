@@ -1,5 +1,6 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { Link, useRouter } from 'expo-router';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
@@ -9,7 +10,7 @@ import { IconAddCircleOutline, IconCheckmark, IconChevronForward } from '../../s
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { formatHandicapIndexDisplay } from '../../src/lib/handicap';
-import { upsertMyProfile } from '../../src/lib/profiles';
+import { applyProfileRowToStore, fetchMyProfile, upsertMyProfile } from '../../src/lib/profiles';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useResponsive } from '../../src/lib/responsive';
 import {
@@ -55,9 +56,42 @@ export default function ProfileScreen() {
   const simIndex = useMemo(() => currentIndexFromRounds(rounds), [rounds]);
   const ghinLatest = useMemo(() => latestGhinIndex(ghinSnapshots), [ghinSnapshots]);
 
+  /** Local-only: keep draft aligned with snapshots. When signed in, focus fetch sets the field from Supabase. */
   useEffect(() => {
+    if (signedIn) return;
     if (ghinLatest != null) setGhinDraft(ghinLatest.toFixed(1));
-  }, [ghinLatest]);
+  }, [ghinLatest, signedIn]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!signedIn) return;
+      let cancelled = false;
+      void (async () => {
+        const p = await fetchMyProfile();
+        if (cancelled) return;
+        if (p) {
+          const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged: syncGhin } =
+            useAppStore.getState();
+          applyProfileRowToStore(p, {
+            setDisplayName,
+            setPreferredLogPlatform,
+            syncGhinFromProfileIfChanged: syncGhin,
+          });
+        }
+        const snaps = useAppStore.getState().ghinSnapshots;
+        const fromServer =
+          p?.ghin_index != null && Number.isFinite(Number(p.ghin_index)) ? Number(p.ghin_index) : null;
+        const fallback = latestGhinIndex(snaps);
+        const display = fromServer ?? fallback;
+        if (!cancelled) {
+          setGhinDraft(display != null ? display.toFixed(1) : '');
+        }
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [signedIn])
+  );
 
   const chartGeom = useMemo(
     () => buildDualIndexChartPoints(rounds, ghinSnapshots),
@@ -75,14 +109,29 @@ export default function ProfileScreen() {
       showAppAlert('GHIN index', 'Enter a valid handicap index (0 or higher).');
       return;
     }
-    recordGhinIndex(v);
-    setGhinDraft(v.toFixed(1));
+    const rounded = Math.round(v * 10) / 10;
+    recordGhinIndex(rounded);
+    setGhinDraft(rounded.toFixed(1));
     if (signedIn) {
       setSavingField('ghin');
-      const { error } = await upsertMyProfile({ ghin_index: v });
+      const { error } = await upsertMyProfile({ ghin_index: rounded });
       setSavingField(null);
       if (error) showAppAlert('Profile', error);
     }
+  };
+
+  const onGhinBlur = () => {
+    const trimmed = ghinDraft.replace(/,/g, '.').trim();
+    if (trimmed === '') return;
+    const v = parseFloat(trimmed);
+    if (Number.isNaN(v) || v < 0) {
+      showAppAlert('GHIN index', 'Enter a valid handicap index (0 or higher).');
+      setGhinDraft(ghinLatest != null ? ghinLatest.toFixed(1) : '');
+      return;
+    }
+    const rounded = Math.round(v * 10) / 10;
+    if (ghinLatest != null && Math.abs(rounded - ghinLatest) < 0.05) return;
+    void saveGhin();
   };
 
   const saveName = async () => {
@@ -200,6 +249,7 @@ export default function ProfileScreen() {
               style={styles.ghinInput}
               value={ghinDraft}
               onChangeText={setGhinDraft}
+              onBlur={() => onGhinBlur()}
               placeholder="e.g. 6.4"
               placeholderTextColor={colors.subtle}
               keyboardType="decimal-pad"
@@ -212,7 +262,7 @@ export default function ProfileScreen() {
               {savingField === 'ghin' ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.ghinSaveTxt}>Save</Text>
+                <Text style={styles.ghinSaveTxt}>{ghinLatest != null ? 'Update' : 'Save'}</Text>
               )}
             </Pressable>
           </View>
