@@ -43,5 +43,8 @@
     "surge": "^0.27.3",
     "typescript": "~5.9.2"
   },
+  "overrides": {
+    "expo-modules-core": "2.3.12"
+  },
   "private": true
 }
