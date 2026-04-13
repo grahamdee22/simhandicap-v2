@@ -19,7 +19,7 @@ import {
 } from '../../src/lib/handicap';
 import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates';
 import { showAppAlert } from '../../src/lib/alertCompat';
-import { COURSE_SEEDS, getCourseById, ratingForCourse } from '../../src/lib/courses';
+import { COURSE_SEEDS, courseMatchesSearch, getCourseById, ratingForCourse } from '../../src/lib/courses';
 import {
   difficultyConditionsLabel,
   expectedDifferentialFromIndex,
@@ -138,6 +138,7 @@ export default function LogRoundScreen() {
   const [h2hModalOpen, setH2hModalOpen] = useState(false);
   const [platOpen, setPlatOpen] = useState(false);
   const [courseOpen, setCourseOpen] = useState(false);
+  const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [playedDate, setPlayedDate] = useState(todayLocalYmd);
   const [scoreFocused, setScoreFocused] = useState(false);
   const scoreFocusedRef = useRef(false);
@@ -253,7 +254,18 @@ export default function LogRoundScreen() {
     scoreBufferRef.current = s0;
   }, [existing, groups]);
 
+  useEffect(() => {
+    if (courseOpen) setCourseSearchQuery('');
+  }, [courseOpen]);
+
   const course = getCourseById(courseId);
+  const coursesForPicker = useMemo(
+    () =>
+      COURSE_SEEDS.filter((c) => courseMatchesSearch(c, courseSearchQuery)).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      ),
+    [courseSearchQuery]
+  );
   const { rating, slope } = course ? ratingForCourse(course, platform) : { rating: 72, slope: 130 };
 
   const effectiveGross = useMemo(
@@ -856,20 +868,34 @@ export default function LogRoundScreen() {
           <Pressable style={styles.modalBackdropPress} onPress={() => setCourseOpen(false)} />
           <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
             <Text style={styles.modalTitle}>Course</Text>
+            <TextInput
+              style={styles.courseSearchInput}
+              value={courseSearchQuery}
+              onChangeText={setCourseSearchQuery}
+              placeholder="Search by course name"
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+            />
             <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-              {COURSE_SEEDS.map((c) => (
-                <Pressable
-                  key={c.id}
-                  style={styles.modalRow}
-                  onPress={() => {
-                    setCourseId(c.id);
-                    setCourseOpen(false);
-                  }}
-                >
-                  <Text style={styles.modalRowTxt}>{c.name}</Text>
-                  {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
-                </Pressable>
-              ))}
+              {coursesForPicker.length === 0 ? (
+                <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+              ) : (
+                coursesForPicker.map((c) => (
+                  <Pressable
+                    key={c.id}
+                    style={styles.modalRow}
+                    onPress={() => {
+                      setCourseId(c.id);
+                      setCourseOpen(false);
+                    }}
+                  >
+                    <Text style={styles.modalRowTxt}>{c.name}</Text>
+                    {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
+                  </Pressable>
+                ))
+              )}
             </ScrollView>
           </View>
         </View>
@@ -1056,6 +1082,17 @@ const styles = StyleSheet.create({
   },
   modalSheetTall: { maxHeight: '70%' },
   modalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  courseSearchInput: {
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.ink,
+    marginBottom: 8,
+  },
+  courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
   modalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

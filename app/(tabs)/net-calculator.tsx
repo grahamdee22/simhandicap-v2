@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -14,7 +14,7 @@ import { ContentWidth } from '../../src/components/ContentWidth';
 import { GolferPickerModal } from '../../src/components/GolferPickerModal';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
-import { COURSE_SEEDS, getCourseById, ratingForCourse } from '../../src/lib/courses';
+import { COURSE_SEEDS, courseMatchesSearch, getCourseById, ratingForCourse } from '../../src/lib/courses';
 import { DUMMY_NET_GOLFERS, dummyGolferById } from '../../src/lib/dummyNetGolfers';
 import {
   courseParFromSeed,
@@ -100,7 +100,20 @@ export default function NetCalculatorScreen() {
   const [wind, setWind] = useState<Wind>('off');
   const [mulligans, setMulligans] = useState<Mulligans>('off');
   const [courseOpen, setCourseOpen] = useState(false);
+  const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [platOpen, setPlatOpen] = useState(false);
+
+  useEffect(() => {
+    if (courseOpen) setCourseSearchQuery('');
+  }, [courseOpen]);
+
+  const coursesForPicker = useMemo(
+    () =>
+      COURSE_SEEDS.filter((c) => courseMatchesSearch(c, courseSearchQuery)).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      ),
+    [courseSearchQuery]
+  );
 
   const p1Form = useMemo(() => slotToForm(p1Slot), [p1Slot]);
   const p2Form = useMemo(() => slotToForm(p2Slot), [p2Slot]);
@@ -421,20 +434,34 @@ export default function NetCalculatorScreen() {
           <Pressable style={styles.modalBackdropPress} onPress={() => setCourseOpen(false)} />
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
             <Text style={styles.modalTitle}>Course</Text>
-            <ScrollView keyboardShouldPersistTaps="handled">
-              {COURSE_SEEDS.map((c) => (
-                <Pressable
-                  key={c.id}
-                  style={styles.modalRow}
-                  onPress={() => {
-                    setCourseId(c.id);
-                    setCourseOpen(false);
-                  }}
-                >
-                  <Text style={styles.modalRowTxt}>{c.name}</Text>
-                  {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
-                </Pressable>
-              ))}
+            <TextInput
+              style={styles.courseSearchInput}
+              value={courseSearchQuery}
+              onChangeText={setCourseSearchQuery}
+              placeholder="Search by course name"
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+            />
+            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+              {coursesForPicker.length === 0 ? (
+                <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+              ) : (
+                coursesForPicker.map((c) => (
+                  <Pressable
+                    key={c.id}
+                    style={styles.modalRow}
+                    onPress={() => {
+                      setCourseId(c.id);
+                      setCourseOpen(false);
+                    }}
+                  >
+                    <Text style={styles.modalRowTxt}>{c.name}</Text>
+                    {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
+                  </Pressable>
+                ))
+              )}
             </ScrollView>
           </View>
         </View>
@@ -641,6 +668,17 @@ const styles = StyleSheet.create({
     maxHeight: '70%',
   },
   modalTitle: { fontSize: 17, fontWeight: '700', color: colors.ink, marginBottom: 8 },
+  courseSearchInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.ink,
+    marginBottom: 8,
+  },
+  courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
   modalRow: {
     flexDirection: 'row',
     alignItems: 'center',
