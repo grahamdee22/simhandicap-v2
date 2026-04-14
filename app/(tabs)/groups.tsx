@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Linking,
   Modal,
   Pressable,
   ScrollView,
@@ -12,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconPlus } from '../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../src/lib/alertCompat';
@@ -20,10 +22,13 @@ import { formatHandicapIndexDisplay } from '../../src/lib/handicap';
 import { headToHeadFromLoggedRound } from '../../src/lib/h2hFromRound';
 import { useResponsive } from '../../src/lib/responsive';
 import {
+  cancelOutboundGroupInvite,
   createSocialGroup,
   fetchGroupMatchesFromSupabase,
+  fetchInboundGroupInvitesIntoStore,
   fetchMySocialGroupsIntoStore,
-  sendSocialGroupInvite,
+  respondToGroupInvite,
+  sendGroupInvite,
 } from '../../src/lib/socialGroups';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import {
@@ -31,6 +36,16 @@ import {
   type GroupMember,
   type HeadToHead,
 } from '../../src/store/useAppStore';
+
+const APP_INVITE_URL = 'https://simhandicap-v2.vercel.app';
+
+function openMailtoSimCapInvite(email: string, inviterName: string) {
+  const who = inviterName.trim() || 'A friend';
+  const body = `${who} invited you to join their SimCap group. SimCap tracks your simulator golf handicap — sign up free at ${APP_INVITE_URL} and you'll be added to the group automatically.`;
+  const subject = 'Join SimCap';
+  const url = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  void Linking.openURL(url);
+}
 
 const avColors = [
   ['#e1f5ee', '#0f6e56'],
@@ -57,11 +72,13 @@ function indexSortKey(m: GroupMember): number {
 
 export default function GroupsScreen() {
   const router = useRouter();
+  const { user } = useAuth();
   const { gutter, isVeryWide } = useResponsive();
   const insets = useSafeAreaInsets();
   const supabaseOn = isSupabaseConfigured();
 
   const groups = useAppStore((s) => s.groups);
+  const inboundGroupInvites = useAppStore((s) => s.inboundGroupInvites);
   const rounds = useAppStore((s) => s.rounds);
   const displayName = useAppStore((s) => s.displayName);
   const addGroup = useAppStore((s) => s.addGroup);
@@ -72,9 +89,12 @@ export default function GroupsScreen() {
   const [newName, setNewName] = useState('');
   const [inviteOpen, setInviteOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
+  const [invitePhase, setInvitePhase] = useState<'form' | 'success'>('form');
+  const [inviteSuccessDetail, setInviteSuccessDetail] = useState('');
   const [listRefreshing, setListRefreshing] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [inboundBusy, setInboundBusy] = useState(false);
   const [matches, setMatches] = useState<HeadToHead[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(false);
 
@@ -93,6 +113,7 @@ export default function GroupsScreen() {
       void (async () => {
         try {
           await fetchMySocialGroupsIntoStore();
+          await fetchInboundGroupInvitesIntoStore();
           if (groupsRefreshSessionRef.current !== session) return;
           useAppStore.getState().recomputeGroupsFromYou();
         } finally {
@@ -139,6 +160,11 @@ export default function GroupsScreen() {
     if (!g) return [];
     return [...g.members].sort((a, b) => indexSortKey(a) - indexSortKey(b));
   }, [g]);
+
+  const pendingInAppRows = g?.pendingInApp ?? [];
+  const pendingEmailRows = g?.pendingEmail ?? [];
+  const hasMemberOrPending =
+    ranked.length > 0 || pendingInAppRows.length > 0 || pendingEmailRows.length > 0;
 
   const mergedHeadToHead = useMemo((): HeadToHead[] => {
     if (!g) return [];
@@ -206,12 +232,16 @@ export default function GroupsScreen() {
 
   const openInvite = () => {
     setInviteEmail('');
+    setInvitePhase('form');
+    setInviteSuccessDetail('');
     setInviteOpen(true);
   };
 
   const closeInvite = () => {
     setInviteOpen(false);
     setInviteEmail('');
+    setInvitePhase('form');
+    setInviteSuccessDetail('');
   };
 
   const emailLooksValid = (raw: string) => {
@@ -231,14 +261,42 @@ export default function GroupsScreen() {
     }
     if (supabaseOn) {
       setInviteBusy(true);
-      const { error } = await sendSocialGroupInvite(g.id, email);
+      const { error, result } = await sendGroupInvite(g.id, email);
       setInviteBusy(false);
       if (error) {
         showAppAlert('Invite', error);
         return;
       }
-      closeInvite();
-      showAppAlert('Invite sent', `We recorded an invite for ${email}. They can join once they sign up and accept.`);
+      if (result?.kind === 'already_member') {
+        showAppAlert('Already in crew', `${email} is already a member of this group.`);
+        return;
+      }
+      if (result?.kind === 'in_app') {
+        const detail = result.duplicate
+          ? `${email} already has a pending invite from this crew.`
+          : `They will see it at the top of the Social tab with Accept and Decline.`;
+        setInviteSuccessDetail(`Invite sent to ${email}.\n\n${detail}`);
+        if (!result.duplicate) {
+          await fetchMySocialGroupsIntoStore();
+          recomputeGroupsFromYou();
+        }
+        setInvitePhase('success');
+        return;
+      }
+      if (result?.kind === 'email') {
+        const detail = result.duplicate
+          ? `We already have an open email invite for that address.`
+          : `Your email app should open with a signup message. They can join at ${APP_INVITE_URL}.`;
+        if (!result.duplicate) {
+          openMailtoSimCapInvite(email, displayName);
+          await fetchMySocialGroupsIntoStore();
+          recomputeGroupsFromYou();
+        }
+        setInviteSuccessDetail(`Invite sent to ${email}.\n\n${detail}`);
+        setInvitePhase('success');
+        return;
+      }
+      showAppAlert('Invite', 'Something went wrong.');
       return;
     }
     showAppAlert(
@@ -247,6 +305,76 @@ export default function GroupsScreen() {
     );
     closeInvite();
   };
+
+  const onAcceptInboundInvite = async (inv: { id: string; groupId: string }) => {
+    setInboundBusy(true);
+    const { error } = await respondToGroupInvite(inv.id, true);
+    setInboundBusy(false);
+    if (error) {
+      showAppAlert('Accept invite', error);
+      return;
+    }
+    await fetchMySocialGroupsIntoStore();
+    await fetchInboundGroupInvitesIntoStore();
+    recomputeGroupsFromYou();
+    const ng = useAppStore.getState().groups;
+    const gi = ng.findIndex((gr) => gr.id === inv.groupId);
+    if (gi >= 0) setTab(gi);
+    showAppAlert('Welcome', "You've joined the crew.");
+  };
+
+  const onDeclineInboundInvite = async (inviteId: string) => {
+    setInboundBusy(true);
+    const { error } = await respondToGroupInvite(inviteId, false);
+    setInboundBusy(false);
+    if (error) {
+      showAppAlert('Decline invite', error);
+      return;
+    }
+    await fetchInboundGroupInvitesIntoStore();
+  };
+
+  const onCancelOutboundInvite = async (kind: 'in_app' | 'email', id: string) => {
+    const { error } = await cancelOutboundGroupInvite(kind, id);
+    if (error) {
+      showAppAlert('Cancel invite', error);
+      return;
+    }
+    await fetchMySocialGroupsIntoStore();
+    recomputeGroupsFromYou();
+  };
+
+  const isGroupCreator =
+    supabaseOn && !!user?.id && !!g?.createdByUserId && g.createdByUserId === user.id;
+
+  const inboundInviteCards =
+    supabaseOn && inboundGroupInvites.length > 0
+      ? inboundGroupInvites.map((inv) => (
+          <View key={inv.id} style={styles.inboundCard}>
+            <Text style={styles.inboundText}>
+              <Text style={styles.inboundStrong}>{inv.inviterName}</Text>
+              {` invited you to join `}
+              <Text style={styles.inboundStrong}>{inv.groupName}</Text>
+            </Text>
+            <View style={styles.inboundActions}>
+              <Pressable
+                onPress={() => void onAcceptInboundInvite(inv)}
+                disabled={inboundBusy}
+                style={[styles.inboundBtn, styles.inboundBtnAccept, inboundBusy && styles.modalBtnDisabled]}
+              >
+                <Text style={styles.inboundBtnAcceptTxt}>Accept</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => void onDeclineInboundInvite(inv.id)}
+                disabled={inboundBusy}
+                style={[styles.inboundBtn, styles.inboundBtnDecline, inboundBusy && styles.modalBtnDisabled]}
+              >
+                <Text style={styles.inboundBtnDeclineTxt}>Decline</Text>
+              </Pressable>
+            </View>
+          </View>
+        ))
+      : [];
 
   if (groups.length === 0) {
     return (
@@ -261,6 +389,9 @@ export default function GroupsScreen() {
             showsVerticalScrollIndicator={false}
           >
             <Text style={styles.emptyTitle}>Social</Text>
+            {inboundInviteCards.length > 0 ? (
+              <View style={{ gap: 10, marginBottom: 18 }}>{inboundInviteCards}</View>
+            ) : null}
             <Text style={styles.emptyLead}>
               Crews you create or join show up here. Each tab is a group — with a live leaderboard, recent head-to-head,
               and invites.
@@ -340,6 +471,10 @@ export default function GroupsScreen() {
             contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
             showsVerticalScrollIndicator={false}
           >
+            {inboundInviteCards.length > 0 ? (
+              <View style={{ marginHorizontal: gutter, marginTop: 12, gap: 10 }}>{inboundInviteCards}</View>
+            ) : null}
+
             <View style={[styles.card, { marginHorizontal: gutter }]}>
               <View style={styles.cardHdr}>
                 <View>
@@ -354,46 +489,106 @@ export default function GroupsScreen() {
                   <Text style={styles.invite}>+ Invite</Text>
                 </Pressable>
               </View>
-              {ranked.length === 0 ? (
+              {!hasMemberOrPending ? (
                 <Text style={[styles.membersEmpty, { paddingHorizontal: 12, paddingVertical: 14 }]}>
                   No members in this crew yet. Invited friends will appear here after they join.
                 </Text>
               ) : (
-                ranked.map((m, rank) => {
-                  const tr = trendLabel(m.trend);
-                  const av = avatarStyle(rank);
-                  return (
-                    <View key={m.id} style={[styles.lbRow, m.isYou && styles.lbRowMe]}>
-                      <Text
-                        style={[
-                          styles.lbRank,
-                          rank === 0 && styles.rankGold,
-                          rank === 1 && styles.rankSilver,
-                          rank === 2 && styles.rankBronze,
-                        ]}
-                      >
-                        {rank + 1}
-                      </Text>
-                      <View style={[styles.lbAv, { backgroundColor: av.backgroundColor }]}>
-                        <Text style={[styles.lbAvTxt, { color: av.color }]}>{m.initials}</Text>
+                <>
+                  {ranked.map((m, rank) => {
+                    const tr = trendLabel(m.trend);
+                    const av = avatarStyle(rank);
+                    return (
+                      <View key={m.id} style={[styles.lbRow, m.isYou && styles.lbRowMe]}>
+                        <Text
+                          style={[
+                            styles.lbRank,
+                            rank === 0 && styles.rankGold,
+                            rank === 1 && styles.rankSilver,
+                            rank === 2 && styles.rankBronze,
+                          ]}
+                        >
+                          {rank + 1}
+                        </Text>
+                        <View style={[styles.lbAv, { backgroundColor: av.backgroundColor }]}>
+                          <Text style={[styles.lbAvTxt, { color: av.color }]}>{m.initials}</Text>
+                        </View>
+                        <View style={styles.lbInfo}>
+                          <Text style={[styles.lbName, m.isYou && styles.lbNameMe]} numberOfLines={1}>
+                            {m.displayName}
+                          </Text>
+                          <Text style={styles.lbSub} numberOfLines={1}>
+                            {m.roundsLogged} rounds · {m.platform}
+                          </Text>
+                        </View>
+                        <View style={styles.lbRight}>
+                          <Text style={styles.lbIdx}>
+                            {formatHandicapIndexDisplay(m.index)}
+                          </Text>
+                          <Text style={tr.style}>{tr.text}</Text>
+                        </View>
+                      </View>
+                    );
+                  })}
+                  {pendingInAppRows.map((p) => (
+                    <View key={p.id} style={[styles.lbRow, styles.lbRowPending]}>
+                      <Text style={styles.lbRank}>—</Text>
+                      <View style={[styles.lbAv, styles.lbAvMuted]}>
+                        <Text style={styles.lbAvMutedTxt}>…</Text>
                       </View>
                       <View style={styles.lbInfo}>
-                        <Text style={[styles.lbName, m.isYou && styles.lbNameMe]} numberOfLines={1}>
-                          {m.displayName}
+                        <Text style={styles.lbName} numberOfLines={1}>
+                          {p.label}
                         </Text>
                         <Text style={styles.lbSub} numberOfLines={1}>
-                          {m.roundsLogged} rounds · {m.platform}
+                          Pending invite
                         </Text>
                       </View>
-                      <View style={styles.lbRight}>
-                        <Text style={styles.lbIdx}>
-                          {formatHandicapIndexDisplay(m.index)}
-                        </Text>
-                        <Text style={tr.style}>{tr.text}</Text>
-                      </View>
+                      {isGroupCreator ? (
+                        <Pressable
+                          onPress={() => void onCancelOutboundInvite('in_app', p.id)}
+                          hitSlop={8}
+                          style={styles.cancelInvitePress}
+                        >
+                          <Text style={styles.cancelInviteTxt}>Cancel</Text>
+                        </Pressable>
+                      ) : (
+                        <View style={styles.lbRight}>
+                          <Text style={styles.pendingBadge}>Pending</Text>
+                        </View>
+                      )}
                     </View>
-                  );
-                })
+                  ))}
+                  {pendingEmailRows.map((p) => (
+                    <View key={p.id} style={[styles.lbRow, styles.lbRowPending]}>
+                      <Text style={styles.lbRank}>—</Text>
+                      <View style={[styles.lbAv, styles.lbAvMuted]}>
+                        <Text style={styles.lbAvMutedTxt}>@</Text>
+                      </View>
+                      <View style={styles.lbInfo}>
+                        <Text style={styles.lbName} numberOfLines={1}>
+                          {p.email}
+                        </Text>
+                        <Text style={styles.lbSub} numberOfLines={1}>
+                          Pending · email invite
+                        </Text>
+                      </View>
+                      {isGroupCreator ? (
+                        <Pressable
+                          onPress={() => void onCancelOutboundInvite('email', p.id)}
+                          hitSlop={8}
+                          style={styles.cancelInvitePress}
+                        >
+                          <Text style={styles.cancelInviteTxt}>Cancel</Text>
+                        </Pressable>
+                      ) : (
+                        <View style={styles.lbRight}>
+                          <Text style={styles.pendingBadge}>Pending</Text>
+                        </View>
+                      )}
+                    </View>
+                  ))}
+                </>
               )}
             </View>
 
@@ -550,39 +745,65 @@ export default function GroupsScreen() {
           <Modal visible={inviteOpen} animationType="fade" transparent>
             <Pressable style={styles.modalBackdrop} onPress={() => !inviteBusy && closeInvite()}>
               <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-                <Text style={styles.modalTitle}>Invite to group</Text>
-                <Text style={styles.modalSub}>
-                  Send an invite so they can get the app and join <Text style={styles.modalSubStrong}>{g.name}</Text>.
-                </Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="Email address"
-                  placeholderTextColor={colors.subtle}
-                  value={inviteEmail}
-                  onChangeText={setInviteEmail}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  autoComplete="email"
-                  autoFocus
-                  editable={!inviteBusy}
-                />
-                <View style={styles.modalActions}>
-                  <Pressable onPress={() => !inviteBusy && closeInvite()} style={styles.modalBtn}>
-                    <Text style={styles.modalBtnTxt}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => void submitInvite()}
-                    disabled={inviteBusy}
-                    style={[styles.modalBtn, styles.modalBtnPrimary, inviteBusy && styles.modalBtnDisabled]}
-                  >
-                    {inviteBusy ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Send invite</Text>
-                    )}
-                  </Pressable>
-                </View>
+                {invitePhase === 'form' ? (
+                  <>
+                    <Text style={styles.modalTitle}>Invite to group</Text>
+                    <Text style={styles.modalSub}>
+                      If they already use SimCap, they’ll get an in-app invite. Otherwise we’ll record the invite and open
+                      your email app with a signup message for{' '}
+                      <Text style={styles.modalSubStrong}>{g.name}</Text>.
+                    </Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="Email address"
+                      placeholderTextColor={colors.subtle}
+                      value={inviteEmail}
+                      onChangeText={setInviteEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                      autoComplete="email"
+                      autoFocus
+                      editable={!inviteBusy}
+                    />
+                    <View style={styles.modalActions}>
+                      <Pressable onPress={() => !inviteBusy && closeInvite()} style={styles.modalBtn}>
+                        <Text style={styles.modalBtnTxt}>Cancel</Text>
+                      </Pressable>
+                      <Pressable
+                        onPress={() => void submitInvite()}
+                        disabled={inviteBusy}
+                        style={[styles.modalBtn, styles.modalBtnPrimary, inviteBusy && styles.modalBtnDisabled]}
+                      >
+                        {inviteBusy ? (
+                          <ActivityIndicator color="#fff" />
+                        ) : (
+                          <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Send invite</Text>
+                        )}
+                      </Pressable>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.modalTitle}>Invite sent</Text>
+                    <Text style={styles.modalSuccessBody}>{inviteSuccessDetail}</Text>
+                    <View style={styles.modalActionsCol}>
+                      <Pressable
+                        onPress={() => {
+                          setInvitePhase('form');
+                          setInviteEmail('');
+                          setInviteSuccessDetail('');
+                        }}
+                        style={[styles.modalBtn, styles.modalBtnGhost]}
+                      >
+                        <Text style={styles.modalBtnGhostTxt}>Invite someone else</Text>
+                      </Pressable>
+                      <Pressable onPress={closeInvite} style={[styles.modalBtn, styles.modalBtnPrimary]}>
+                        <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Done</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
               </Pressable>
             </Pressable>
           </Modal>
@@ -773,8 +994,43 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
+  modalActionsCol: { gap: 10, marginTop: 4 },
   modalBtn: { paddingVertical: 10, paddingHorizontal: 14 },
-  modalBtnPrimary: { backgroundColor: colors.header, borderRadius: 8 },
+  modalBtnPrimary: { backgroundColor: colors.header, borderRadius: 8, alignItems: 'center' },
+  modalBtnGhost: {
+    borderRadius: 8,
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+    backgroundColor: colors.accentSoft,
+    alignItems: 'center',
+  },
+  modalBtnGhostTxt: { fontSize: 15, fontWeight: '700', color: colors.accent },
   modalBtnTxt: { fontSize: 15, fontWeight: '600', color: colors.accent },
   modalBtnTxtPri: { color: '#fff', fontWeight: '700' },
+  modalSuccessBody: { fontSize: 14, color: colors.muted, lineHeight: 21, marginBottom: 8 },
+  inboundCard: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+    padding: 14,
+  },
+  inboundText: { fontSize: 14, color: colors.ink, lineHeight: 20 },
+  inboundStrong: { fontWeight: '700', color: colors.header },
+  inboundActions: { flexDirection: 'row', gap: 10, marginTop: 12 },
+  inboundBtn: { flex: 1, paddingVertical: 11, borderRadius: 10, alignItems: 'center' },
+  inboundBtnAccept: { backgroundColor: colors.header },
+  inboundBtnAcceptTxt: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  inboundBtnDecline: {
+    backgroundColor: colors.surface,
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+  },
+  inboundBtnDeclineTxt: { color: colors.accent, fontWeight: '700', fontSize: 14 },
+  lbRowPending: { backgroundColor: colors.bg },
+  lbAvMuted: { backgroundColor: colors.border, alignItems: 'center', justifyContent: 'center' },
+  lbAvMutedTxt: { fontSize: 12, fontWeight: '600', color: colors.subtle },
+  pendingBadge: { fontSize: 10, fontWeight: '700', color: colors.sage },
+  cancelInvitePress: { paddingVertical: 4, paddingHorizontal: 4 },
+  cancelInviteTxt: { fontSize: 11, fontWeight: '700', color: colors.danger },
 });

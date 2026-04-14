@@ -9,9 +9,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
+import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 
@@ -47,10 +49,12 @@ export default function SignInScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: 16, paddingBottom: insets.bottom + 24 },
+          { paddingTop: 16, paddingBottom: insets.bottom + 28 },
         ]}
       >
-        <Text style={styles.lead}>Welcome back — sign in to sync your profile and rounds on this device.</Text>
+        <AuthBrandBanner variant="signIn" />
+
+        <Text style={styles.sectionTitle}>Sign in to your account</Text>
 
         <Text style={styles.lbl}>Email</Text>
         <TextInput
@@ -88,11 +92,14 @@ export default function SignInScreen() {
           )}
         </Pressable>
 
-        <Link href="/(auth)/sign-up" asChild>
-          <Pressable style={styles.secondary}>
-            <Text style={styles.secondaryTxt}>New here? Create an account</Text>
-          </Pressable>
-        </Link>
+        <View style={styles.footer}>
+          <Text style={styles.footerLine}>New here? Create an account</Text>
+          <Link href="/(auth)/sign-up" asChild>
+            <Pressable style={styles.footerCta}>
+              <Text style={styles.footerCtaTxt}>Create an account</Text>
+            </Pressable>
+          </Link>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -101,7 +108,14 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: 20, maxWidth: 480, width: '100%', alignSelf: 'center' },
-  lead: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: 24 },
+  sectionTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.ink,
+    marginTop: 20,
+    marginBottom: 22,
+    letterSpacing: -0.3,
+  },
   lbl: {
     fontSize: 11,
     fontWeight: '600',
@@ -129,6 +143,30 @@ const styles = StyleSheet.create({
   },
   primaryDisabled: { opacity: 0.7 },
   primaryTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  secondary: { marginTop: 20, paddingVertical: 12, alignItems: 'center' },
-  secondaryTxt: { color: colors.accent, fontWeight: '600', fontSize: 15 },
+  footer: {
+    marginTop: 28,
+    alignItems: 'center',
+    gap: 12,
+  },
+  footerLine: {
+    fontSize: 15,
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 22,
+  },
+  footerCta: {
+    width: '100%',
+    maxWidth: 320,
+    borderWidth: 2,
+    borderColor: colors.sage,
+    backgroundColor: colors.accentSoft,
+    borderRadius: 12,
+    paddingVertical: 14,
+    alignItems: 'center',
+  },
+  footerCtaTxt: {
+    color: colors.accent,
+    fontWeight: '700',
+    fontSize: 16,
+  },
 });

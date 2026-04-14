@@ -1,12 +1,11 @@
 import { Link } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconAnalyticsBars, IconCalendarOutline } from '../../src/components/SvgUiIcons';
-import { TrendChart, type TrendRange } from '../../src/components/TrendChart';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
-import { indexHistoryFromRounds, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
+import { type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
 import { formatRoundMeta, useAppStore, type SimRound } from '../../src/store/useAppStore';
@@ -99,33 +98,18 @@ function labelForPlatform(k: PlatformId | null) {
 
 export default function AnalyzeScreen() {
   const insets = useSafeAreaInsets();
-  const { gutter, maxContent, homeSplit, isWide, isVeryWide, chartWidth, chartHeight } = useResponsive();
+  const { gutter, maxContent, homeSplit, isWide, isVeryWide } = useResponsive();
   const rounds = useAppStore((s) => s.rounds);
   const [filters, setFilters] = useState<RoundFilters>(EMPTY_FILTERS);
   const [draftFilters, setDraftFilters] = useState<RoundFilters>(EMPTY_FILTERS);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
-  const [trendRange, setTrendRange] = useState<TrendRange>('3M');
-
   const filteredRounds = useMemo(
     () => rounds.filter((r) => matchesRoundFilters(r, filters)),
     [rounds, filters]
   );
 
-  const filteredIndexHistory = useMemo(
-    () =>
-      indexHistoryFromRounds(
-        [...filteredRounds].map((r) => ({ playedAt: r.playedAt, adjustedDiff: r.adjustedDiff }))
-      ),
-    [filteredRounds]
-  );
-  const trendHistoryForChart = useMemo(
-    () => filteredIndexHistory.map((h) => ({ date: h.date, index: h.index })),
-    [filteredIndexHistory]
-  );
-
   const filterOn = filtersActive(filters);
   const rightColW = Math.min(420, Math.floor(maxContent * 0.4));
-  const splitTrendPlotW = Math.max(220, rightColW - 24);
 
   const listStats = useMemo(() => {
     if (filteredRounds.length === 0) {
@@ -238,7 +222,7 @@ export default function AnalyzeScreen() {
               </Pressable>
             </View>
             <Text style={styles.filterHint}>
-              KPIs, index trend, and matching rounds use this subset. Home still uses every round.
+              KPIs and matching rounds use this subset. Home still uses every round.
             </Text>
 
             <Text style={[styles.fCatLabel, styles.fCatFirst]}>Putting</Text>
@@ -442,20 +426,6 @@ export default function AnalyzeScreen() {
     </>
   );
 
-  const trendChartSection =
-    rounds.length > 0 ? (
-      <View style={styles.trendCard}>
-        <TrendChart
-          history={trendHistoryForChart}
-          range={trendRange}
-          onRangeChange={setTrendRange}
-          plotWidth={homeSplit ? splitTrendPlotW : chartWidth}
-          plotHeight={chartHeight}
-          edgePad={12}
-        />
-      </View>
-    ) : null;
-
   const roundList = (
     <>
       <View style={[styles.sectionHead, { paddingHorizontal: gutter }]}>
@@ -523,7 +493,6 @@ export default function AnalyzeScreen() {
               {statsBlock}
             </View>
             <View style={[styles.splitRight, { width: rightColW }]}>
-              {trendChartSection ? <View style={{ marginBottom: 12 }}>{trendChartSection}</View> : null}
               <View style={styles.sideCard}>{roundList}</View>
             </View>
           </View>
@@ -531,13 +500,10 @@ export default function AnalyzeScreen() {
           <>
             {filterPanel}
             {statsBlock}
-            {trendChartSection ? (
-              <View style={{ marginHorizontal: gutter, marginTop: 12 }}>{trendChartSection}</View>
-            ) : null}
             <View
               style={[
                 styles.listCard,
-                { marginHorizontal: gutter, marginTop: trendChartSection ? 12 : 4 },
+                { marginHorizontal: gutter, marginTop: 12 },
               ]}
             >
               {roundList}
@@ -548,8 +514,6 @@ export default function AnalyzeScreen() {
     </ContentWidth>
   );
 }
-
-const webTrendShadow = Platform.OS === 'web' ? { boxShadow: '0 2px 16px rgba(26,26,26,0.08)' } : {};
 
 const styles = StyleSheet.create({
   screen: { flex: 1, minHeight: 0, backgroundColor: colors.bg, width: '100%' },
@@ -574,14 +538,6 @@ const styles = StyleSheet.create({
   splitRow: { flexDirection: 'row', alignItems: 'flex-start', width: '100%', marginTop: 8 },
   splitLeft: { flex: 1 },
   splitRight: { flexShrink: 0 },
-  trendCard: {
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    overflow: 'hidden',
-    ...webTrendShadow,
-  },
   sideCard: {
     backgroundColor: colors.surface,
     borderRadius: 12,

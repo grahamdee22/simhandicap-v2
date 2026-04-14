@@ -60,12 +60,29 @@ export type GroupMember = {
   isYou?: boolean;
 };
 
+/** Outbound in-app invite (registered user, not yet accepted). */
+export type OutboundPendingInApp = { id: string; label: string };
+/** Outbound email invite (no SimCap account yet). */
+export type OutboundPendingEmail = { id: string; email: string };
+
 export type FriendGroup = {
   id: string;
   name: string;
+  /** Supabase `social_groups.created_by`; empty for offline mock groups. */
+  createdByUserId: string;
   members: GroupMember[];
+  pendingInApp?: OutboundPendingInApp[];
+  pendingEmail?: OutboundPendingEmail[];
   lastRoundSummary?: string;
   headToHead?: HeadToHead[];
+};
+
+/** Pending crew invite for the signed-in user (notification / accept-decline). */
+export type InboundGroupInvite = {
+  id: string;
+  groupId: string;
+  groupName: string;
+  inviterName: string;
 };
 
 export type HeadToHead = {
@@ -123,6 +140,8 @@ type AppState = {
   preferredLogPlatform: PlatformId;
   rounds: SimRound[];
   groups: FriendGroup[];
+  /** Server-backed pending invites to the current user (not persisted). */
+  inboundGroupInvites: InboundGroupInvite[];
   pendingH2hMatchup: PendingH2hMatchup | null;
   /** Manual GHIN snapshots (e.g. monthly updates) for Real vs Sim profile chart. */
   ghinSnapshots: GhinSnapshot[];
@@ -136,6 +155,7 @@ type AppState = {
   deleteRound: (roundId: string) => Promise<void>;
   addGroup: (name: string) => void;
   setGroups: (groups: FriendGroup[]) => void;
+  setInboundGroupInvites: (invites: InboundGroupInvite[]) => void;
   recomputeGroupsFromYou: () => void;
   setPendingH2hMatchup: (p: PendingH2hMatchup | null) => void;
   recordGhinIndex: (index: number) => void;
@@ -264,6 +284,7 @@ export const useAppStore = create<AppState>()(
       preferredLogPlatform: 'Trackman',
       rounds: [],
       groups: [],
+      inboundGroupInvites: [],
       pendingH2hMatchup: null,
       ghinSnapshots: [],
 
@@ -402,6 +423,7 @@ export const useAppStore = create<AppState>()(
             {
               id: newId(),
               name,
+              createdByUserId: '',
               lastRoundSummary: '1 member',
               members: [
                 {
@@ -422,6 +444,8 @@ export const useAppStore = create<AppState>()(
       },
 
       setGroups: (groups) => set({ groups }),
+
+      setInboundGroupInvites: (inboundGroupInvites) => set({ inboundGroupInvites }),
 
       recomputeGroupsFromYou: () => {
         const s = get();
@@ -469,7 +493,12 @@ export const useAppStore = create<AppState>()(
       }),
       onRehydrateStorage: () => (state) => {
         if (state?.groups?.length) {
-          state.groups = state.groups.filter((g) => g.id !== 'g1' && g.id !== 'g2');
+          state.groups = state.groups
+            .filter((g) => g.id !== 'g1' && g.id !== 'g2')
+            .map((g) => ({
+              ...g,
+              createdByUserId: g.createdByUserId ?? '',
+            }));
         }
         state?.hydrate();
       },

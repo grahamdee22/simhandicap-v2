@@ -9,9 +9,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
+import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 
@@ -60,12 +62,20 @@ export default function SignUpScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: 16, paddingBottom: insets.bottom + 24 },
+          { paddingTop: 16, paddingBottom: insets.bottom + 28 },
         ]}
       >
-        <Text style={styles.lead}>
-          Create an account. Your display name is saved to your profile and used in the app.
-        </Text>
+        <AuthBrandBanner variant="signUp" />
+
+        <View style={styles.contextBox}>
+          <Text style={styles.contextTxt}>
+            SimCap tracks your simulator golf handicap based on the actual settings you play under. It's free and takes
+            2 minutes to set up.
+          </Text>
+          <Text style={[styles.contextTxt, styles.contextPara2]}>
+            Create a simple password just for this app — no need to use your regular one.
+          </Text>
+        </View>
 
         <Text style={styles.lbl}>Display name</Text>
         <TextInput
@@ -92,7 +102,7 @@ export default function SignUpScreen() {
 
         <Text style={styles.lbl}>Password</Text>
         <TextInput
-          style={styles.input}
+          style={styles.inputTightBottom}
           value={password}
           onChangeText={setPassword}
           placeholder="At least 6 characters"
@@ -100,6 +110,7 @@ export default function SignUpScreen() {
           secureTextEntry
           textContentType="newPassword"
         />
+        <Text style={styles.passwordNote}>Use a simple password — this is a beta app, not a bank</Text>
 
         <Pressable
           onPress={onSubmit}
@@ -113,11 +124,14 @@ export default function SignUpScreen() {
           )}
         </Pressable>
 
-        <Link href="/(auth)/sign-in" asChild>
-          <Pressable style={styles.secondary}>
-            <Text style={styles.secondaryTxt}>Already have an account? Sign in</Text>
-          </Pressable>
-        </Link>
+        <View style={styles.footer}>
+          <Text style={styles.footerLine}>Already have an account?</Text>
+          <Link href="/(auth)/sign-in" asChild>
+            <Pressable style={styles.footerLink}>
+              <Text style={styles.footerLinkTxt}>Sign in</Text>
+            </Pressable>
+          </Link>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -126,7 +140,24 @@ export default function SignUpScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: 20, maxWidth: 480, width: '100%', alignSelf: 'center' },
-  lead: { fontSize: 14, color: colors.muted, lineHeight: 20, marginBottom: 24 },
+  contextBox: {
+    backgroundColor: colors.accentSoft,
+    borderRadius: 14,
+    paddingVertical: 16,
+    paddingHorizontal: 16,
+    marginTop: 18,
+    marginBottom: 22,
+    borderLeftWidth: 4,
+    borderLeftColor: colors.sage,
+  },
+  contextTxt: {
+    fontSize: 15,
+    lineHeight: 23,
+    color: colors.ink,
+  },
+  contextPara2: {
+    marginTop: 12,
+  },
   lbl: {
     fontSize: 11,
     fontWeight: '600',
@@ -145,15 +176,49 @@ const styles = StyleSheet.create({
     color: colors.ink,
     marginBottom: 16,
   },
+  inputTightBottom: {
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    color: colors.ink,
+    marginBottom: 10,
+  },
+  passwordNote: {
+    fontSize: 13,
+    lineHeight: 19,
+    color: colors.muted,
+    fontStyle: 'italic',
+    marginBottom: 18,
+  },
   primary: {
     backgroundColor: colors.header,
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 4,
   },
   primaryDisabled: { opacity: 0.7 },
   primaryTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  secondary: { marginTop: 20, paddingVertical: 12, alignItems: 'center' },
-  secondaryTxt: { color: colors.accent, fontWeight: '600', fontSize: 15 },
+  footer: {
+    marginTop: 26,
+    alignItems: 'center',
+    gap: 10,
+  },
+  footerLine: {
+    fontSize: 15,
+    color: colors.muted,
+  },
+  footerLink: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  footerLinkTxt: {
+    color: colors.accent,
+    fontWeight: '700',
+    fontSize: 16,
+    textDecorationLine: 'underline',
+  },
 });

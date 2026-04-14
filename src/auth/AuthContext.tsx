@@ -4,7 +4,11 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useS
 import { Platform } from 'react-native';
 import { applyProfileRowToStore, fetchMyProfile } from '../lib/profiles';
 import { fetchMyRoundsForUser } from '../lib/rounds';
-import { fetchMySocialGroupsIntoStore } from '../lib/socialGroups';
+import {
+  attachSocialGroupsRealtimeSync,
+  fetchInboundGroupInvitesIntoStore,
+  fetchMySocialGroupsIntoStore,
+} from '../lib/socialGroups';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
 
@@ -70,6 +74,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         await syncProfileIntoStore();
         await fetchMySocialGroupsIntoStore();
+        await fetchInboundGroupInvitesIntoStore();
         useAppStore.getState().recomputeGroupsFromYou();
       }
       setSession(data.session);
@@ -89,7 +94,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         await syncProfileIntoStore();
         await fetchMySocialGroupsIntoStore();
+        await fetchInboundGroupInvitesIntoStore();
         useAppStore.getState().recomputeGroupsFromYou();
+      } else if (!next?.user) {
+        useAppStore.getState().setInboundGroupInvites([]);
       }
       setSession(next);
     });
@@ -99,6 +107,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       subscription.unsubscribe();
     };
   }, [configured]);
+
+  useEffect(() => {
+    if (!configured || !session?.user) {
+      return;
+    }
+    const s = session;
+    const detach = attachSocialGroupsRealtimeSync(s.access_token);
+    return detach;
+  }, [configured, session?.user?.id, session?.access_token]);
 
   useEffect(() => {
     if (!configured || loading || !navReady) return;
@@ -141,6 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     await syncProfileIntoStore();
     await fetchMySocialGroupsIntoStore();
+    await fetchInboundGroupInvitesIntoStore();
     useAppStore.getState().recomputeGroupsFromYou();
   }, [configured, session]);
 

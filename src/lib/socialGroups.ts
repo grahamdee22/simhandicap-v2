@@ -8,6 +8,7 @@ import {
   type FriendGroup,
   type GroupMember,
   type HeadToHead,
+  type InboundGroupInvite,
   type SimRound,
 } from '../store/useAppStore';
 
@@ -106,6 +107,41 @@ export async function fetchMySocialGroupsIntoStore(): Promise<void> {
     .select('id, display_name, preferred_platform, ghin_index')
     .in('id', userIds);
 
+  const { data: gpiRows, error: gpiErr } = await supabase
+    .from('group_pending_invites')
+    .select('id, group_id, invitee_display_snapshot')
+    .in('group_id', groupIds)
+    .eq('status', 'pending');
+
+  if (gpiErr) {
+    console.warn('[socialGroups] pending in-app invites', gpiErr.message);
+  }
+
+  const { data: sgiRows, error: sgiErr } = await supabase
+    .from('social_group_invites')
+    .select('id, group_id, email')
+    .in('group_id', groupIds)
+    .eq('status', 'open');
+
+  if (sgiErr) {
+    console.warn('[socialGroups] email invites', sgiErr.message);
+  }
+
+  const pendingInAppByGroup = new Map<string, { id: string; label: string }[]>();
+  for (const row of gpiRows ?? []) {
+    const label = (row.invitee_display_snapshot as string | null)?.trim() || 'Invited member';
+    const list = pendingInAppByGroup.get(row.group_id) ?? [];
+    list.push({ id: row.id as string, label });
+    pendingInAppByGroup.set(row.group_id, list);
+  }
+
+  const pendingEmailByGroup = new Map<string, { id: string; email: string }[]>();
+  for (const row of sgiRows ?? []) {
+    const list = pendingEmailByGroup.get(row.group_id) ?? [];
+    list.push({ id: row.id as string, email: String(row.email) });
+    pendingEmailByGroup.set(row.group_id, list);
+  }
+
   const profileById = new Map(
     (profilesRows ?? []).map((p) => [
       p.id,
@@ -130,7 +166,10 @@ export async function fetchMySocialGroupsIntoStore(): Promise<void> {
     return {
       id: gr.id,
       name: gr.name,
+      createdByUserId: gr.created_by,
       members,
+      pendingInApp: pendingInAppByGroup.get(gr.id),
+      pendingEmail: pendingEmailByGroup.get(gr.id),
       lastRoundSummary: `${members.length} member${members.length === 1 ? '' : 's'}`,
       headToHead: [],
     };
@@ -138,6 +177,121 @@ export async function fetchMySocialGroupsIntoStore(): Promise<void> {
 
   friendGroups.sort((a, b) => a.name.localeCompare(b.name));
   useAppStore.getState().setGroups(friendGroups);
+}
+
+let socialRealtimeDebounce: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Subscribes to crew membership / in-app invite changes so signed-in clients
+ * (e.g. inviter on Social while invitee accepts elsewhere) refetch store data.
+ * Pass the current JWT so Realtime applies RLS and delivers `postgres_changes`.
+ * Call the returned function on sign-out or when replacing the session.
+ */
+export function attachSocialGroupsRealtimeSync(accessToken: string | undefined): () => void {
+  const client = supabase;
+  if (!client) {
+    return () => {};
+  }
+
+  let cancelled = false;
+  let channel: ReturnType<typeof client.channel> | null = null;
+
+  const scheduleRefetch = (): void => {
+    if (socialRealtimeDebounce != null) {
+      clearTimeout(socialRealtimeDebounce);
+    }
+    socialRealtimeDebounce = setTimeout(() => {
+      socialRealtimeDebounce = null;
+      void (async () => {
+        await fetchMySocialGroupsIntoStore();
+        await fetchInboundGroupInvitesIntoStore();
+        useAppStore.getState().recomputeGroupsFromYou();
+      })();
+    }, 280);
+  };
+
+  void client.realtime.setAuth(accessToken ?? null).then(() => {
+    if (cancelled) return;
+    channel = client
+      .channel('social-groups-realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'group_members' },
+        scheduleRefetch
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'group_pending_invites' },
+        scheduleRefetch
+      )
+      .subscribe();
+  });
+
+  return () => {
+    cancelled = true;
+    if (socialRealtimeDebounce != null) {
+      clearTimeout(socialRealtimeDebounce);
+      socialRealtimeDebounce = null;
+    }
+    if (channel) {
+      void client.removeChannel(channel);
+      channel = null;
+    }
+  };
+}
+
+export async function fetchInboundGroupInvitesIntoStore(): Promise<void> {
+  if (!supabase) {
+    useAppStore.getState().setInboundGroupInvites([]);
+    return;
+  }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    useAppStore.getState().setInboundGroupInvites([]);
+    return;
+  }
+
+  const { data, error } = await supabase
+    .from('group_pending_invites')
+    .select(
+      `
+      id,
+      group_id,
+      inviter_display_snapshot,
+      social_groups ( name )
+    `
+    )
+    .eq('invitee_user_id', user.id)
+    .eq('status', 'pending');
+
+  if (error) {
+    console.warn('[socialGroups] inbound invites', error.message);
+    useAppStore.getState().setInboundGroupInvites([]);
+    return;
+  }
+
+  const rows = (data ?? []) as Record<string, unknown>[];
+
+  const groupNameFromJoin = (rel: unknown): string => {
+    if (rel == null) return '';
+    if (Array.isArray(rel)) {
+      const first = rel[0] as { name?: string } | undefined;
+      return first?.name?.trim() ?? '';
+    }
+    const o = rel as { name?: string };
+    return o.name?.trim() ?? '';
+  };
+
+  const invites: InboundGroupInvite[] = rows.map((row) => ({
+    id: String(row.id),
+    groupId: String(row.group_id),
+    groupName: groupNameFromJoin(row.social_groups) || 'Group',
+    inviterName: String(row.inviter_display_snapshot ?? '').trim() || 'Someone',
+  }));
+
+  useAppStore.getState().setInboundGroupInvites(invites);
 }
 
 export async function fetchGroupMatchesFromSupabase(groupId: string): Promise<HeadToHead[]> {
@@ -205,8 +359,8 @@ export async function insertSocialMatchFromRound(round: SimRound, displayName: s
 }
 
 /**
- * Creates a crew: 1) insert `social_groups`, 2) insert creator into `group_members`.
- * If step 2 fails, attempts to delete the new row from `social_groups` (requires DELETE RLS for creator).
+ * Creates a crew via `create_social_group` RPC (migration 013): avoids RLS recursion from
+ * `social_groups` policies that scan `group_members` during client-side INSERT checks.
  */
 export async function createSocialGroup(name: string): Promise<{ id: string } | { error: string }> {
   if (!supabase) return { error: 'Supabase is not configured' };
@@ -221,43 +375,34 @@ export async function createSocialGroup(name: string): Promise<{ id: string } | 
     return { error: userErr?.message ?? 'Not signed in' };
   }
 
-  const displayNameSnapshot = useAppStore.getState().displayName.trim() || null;
-
-  const { data: g, error: gErr } = await supabase
-    .from('social_groups')
-    .insert({ name: trimmed, created_by: user.id })
-    .select('id')
-    .single();
-
-  if (gErr || !g?.id) {
-    return { error: gErr?.message ?? 'Could not create group' };
-  }
-
-  const groupId = g.id;
-
-  const { error: mErr } = await supabase.from('group_members').insert({
-    group_id: groupId,
-    user_id: user.id,
-    display_name_snapshot: displayNameSnapshot,
+  const { data: groupId, error: rpcErr } = await supabase.rpc('create_social_group', {
+    p_name: trimmed,
   });
 
-  if (mErr) {
-    console.warn('[socialGroups] group_members insert failed', mErr.message);
-    const { error: delErr } = await supabase
-      .from('social_groups')
-      .delete()
-      .eq('id', groupId)
-      .eq('created_by', user.id);
-    if (delErr) {
-      console.warn('[socialGroups] rollback: could not delete orphan group', delErr.message);
-    }
-    return { error: mErr.message };
+  if (rpcErr) {
+    return { error: rpcErr.message };
+  }
+
+  if (groupId == null || typeof groupId !== 'string') {
+    return { error: 'Could not create group' };
   }
 
   return { id: groupId };
 }
 
-export async function sendSocialGroupInvite(groupId: string, email: string): Promise<{ error?: string }> {
+export type SendGroupInviteResult = {
+  kind: 'in_app' | 'email' | 'already_member';
+  email: string;
+  duplicate?: boolean;
+};
+
+/**
+ * Sends a crew invite: registered users get an in-app pending row (RPC); others get DB email row + client mailto.
+ */
+export async function sendGroupInvite(
+  groupId: string,
+  email: string
+): Promise<{ error?: string; result?: SendGroupInviteResult }> {
   if (!supabase) return { error: 'Supabase is not configured' };
   const {
     data: { user },
@@ -265,12 +410,53 @@ export async function sendSocialGroupInvite(groupId: string, email: string): Pro
   } = await supabase.auth.getUser();
   if (userErr || !user) return { error: 'Not signed in' };
 
-  const { error } = await supabase.from('social_group_invites').insert({
-    group_id: groupId,
-    email: email.trim().toLowerCase(),
-    invited_by: user.id,
+  const { data, error } = await supabase.rpc('send_group_invite', {
+    p_group_id: groupId,
+    p_email: email.trim(),
   });
 
+  if (error) return { error: error.message };
+
+  const row = data as { kind?: string; email?: string; duplicate?: boolean } | null;
+  if (!row?.kind || typeof row.email !== 'string') {
+    return { error: 'Unexpected server response' };
+  }
+
+  const k = row.kind;
+  if (k === 'already_member') {
+    return { result: { kind: 'already_member', email: row.email } };
+  }
+  if (k === 'in_app') {
+    return { result: { kind: 'in_app', email: row.email, duplicate: row.duplicate === true } };
+  }
+  if (k === 'email') {
+    return { result: { kind: 'email', email: row.email, duplicate: row.duplicate === true } };
+  }
+  return { error: 'Unknown invite type' };
+}
+
+export async function respondToGroupInvite(
+  inviteId: string,
+  accept: boolean
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: 'Supabase is not configured' };
+  const { error } = await supabase.rpc('respond_group_invite', {
+    p_invite_id: inviteId,
+    p_accept: accept,
+  });
+  if (error) return { error: error.message };
+  return {};
+}
+
+export async function cancelOutboundGroupInvite(
+  kind: 'in_app' | 'email',
+  id: string
+): Promise<{ error?: string }> {
+  if (!supabase) return { error: 'Supabase is not configured' };
+  const { error } = await supabase.rpc('cancel_outbound_group_invite', {
+    p_kind: kind,
+    p_id: id,
+  });
   if (error) return { error: error.message };
   return {};
 }

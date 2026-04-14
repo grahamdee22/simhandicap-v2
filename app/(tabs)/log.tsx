@@ -1,7 +1,10 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, Pressable as RNPressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Pressable } from 'react-native-gesture-handler';
+import { Modal, Platform, ScrollView as RNScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView as GHScrollView } from 'react-native-gesture-handler';
+
+/** RN scroll on web (RNGH scroll + web can swallow taps); RNGH scroll on native (works with GH Pressable under root). */
+const LogScrollView = Platform.OS === 'web' ? RNScrollView : GHScrollView;
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
@@ -362,7 +365,10 @@ export default function LogRoundScreen() {
 
     const finishSave = async () => {
       const snap = latestSaveRef.current;
-      if (!snap?.course) return;
+      if (!snap?.course) {
+        showAppAlert('Course required', 'Select a course from the list.');
+        return;
+      }
 
       if (Platform.OS === 'web') {
         const el = grossScoreInputRef.current as unknown as HTMLInputElement | null;
@@ -452,15 +458,17 @@ export default function LogRoundScreen() {
 
   return (
     <ContentWidth bg={colors.surface}>
+      <>
       <View style={styles.root}>
-        <ScrollView
+        <LogScrollView
           style={styles.scroll}
           contentContainerStyle={{
             paddingHorizontal: gutter,
             paddingTop: Math.max(gutter, 14),
             paddingBottom: insets.bottom + 100,
           }}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
+          nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
           <View style={isWide ? styles.pickRow : undefined}>
@@ -609,7 +617,7 @@ export default function LogRoundScreen() {
                 })}
               </View>
             ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holeScroll}>
+              <RNScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holeScroll}>
                 {holeScores.map((h, i) => {
                   const par = pars[i] ?? 4;
                   return (
@@ -627,7 +635,7 @@ export default function LogRoundScreen() {
                     </View>
                   );
                 })}
-              </ScrollView>
+              </RNScrollView>
             )}
             <View style={styles.totals}>
               <Text style={styles.totTxt}>Out {sum(front) || '—'}</Text>
@@ -757,18 +765,24 @@ export default function LogRoundScreen() {
           </View>
         ) : null}
 
-        <RNPressable
-          style={[styles.saveBtn, isWide && styles.saveBtnLg]}
+        <Pressable
+          style={({ pressed }) => [
+            styles.saveBtn,
+            isWide && styles.saveBtnLg,
+            pressed && styles.saveBtnPressed,
+          ]}
           onPress={onSave}
           accessibilityRole="button"
           accessibilityLabel={existing ? 'Update round' : 'Save round'}
+          hitSlop={{ top: 8, bottom: 12, left: 8, right: 8 }}
         >
           <Text style={styles.saveTxt}>{existing ? 'Save changes' : 'Save round'}</Text>
-        </RNPressable>
+        </Pressable>
         <Text style={styles.saveHint}>
           Saves to this device, opens Round analysis, and updates your sim index, home chart, and profile.
         </Text>
-        </ScrollView>
+        </LogScrollView>
+      </View>
 
       <Modal
         visible={platOpen}
@@ -807,7 +821,7 @@ export default function LogRoundScreen() {
           <Pressable style={styles.modalBackdropPress} onPress={() => setH2hModalOpen(false)} />
           <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
             <Text style={styles.modalTitle}>Head-to-head</Text>
-            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            <RNScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
               <Pressable
                 style={styles.modalRow}
                 onPress={() => {
@@ -853,7 +867,7 @@ export default function LogRoundScreen() {
                   </View>
                 );
               })}
-            </ScrollView>
+            </RNScrollView>
           </View>
         </View>
       </Modal>
@@ -878,7 +892,7 @@ export default function LogRoundScreen() {
               autoCorrect={false}
               clearButtonMode="while-editing"
             />
-            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            <RNScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
               {coursesForPicker.length === 0 ? (
                 <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
               ) : (
@@ -896,11 +910,11 @@ export default function LogRoundScreen() {
                   </Pressable>
                 ))
               )}
-            </ScrollView>
+            </RNScrollView>
           </View>
         </View>
       </Modal>
-      </View>
+    </>
     </ContentWidth>
   );
 }
@@ -1062,7 +1076,15 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     alignItems: 'center',
     marginTop: 16,
+    minHeight: 48,
+    justifyContent: 'center',
+    zIndex: 10,
+    ...Platform.select({
+      web: { cursor: 'pointer' as const },
+      default: {},
+    }),
   },
+  saveBtnPressed: { opacity: 0.88 },
   saveBtnLg: { paddingVertical: 14, maxWidth: 480, alignSelf: 'center', width: '100%' },
   saveTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
   saveHint: { fontSize: 11, color: colors.muted, textAlign: 'center', marginTop: 10, lineHeight: 15, paddingHorizontal: 8 },
