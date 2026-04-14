@@ -11,7 +11,7 @@ export default function AuthLayout() {
         contentStyle: { flex: 1, backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} />
+      <Stack.Screen name="sign-in" options={{ headerShown: false }} />
       <Stack.Screen name="sign-up" options={{ title: 'Create account' }} />
     </Stack>
   );

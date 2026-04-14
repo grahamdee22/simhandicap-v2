@@ -49,10 +49,22 @@ export default function SignInScreen() {
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[
           styles.scroll,
-          { paddingTop: 16, paddingBottom: insets.bottom + 28 },
+          {
+            paddingTop: Math.max(20, insets.top + 12),
+            paddingBottom: insets.bottom + 28,
+          },
         ]}
       >
         <AuthBrandBanner variant="signIn" />
+
+        <View style={styles.signUpPrompt}>
+          <Text style={styles.signUpPromptText}>New here? </Text>
+          <Link href="/(auth)/sign-up" asChild>
+            <Pressable accessibilityRole="link" hitSlop={8} style={({ pressed }) => [pressed && styles.signUpLinkPressed]}>
+              <Text style={styles.signUpLink}>Create an account</Text>
+            </Pressable>
+          </Link>
+        </View>
 
         <Text style={styles.sectionTitle}>Sign in to your account</Text>
 
@@ -91,15 +103,6 @@ export default function SignInScreen() {
             <Text style={styles.primaryTxt}>Sign in</Text>
           )}
         </Pressable>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerLine}>New here? Create an account</Text>
-          <Link href="/(auth)/sign-up" asChild>
-            <Pressable style={styles.footerCta}>
-              <Text style={styles.footerCtaTxt}>Create an account</Text>
-            </Pressable>
-          </Link>
-        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -108,11 +111,41 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   scroll: { paddingHorizontal: 20, maxWidth: 480, width: '100%', alignSelf: 'center' },
+  signUpPrompt: {
+    marginTop: 20,
+    marginBottom: 28,
+    paddingVertical: 16,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    maxWidth: '100%',
+    backgroundColor: colors.accentSoft,
+    borderRadius: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.sage,
+  },
+  signUpPromptText: {
+    fontSize: 17,
+    fontWeight: '600',
+    color: colors.ink,
+    lineHeight: 24,
+  },
+  signUpLink: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: colors.header,
+    textDecorationLine: 'underline',
+    lineHeight: 24,
+  },
+  signUpLinkPressed: { opacity: 0.65 },
   sectionTitle: {
     fontSize: 20,
     fontWeight: '700',
     color: colors.ink,
-    marginTop: 20,
+    marginTop: 4,
     marginBottom: 22,
     letterSpacing: -0.3,
   },
@@ -143,30 +176,4 @@ const styles = StyleSheet.create({
   },
   primaryDisabled: { opacity: 0.7 },
   primaryTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
-  footer: {
-    marginTop: 28,
-    alignItems: 'center',
-    gap: 12,
-  },
-  footerLine: {
-    fontSize: 15,
-    color: colors.muted,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  footerCta: {
-    width: '100%',
-    maxWidth: 320,
-    borderWidth: 2,
-    borderColor: colors.sage,
-    backgroundColor: colors.accentSoft,
-    borderRadius: 12,
-    paddingVertical: 14,
-    alignItems: 'center',
-  },
-  footerCtaTxt: {
-    color: colors.accent,
-    fontWeight: '700',
-    fontSize: 16,
-  },
 });
