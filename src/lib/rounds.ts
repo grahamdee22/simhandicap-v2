@@ -50,7 +50,7 @@ function normalizeHoleScores(raw: unknown): (number | null)[] {
   return out;
 }
 
-type DbRoundRow = {
+export type DbRoundRow = {
   id: string;
   user_id: string;
   course_id: string;

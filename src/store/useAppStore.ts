@@ -50,6 +50,8 @@ export type SimRound = {
 
 export type GroupMember = {
   id: string;
+  /** Supabase `auth.users.id` (stable across crews). */
+  userId: string;
   displayName: string;
   initials: string;
   platform: PlatformId;
@@ -428,6 +430,7 @@ export const useAppStore = create<AppState>()(
               members: [
                 {
                   id: newId(),
+                  userId: '',
                   displayName: `${you} (you)`,
                   initials: ini,
                   platform: 'Trackman',

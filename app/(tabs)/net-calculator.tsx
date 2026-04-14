@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useFocusEffect } from '@react-navigation/native';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
   Platform,
@@ -10,12 +11,15 @@ import {
 } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { GolferPickerModal } from '../../src/components/GolferPickerModal';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { COURSE_SEEDS, courseMatchesSearch, getCourseById, ratingForCourse } from '../../src/lib/courses';
-import { DUMMY_NET_GOLFERS, dummyGolferById } from '../../src/lib/dummyNetGolfers';
+import type { NetPickerGolfer } from '../../src/lib/netPickerGolfer';
+import { fetchMySocialGroupsIntoStore } from '../../src/lib/socialGroups';
+import { isSupabaseConfigured } from '../../src/lib/supabase';
 import {
   courseParFromSeed,
   formatHolesStrokeSummary,
@@ -32,7 +36,7 @@ import {
   type Wind,
 } from '../../src/lib/handicap';
 import { useResponsive } from '../../src/lib/responsive';
-import { initialsFrom } from '../../src/store/useAppStore';
+import { initialsFrom, useAppStore, type GroupMember } from '../../src/store/useAppStore';
 
 const PUTTING_OPTS: { key: PuttingMode; label: string }[] = [
   { key: 'auto_2putt', label: 'Auto 2-putt' },
@@ -60,14 +64,28 @@ const MULL_OPTS: { key: Mulligans; label: string }[] = [
 
 type PlayerSlot =
   | { kind: 'empty' }
-  | { kind: 'pick'; golferId: string }
+  | { kind: 'pick'; userId: string }
   | { kind: 'manual'; name: string; index: string };
 
-function slotToForm(slot: PlayerSlot): { name: string; indexStr: string } {
+function slotToForm(slot: PlayerSlot, roster: GroupMember[]): { name: string; indexStr: string } {
   if (slot.kind === 'empty') return { name: '', indexStr: '' };
   if (slot.kind === 'manual') return { name: slot.name, indexStr: slot.index };
-  const g = dummyGolferById(slot.golferId);
-  return g ? { name: g.displayName, indexStr: formatHandicapIndexDisplay(g.index) } : { name: '', indexStr: '' };
+  const m = roster.find((x) => x.userId === slot.userId);
+  if (!m) return { name: '', indexStr: '' };
+  return {
+    name: m.displayName,
+    indexStr: m.index != null ? formatHandicapIndexDisplay(m.index) : '',
+  };
+}
+
+function memberToPickerGolfer(m: GroupMember): NetPickerGolfer {
+  return {
+    id: m.userId,
+    displayName: m.displayName,
+    initials: m.initials,
+    index: m.index,
+    platform: m.platform,
+  };
 }
 
 function giftPhrase(
@@ -88,10 +106,61 @@ type PickerTarget = 1 | 2 | null;
 export default function NetCalculatorScreen() {
   const insets = useSafeAreaInsets();
   const { gutter, isWide } = useResponsive();
+  const { session } = useAuth();
+  const groups = useAppStore((s) => s.groups);
+  const supabaseOn = isSupabaseConfigured();
 
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [groupOpen, setGroupOpen] = useState(false);
   const [p1Slot, setP1Slot] = useState<PlayerSlot>({ kind: 'empty' });
   const [p2Slot, setP2Slot] = useState<PlayerSlot>({ kind: 'empty' });
   const [pickerTarget, setPickerTarget] = useState<PickerTarget>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!supabaseOn || !session?.user) return;
+      void (async () => {
+        await fetchMySocialGroupsIntoStore();
+        useAppStore.getState().recomputeGroupsFromYou();
+      })();
+    }, [supabaseOn, session?.user?.id])
+  );
+
+  useEffect(() => {
+    if (groups.length === 0) {
+      setSelectedGroupId('');
+      return;
+    }
+    setSelectedGroupId((prev) => (prev && groups.some((g) => g.id === prev) ? prev : groups[0].id));
+  }, [groups]);
+
+  useEffect(() => {
+    setP1Slot({ kind: 'empty' });
+    setP2Slot({ kind: 'empty' });
+  }, [selectedGroupId]);
+
+  const selectedGroup = useMemo(
+    () => groups.find((g) => g.id === selectedGroupId),
+    [groups, selectedGroupId]
+  );
+
+  const rosterSorted = useMemo(() => {
+    const raw = selectedGroup?.members ?? [];
+    const withIds = raw.filter((m) => m.userId.length > 0);
+    return [...withIds].sort((a, b) => {
+      if (a.isYou && !b.isYou) return -1;
+      if (!a.isYou && b.isYou) return 1;
+      return a.displayName.localeCompare(b.displayName);
+    });
+  }, [selectedGroup]);
+
+  const pickerGolfers = useMemo(() => rosterSorted.map(memberToPickerGolfer), [rosterSorted]);
+
+  const rosterUnavailable =
+    !session?.user ||
+    !supabaseOn ||
+    groups.length === 0 ||
+    rosterSorted.length === 0;
 
   const [courseId, setCourseId] = useState('pebble');
   const [platform, setPlatform] = useState<PlatformId>('Trackman');
@@ -115,8 +184,8 @@ export default function NetCalculatorScreen() {
     [courseSearchQuery]
   );
 
-  const p1Form = useMemo(() => slotToForm(p1Slot), [p1Slot]);
-  const p2Form = useMemo(() => slotToForm(p2Slot), [p2Slot]);
+  const p1Form = useMemo(() => slotToForm(p1Slot, rosterSorted), [p1Slot, rosterSorted]);
+  const p2Form = useMemo(() => slotToForm(p2Slot, rosterSorted), [p2Slot, rosterSorted]);
   const p1Name = p1Form.name;
   const p1Idx = p1Form.indexStr;
   const p2Name = p2Form.name;
@@ -182,10 +251,10 @@ export default function NetCalculatorScreen() {
 
   const excludePickerIds = useMemo(() => {
     if (pickerTarget === 1) {
-      return p2Slot.kind === 'pick' ? [p2Slot.golferId] : [];
+      return p2Slot.kind === 'pick' ? [p2Slot.userId] : [];
     }
     if (pickerTarget === 2) {
-      return p1Slot.kind === 'pick' ? [p1Slot.golferId] : [];
+      return p1Slot.kind === 'pick' ? [p1Slot.userId] : [];
     }
     return [];
   }, [pickerTarget, p1Slot, p2Slot]);
@@ -247,15 +316,15 @@ export default function NetCalculatorScreen() {
               setPickerTarget(which);
             }}
           >
-            <Text style={styles.rosterLinkTxt}>Choose from SimCap roster</Text>
+            <Text style={styles.rosterLinkTxt}>Choose from group roster</Text>
           </Pressable>
         </View>
       );
     }
 
     if (slot.kind === 'pick') {
-      const g = dummyGolferById(slot.golferId);
-      if (!g) {
+      const m = rosterSorted.find((x) => x.userId === slot.userId);
+      if (!m) {
         return (
           <Pressable style={styles.slotEmpty} onPress={open}>
             <Text style={styles.slotEmptyTitle}>Tap to choose</Text>
@@ -266,18 +335,18 @@ export default function NetCalculatorScreen() {
       return (
         <Pressable style={styles.slotCard} onPress={open}>
           <View style={styles.slotAvatar}>
-            <Text style={styles.slotAvatarTxt}>{g.initials}</Text>
+            <Text style={styles.slotAvatarTxt}>{m.initials}</Text>
           </View>
           <View style={styles.slotBody}>
             <Text style={styles.slotName} numberOfLines={1}>
-              {g.displayName}
+              {m.displayName}
             </Text>
             <View style={styles.slotMetaRow}>
               <View style={styles.slotIdxPill}>
-                <Text style={styles.slotIdxPillTxt}>{formatHandicapIndexDisplay(g.index)}</Text>
+                <Text style={styles.slotIdxPillTxt}>{formatHandicapIndexDisplay(m.index)}</Text>
               </View>
               <Text style={styles.slotPlat} numberOfLines={1}>
-                {g.platform}
+                {m.platform}
               </Text>
             </View>
           </View>
@@ -289,7 +358,7 @@ export default function NetCalculatorScreen() {
     return (
       <Pressable style={styles.slotEmpty} onPress={open}>
         <Text style={styles.slotEmptyTitle}>Tap to choose</Text>
-        <Text style={styles.slotEmptyHint}>Player {which} · SimCap roster or enter manually</Text>
+        <Text style={styles.slotEmptyHint}>Player {which} · Group roster or enter manually</Text>
       </Pressable>
     );
   };
@@ -313,6 +382,21 @@ export default function NetCalculatorScreen() {
 
         <View style={styles.playersCard}>
           <Text style={styles.cardSection}>Players</Text>
+          {rosterUnavailable ? (
+            <Text style={styles.rosterHint}>Start groups with friends to get matches going</Text>
+          ) : null}
+          <Pressable
+            style={[styles.picker, rosterUnavailable && styles.pickerDisabled]}
+            onPress={() => {
+              if (!rosterUnavailable) setGroupOpen(true);
+            }}
+          >
+            <Text style={styles.pickerLbl}>Crew</Text>
+            <Text style={styles.pickerVal} numberOfLines={1}>
+              {selectedGroup?.name ?? 'Select'}
+            </Text>
+            <Text style={styles.chev}>▾</Text>
+          </Pressable>
           <Text style={styles.fieldLbl}>Player 1</Text>
           {renderSlot(1, p1Slot, setP1Slot)}
           <Text style={[styles.fieldLbl, styles.fieldSp]}>Player 2</Text>
@@ -411,18 +495,47 @@ export default function NetCalculatorScreen() {
       <GolferPickerModal
         visible={pickerTarget != null}
         title={pickerTarget === 2 ? 'Choose player 2' : 'Choose player 1'}
-        golfers={DUMMY_NET_GOLFERS}
+        golfers={pickerGolfers}
         excludeIds={excludePickerIds}
         onClose={closePicker}
         onSelect={(g) => {
-          if (pickerTarget === 1) setP1Slot({ kind: 'pick', golferId: g.id });
-          if (pickerTarget === 2) setP2Slot({ kind: 'pick', golferId: g.id });
+          if (pickerTarget === 1) setP1Slot({ kind: 'pick', userId: g.id });
+          if (pickerTarget === 2) setP2Slot({ kind: 'pick', userId: g.id });
         }}
         onEnterManually={() => {
           if (pickerTarget === 1) setP1Slot({ kind: 'manual', name: '', index: '' });
           if (pickerTarget === 2) setP2Slot({ kind: 'manual', name: '', index: '' });
         }}
       />
+
+      <Modal
+        visible={groupOpen}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setGroupOpen(false)}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdropPress} onPress={() => setGroupOpen(false)} />
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.modalTitle}>Crew</Text>
+            <ScrollView keyboardShouldPersistTaps="handled">
+              {groups.map((g) => (
+                <Pressable
+                  key={g.id}
+                  style={styles.modalRow}
+                  onPress={() => {
+                    setSelectedGroupId(g.id);
+                    setGroupOpen(false);
+                  }}
+                >
+                  <Text style={styles.modalRowTxt}>{g.name}</Text>
+                  {selectedGroupId === g.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={courseOpen}
@@ -657,6 +770,15 @@ const styles = StyleSheet.create({
   metaMuted: { fontSize: 10, color: colors.subtle, lineHeight: 14 },
   needInput: { fontSize: 12, color: colors.subtle, fontStyle: 'italic', marginBottom: 24 },
   needInputTop: { marginBottom: 14 },
+  rosterHint: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    textAlign: 'center',
+    marginBottom: 12,
+    lineHeight: 18,
+  },
+  pickerDisabled: { opacity: 0.45 },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   modalBackdropPress: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
   modalSheet: {

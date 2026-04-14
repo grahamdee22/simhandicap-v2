@@ -12,16 +12,16 @@ import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
-import type { DummyNetGolfer } from '../lib/dummyNetGolfers';
+import type { NetPickerGolfer } from '../lib/netPickerGolfer';
 
 type Props = {
   visible: boolean;
   title: string;
-  golfers: DummyNetGolfer[];
+  golfers: NetPickerGolfer[];
   /** IDs to hide (e.g. other slot already picked this golfer). */
   excludeIds?: string[];
   onClose: () => void;
-  onSelect: (g: DummyNetGolfer) => void;
+  onSelect: (g: NetPickerGolfer) => void;
   onEnterManually: () => void;
 };
 
@@ -101,7 +101,11 @@ export function GolferPickerModal({
               </Pressable>
             )}
             ListEmptyComponent={
-              <Text style={styles.empty}>No golfers match “{query.trim()}”.</Text>
+              <Text style={styles.empty}>
+                {golfers.length === 0
+                  ? 'No one in this crew yet. Use Enter manually or invite friends in Social.'
+                  : `No golfers match “${query.trim()}”.`}
+              </Text>
             }
           />
           <Pressable

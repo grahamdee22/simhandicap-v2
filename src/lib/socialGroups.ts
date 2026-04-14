@@ -1,5 +1,6 @@
 import { PLATFORMS, type PlatformId } from './constants';
 import { headToHeadFromLoggedRound } from './h2hFromRound';
+import { dbRowToSimRound, type DbRoundRow } from './rounds';
 import { supabase } from './supabase';
 import {
   currentIndexFromRounds,
@@ -25,7 +26,7 @@ function mapProfileToMember(
   },
   profile: { display_name: string; preferred_platform: string | null; ghin_index: number | null } | undefined,
   currentUserId: string,
-  rounds: SimRound[]
+  memberRounds: SimRound[]
 ): GroupMember {
   const isYou = row.user_id === currentUserId;
   const name =
@@ -35,14 +36,15 @@ function mapProfileToMember(
   const platform: PlatformId =
     isPlatformId(profile?.preferred_platform) ? profile.preferred_platform : 'Trackman';
   const ghin = profile?.ghin_index != null ? Number(profile.ghin_index) : null;
-  const simIdx = isYou ? currentIndexFromRounds(rounds) : null;
+  const simIdx = currentIndexFromRounds(memberRounds);
   const index = simIdx ?? (ghin != null && Number.isFinite(ghin) ? ghin : null);
   return {
     id: row.id,
+    userId: row.user_id,
     displayName: isYou ? `${name} (you)` : name,
     initials: initialsFrom(name),
     platform,
-    roundsLogged: isYou ? rounds.length : 0,
+    roundsLogged: memberRounds.length,
     index,
     trend: 'flat',
     isYou,
@@ -153,11 +155,34 @@ export async function fetchMySocialGroupsIntoStore(): Promise<void> {
     ])
   );
 
-  const rounds = useAppStore.getState().rounds;
+  const roundsByUserId = new Map<string, SimRound[]>();
+  if (userIds.length > 0) {
+    const { data: roundsRows, error: rErr } = await supabase
+      .from('rounds')
+      .select(
+        'id, user_id, course_id, course_name, platform, gross_score, hole_scores, putting_mode, pin_placement, wind, mulligans, difficulty_modifier, differential, raw_differential, course_rating, slope, tee_name, played_at, created_at, h2h_group_id, h2h_opponent_member_id, h2h_opponent_display_name'
+      )
+      .in('user_id', userIds)
+      .order('played_at', { ascending: true });
+
+    if (rErr) {
+      console.warn('[socialGroups] cohort rounds', rErr.message);
+    } else {
+      for (const row of roundsRows ?? []) {
+        const uid = row.user_id as string;
+        const list = roundsByUserId.get(uid) ?? [];
+        list.push(dbRowToSimRound(row as DbRoundRow));
+        roundsByUserId.set(uid, list);
+      }
+    }
+  }
+
   const friendGroups: FriendGroup[] = groupsRows.map((gr) => {
     const membersRaw = allMembers.filter((m) => m.group_id === gr.id);
     const members: GroupMember[] = membersRaw
-      .map((m) => mapProfileToMember(m, profileById.get(m.user_id), user.id, rounds))
+      .map((m) =>
+        mapProfileToMember(m, profileById.get(m.user_id), user.id, roundsByUserId.get(m.user_id) ?? [])
+      )
       .sort((a, b) => {
         const ai = a.index ?? 999;
         const bi = b.index ?? 999;
