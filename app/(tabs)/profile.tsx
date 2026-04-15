@@ -181,6 +181,29 @@ export default function ProfileScreen() {
             : 'Rounds and display name are stored on this device.'}
         </Text>
 
+        <View style={styles.card}>
+          <Pressable
+            onPress={() => router.push('/(tabs)/contact')}
+            style={({ pressed }) => [
+              styles.lastRound,
+              styles.contactFeedbackRow,
+              pressed && styles.contactFeedbackRowPressed,
+            ]}
+            accessibilityRole="button"
+            accessibilityLabel="Contact us and send feedback"
+          >
+            <View style={styles.lastRoundTxt}>
+              <Text style={styles.lastRoundK}>Contact us / Feedback</Text>
+              <Text style={styles.lastRoundTitle} numberOfLines={2}>
+                Bugs, ideas, or how the handicap math feels.
+              </Text>
+            </View>
+            <View style={styles.contactFeedbackChevron}>
+              <IconChevronForward size={18} color={colors.subtle} />
+            </View>
+          </Pressable>
+        </View>
+
         {signedIn ? (
           <View style={styles.card}>
             <Text style={styles.lbl}>Account</Text>
@@ -484,6 +507,16 @@ const styles = StyleSheet.create({
   platformRowOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
   platformRowTxt: { fontSize: 15, fontWeight: '600', color: colors.ink },
   platformRowTxtOn: { color: colors.accentDark },
+  /** Same row pattern as "Most recent"; no top rule — nothing above inside this card. */
+  contactFeedbackRow: {
+    marginTop: 0,
+    paddingTop: 0,
+    borderTopWidth: 0,
+    width: '100%',
+    alignSelf: 'stretch',
+  },
+  contactFeedbackRowPressed: { opacity: 0.92 },
+  contactFeedbackChevron: { flexShrink: 0 },
   statBig: { fontSize: 32, fontWeight: '600', color: colors.ink, marginTop: 4 },
   statLbl: { fontSize: 12, color: colors.muted, marginBottom: 12 },
   lastRound: {

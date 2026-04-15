@@ -5,6 +5,7 @@ import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { HomeHeroInstagramButton } from '../../src/components/HeaderInstagramSimCap';
 import {
   IconChevronForward,
   IconGolf,
@@ -187,13 +188,10 @@ export default function HomeScreen() {
         ]}
       >
         <View style={styles.heroBrandRow}>
-          <SimCapLogoHero
-            style={[
-              styles.heroLogo,
-              { aspectRatio: SIM_CAP_LOGO_ASPECT },
-              isWide && { maxWidth: 300 },
-            ]}
-          />
+          <View style={[styles.heroLogoWrap, isWide && styles.heroLogoWrapWide]}>
+            <SimCapLogoHero style={[styles.heroLogo, { aspectRatio: SIM_CAP_LOGO_ASPECT }]} />
+          </View>
+          <HomeHeroInstagramButton />
         </View>
         <View style={styles.heroBlock}>
           <Text
@@ -420,15 +418,23 @@ const styles = StyleSheet.create({
   hero: { backgroundColor: colors.header, width: '100%' },
   heroBrandRow: {
     flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-start',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     width: '100%',
     marginBottom: 10,
+    gap: 12,
   },
+  /** Keeps wordmark from stretching over the Instagram control (`heroLogo` is width 100% of this box). */
+  heroLogoWrap: {
+    flex: 1,
+    minWidth: 0,
+    maxWidth: 268,
+    alignSelf: 'flex-start',
+  },
+  heroLogoWrapWide: { maxWidth: 300 },
   /** Vector wordmark, transparent — scales with width; height from aspect ratio. */
   heroLogo: {
     width: '100%',
-    maxWidth: 268,
     alignSelf: 'flex-start',
   },
   heroBlock: { width: '100%' },

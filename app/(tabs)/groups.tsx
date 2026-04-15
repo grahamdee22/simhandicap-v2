@@ -97,9 +97,15 @@ export default function GroupsScreen() {
   const [inboundBusy, setInboundBusy] = useState(false);
   const [matches, setMatches] = useState<HeadToHead[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(false);
+  /** Bumped when the Social screen gains focus so head-to-head refetches after tab blur. */
+  const [h2hFocusEpoch, setH2hFocusEpoch] = useState(0);
 
   /** Bumps on blur so in-flight fetches don’t leave `listRefreshing` stuck true (e.g. switch tabs mid-request). */
   const groupsRefreshSessionRef = useRef(0);
+  /** Invalidates in-flight head-to-head fetches (blur, crew change, or stale completion). */
+  const h2hFetchGenRef = useRef(0);
+  /** Tracks which crew `matches` belongs to — avoids a blocking spinner on tab refocus (stale-while-revalidate). */
+  const h2hMatchesGroupIdRef = useRef<string | undefined>(undefined);
 
   const g = groups[tab] ?? groups[0];
 
@@ -138,23 +144,62 @@ export default function GroupsScreen() {
     if (tab >= groups.length) setTab(groups.length - 1);
   }, [groups.length, tab]);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (supabaseOn) {
+        setH2hFocusEpoch((n) => n + 1);
+      }
+      return () => {
+        h2hFetchGenRef.current += 1;
+        setMatchesLoading(false);
+      };
+    }, [supabaseOn])
+  );
+
   useEffect(() => {
     if (!g?.id || !supabaseOn) {
+      h2hFetchGenRef.current += 1;
+      h2hMatchesGroupIdRef.current = undefined;
       setMatches([]);
+      setMatchesLoading(false);
       return;
     }
-    let cancelled = false;
-    setMatchesLoading(true);
-    void fetchGroupMatchesFromSupabase(g.id).then((rows) => {
-      if (!cancelled) {
-        setMatches(rows);
+    const switchedCrew = h2hMatchesGroupIdRef.current !== g.id;
+    if (switchedCrew) {
+      h2hMatchesGroupIdRef.current = g.id;
+      setMatches([]);
+      setMatchesLoading(true);
+    }
+
+    const gen = ++h2hFetchGenRef.current;
+
+    const safetyMs = 25000;
+    const safetyTimer = setTimeout(() => {
+      if (h2hFetchGenRef.current !== gen) return;
+      setMatches([]);
+      setMatchesLoading(false);
+    }, safetyMs);
+
+    void fetchGroupMatchesFromSupabase(g.id)
+      .then((rows) => {
+        clearTimeout(safetyTimer);
+        if (h2hFetchGenRef.current !== gen) return;
+        setMatches(Array.isArray(rows) ? rows : []);
         setMatchesLoading(false);
-      }
-    });
+      })
+      .catch(() => {
+        clearTimeout(safetyTimer);
+        if (h2hFetchGenRef.current !== gen) return;
+        setMatches([]);
+        setMatchesLoading(false);
+      });
+
     return () => {
-      cancelled = true;
+      clearTimeout(safetyTimer);
+      h2hFetchGenRef.current += 1;
+      setMatchesLoading(false);
     };
-  }, [g?.id, supabaseOn]);
+  }, [g?.id, supabaseOn, h2hFocusEpoch]);
 
   const ranked = useMemo(() => {
     if (!g) return [];

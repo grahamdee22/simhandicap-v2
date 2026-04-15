@@ -323,35 +323,43 @@ export async function fetchGroupMatchesFromSupabase(groupId: string): Promise<He
   if (!supabase) return [];
   const { data, error } = await supabase
     .from('social_group_matches')
-    .select('*')
+    .select(
+      'id, course_name, played_at, left_name, left_gross, left_net, left_won, right_name, right_gross, right_net, right_won, conditions_line'
+    )
     .eq('group_id', groupId)
-    .order('played_at', { ascending: false });
+    .order('played_at', { ascending: false })
+    .limit(50);
 
   if (error) {
     console.warn('[socialGroups] matches', error.message);
     return [];
   }
 
-  return (data ?? []).map(
-    (row): HeadToHead => ({
-      id: row.id,
-      courseName: row.course_name,
-      playedAt: row.played_at,
-      left: {
-        name: row.left_name,
-        gross: row.left_gross,
-        net: row.left_net != null ? Number(row.left_net) : null,
-        won: row.left_won,
-      },
-      right: {
-        name: row.right_name,
-        gross: row.right_gross,
-        net: row.right_net != null ? Number(row.right_net) : null,
-        won: row.right_won,
-      },
-      conditionsLine: row.conditions_line ?? '',
-    })
-  );
+  try {
+    return (data ?? []).map(
+      (row): HeadToHead => ({
+        id: row.id,
+        courseName: row.course_name,
+        playedAt: row.played_at,
+        left: {
+          name: row.left_name,
+          gross: row.left_gross,
+          net: row.left_net != null ? Number(row.left_net) : null,
+          won: row.left_won,
+        },
+        right: {
+          name: row.right_name,
+          gross: row.right_gross,
+          net: row.right_net != null ? Number(row.right_net) : null,
+          won: row.right_won,
+        },
+        conditionsLine: row.conditions_line ?? '',
+      })
+    );
+  } catch (e) {
+    console.warn('[socialGroups] matches map', e instanceof Error ? e.message : e);
+    return [];
+  }
 }
 
 export async function insertSocialMatchFromRound(round: SimRound, displayName: string): Promise<void> {

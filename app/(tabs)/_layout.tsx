@@ -2,17 +2,9 @@ import { Tabs } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { SimCapMark } from '../../src/components/SimCapMark';
+import { HeaderInstagramAndSimCap } from '../../src/components/HeaderInstagramSimCap';
 import { TabBarSvgIcon, type TabBarSvgName } from '../../src/components/TabBarSvgIcon';
 import { colors } from '../../src/lib/constants';
-
-function HeaderSimCapMark() {
-  return (
-    <View style={styles.headerMarkWrap}>
-      <SimCapMark size={42} />
-    </View>
-  );
-}
 
 /** Mock: compact icons sitting in the upper half of the bar with labels beneath. */
 const TAB_ICON_SIZE = 22;
@@ -118,7 +110,7 @@ export default function TabLayout() {
         name="log"
         options={{
           title: 'Log a round',
-          headerRight: HeaderSimCapMark,
+          headerRight: HeaderInstagramAndSimCap,
           tabBarLabel: 'Log',
           tabBarIcon: ({ color }) => <TabIcon name="add-circle" color={color} />,
         }}
@@ -127,7 +119,7 @@ export default function TabLayout() {
         name="analyze"
         options={{
           title: 'Round analysis',
-          headerRight: HeaderSimCapMark,
+          headerRight: HeaderInstagramAndSimCap,
           tabBarLabel: 'Trends',
           tabBarIcon: ({ color }) => <TabIcon name="analytics" color={color} />,
         }}
@@ -136,7 +128,7 @@ export default function TabLayout() {
         name="groups"
         options={{
           title: 'Groups',
-          headerRight: HeaderSimCapMark,
+          headerRight: HeaderInstagramAndSimCap,
           tabBarLabel: 'Social',
           tabBarIcon: ({ color }) => <TabIcon name="people" color={color} />,
         }}
@@ -145,7 +137,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: 'Profile',
-          headerRight: HeaderSimCapMark,
+          headerRight: HeaderInstagramAndSimCap,
           tabBarLabel: 'Profile',
           tabBarIcon: ({ color }) => <TabIcon name="person" color={color} />,
         }}
@@ -163,8 +155,17 @@ export default function TabLayout() {
         options={{
           href: null,
           title: 'Net calculator',
-          headerRight: HeaderSimCapMark,
+          headerRight: HeaderInstagramAndSimCap,
           tabBarLabel: 'Net',
+        }}
+      />
+      <Tabs.Screen
+        name="contact"
+        options={{
+          href: null,
+          title: 'Contact us',
+          headerRight: HeaderInstagramAndSimCap,
+          tabBarLabel: 'Contact',
         }}
       />
     </Tabs>
@@ -177,12 +178,5 @@ const styles = StyleSheet.create({
     height: 24,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  headerMarkWrap: {
-    marginRight: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    minWidth: 48,
-    minHeight: 48,
   },
 });
