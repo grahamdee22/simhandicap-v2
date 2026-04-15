@@ -147,7 +147,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = useCallback(async () => {
     if (!supabase) return;
-    await supabase.auth.signOut();
+    const SIGN_OUT_MS = 20000;
+    try {
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`signOut timed out after ${SIGN_OUT_MS}ms`)), SIGN_OUT_MS)
+        ),
+      ]);
+    } catch (e) {
+      console.warn('[auth] signOut: error or timeout', e instanceof Error ? e.message : e);
+      /** Unblock a wedged client: clear local session even if the server round-trip never completes. */
+      try {
+        await supabase.auth.signOut({ scope: 'local' });
+      } catch (e2) {
+        console.warn('[auth] signOut: local fallback failed', e2 instanceof Error ? e2.message : e2);
+      }
+    }
   }, []);
 
   const refreshProfile = useCallback(async () => {

@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -16,7 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconPlus } from '../../src/components/SvgUiIcons';
-import { showAppAlert } from '../../src/lib/alertCompat';
+import { confirmDestructive, showAppAlert } from '../../src/lib/alertCompat';
 import { colors } from '../../src/lib/constants';
 import { formatHandicapIndexDisplay } from '../../src/lib/handicap';
 import { headToHeadFromLoggedRound } from '../../src/lib/h2hFromRound';
@@ -24,6 +25,7 @@ import { useResponsive } from '../../src/lib/responsive';
 import {
   cancelOutboundGroupInvite,
   createSocialGroup,
+  deleteSocialGroupAsCreator,
   fetchGroupMatchesFromSupabase,
   fetchInboundGroupInvitesIntoStore,
   fetchMySocialGroupsIntoStore,
@@ -82,6 +84,7 @@ export default function GroupsScreen() {
   const rounds = useAppStore((s) => s.rounds);
   const displayName = useAppStore((s) => s.displayName);
   const addGroup = useAppStore((s) => s.addGroup);
+  const removeGroupById = useAppStore((s) => s.removeGroupById);
   const recomputeGroupsFromYou = useAppStore((s) => s.recomputeGroupsFromYou);
 
   const [tab, setTab] = useState(0);
@@ -95,6 +98,7 @@ export default function GroupsScreen() {
   const [createBusy, setCreateBusy] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inboundBusy, setInboundBusy] = useState(false);
+  const [deleteGroupBusy, setDeleteGroupBusy] = useState(false);
   const [matches, setMatches] = useState<HeadToHead[]>([]);
   const [matchesLoading, setMatchesLoading] = useState(false);
   /** Bumped when the Social screen gains focus so head-to-head refetches after tab blur. */
@@ -392,6 +396,58 @@ export default function GroupsScreen() {
   const isGroupCreator =
     supabaseOn && !!user?.id && !!g?.createdByUserId && g.createdByUserId === user.id;
 
+  const onDeleteGroup = async () => {
+    if (!g?.id || !isGroupCreator) return;
+    const ok = await confirmDestructive(
+      'Delete this group?',
+      'This cannot be undone. All members, invites, and head-to-head history for this crew will be removed.',
+      'Delete group'
+    );
+    if (!ok) return;
+    const deletedId = g.id;
+    const delIdx = groups.findIndex((gr) => gr.id === deletedId);
+    setDeleteGroupBusy(true);
+    const DELETE_MS = 25000;
+    try {
+      console.warn('[groups] onDeleteGroup:start', { deletedId, delIdx, tab });
+      const res = await Promise.race([
+        deleteSocialGroupAsCreator(deletedId),
+        new Promise<{ error: string }>((resolve) =>
+          setTimeout(
+            () =>
+              resolve({
+                error: `Delete request timed out after ${DELETE_MS / 1000}s. Check your connection; you can try again or sign out.`,
+              }),
+            DELETE_MS
+          )
+        ),
+      ]);
+      if ('error' in res) {
+        console.warn('[groups] onDeleteGroup:failed', res.error);
+        showAppAlert('Delete group', res.error);
+        return;
+      }
+      console.warn('[groups] onDeleteGroup:server_ok, updating store');
+      removeGroupById(deletedId);
+      const len = useAppStore.getState().groups.length;
+      console.warn('[groups] onDeleteGroup:store_after_remove', { len });
+      if (len === 0) {
+        setTab(0);
+        return;
+      }
+      let nextTab = tab;
+      if (delIdx < tab) nextTab -= 1;
+      else if (delIdx === tab) nextTab = Math.min(tab, len - 1);
+      setTab(Math.max(0, nextTab));
+    } catch (e) {
+      console.warn('[groups] onDeleteGroup:throw', e instanceof Error ? e.message : e);
+      showAppAlert('Delete group', e instanceof Error ? e.message : 'Something went wrong.');
+    } finally {
+      setDeleteGroupBusy(false);
+      console.warn('[groups] onDeleteGroup:finally');
+    }
+  };
+
   const inboundInviteCards =
     supabaseOn && inboundGroupInvites.length > 0
       ? inboundGroupInvites.map((inv) => (
@@ -522,17 +578,35 @@ export default function GroupsScreen() {
 
             <View style={[styles.card, { marginHorizontal: gutter }]}>
               <View style={styles.cardHdr}>
-                <View>
+                <View style={styles.cardHdrTitle}>
                   <Text style={styles.groupName}>{g.name}</Text>
                   {g.lastRoundSummary ? <Text style={styles.groupMeta}>{g.lastRoundSummary}</Text> : null}
                 </View>
-                <Pressable
-                  onPress={openInvite}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Invite someone to ${g.name}`}
-                >
-                  <Text style={styles.invite}>+ Invite</Text>
-                </Pressable>
+                <View style={styles.cardHdrActions}>
+                  {isGroupCreator ? (
+                    <Pressable
+                      onPress={() => void onDeleteGroup()}
+                      disabled={deleteGroupBusy}
+                      style={({ pressed }) => [styles.groupDeleteBtn, pressed && styles.groupDeleteBtnPressed]}
+                      hitSlop={10}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete ${g.name}`}
+                    >
+                      {deleteGroupBusy ? (
+                        <ActivityIndicator size="small" color={colors.subtle} />
+                      ) : (
+                        <Ionicons name="trash-outline" size={22} color={colors.subtle} />
+                      )}
+                    </Pressable>
+                  ) : null}
+                  <Pressable
+                    onPress={openInvite}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Invite someone to ${g.name}`}
+                  >
+                    <Text style={styles.invite}>+ Invite</Text>
+                  </Pressable>
+                </View>
               </View>
               {!hasMemberOrPending ? (
                 <Text style={[styles.membersEmpty, { paddingHorizontal: 12, paddingVertical: 14 }]}>
@@ -925,10 +999,21 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: 10,
     padding: 12,
     borderBottomWidth: 0.5,
     borderBottomColor: colors.border,
   },
+  cardHdrTitle: { flex: 1, minWidth: 0 },
+  cardHdrActions: { flexDirection: 'row', alignItems: 'center', gap: 14, flexShrink: 0 },
+  groupDeleteBtn: {
+    minWidth: 36,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  groupDeleteBtnPressed: { opacity: 0.7 },
   groupName: { fontSize: 13, fontWeight: '600', color: colors.ink },
   groupMeta: { fontSize: 10, color: colors.subtle, marginTop: 1 },
   invite: { fontSize: 11, color: colors.sage, fontWeight: '700' },

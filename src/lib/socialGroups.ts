@@ -423,6 +423,68 @@ export async function createSocialGroup(name: string): Promise<{ id: string } | 
   return { id: groupId };
 }
 
+/**
+ * Deletes a crew row; FK `on delete cascade` removes members, pending invites, email invites, and H2H rows.
+ *
+ * Uses RPC `delete_social_group_as_creator` (migration 018): client `DELETE` + CASCADE under member RLS can
+ * hang or recurse; the definer function performs one delete as owner so cascades bypass child-table RLS.
+ */
+export async function deleteSocialGroupAsCreator(groupId: string): Promise<{ ok: true } | { error: string }> {
+  if (!supabase) {
+    console.warn('[socialGroups] deleteSocialGroupAsCreator: no supabase client');
+    return { error: 'Supabase is not configured' };
+  }
+  const {
+    data: { user },
+    error: userErr,
+  } = await supabase.auth.getUser();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+
+  if (userErr || !user) {
+    console.warn('[socialGroups] deleteSocialGroupAsCreator: not signed in', userErr?.message);
+    return { error: userErr?.message ?? 'Not signed in' };
+  }
+
+  const sessionUserId = session?.user?.id ?? null;
+  const authUserId = user.id;
+  console.warn('[socialGroups] deleteSocialGroupAsCreator:auth_ids', {
+    groupId,
+    'getUser().id': authUserId,
+    'getUser().id_type': typeof authUserId,
+    'getUser().id_length': authUserId?.length,
+    'getSession().user.id': sessionUserId,
+    'getSession().user.id_type': typeof sessionUserId,
+    session_matches_getUser: sessionUserId === authUserId,
+  });
+
+  const { data: rpcData, error: rpcErr } = await supabase.rpc('delete_social_group_as_creator', {
+    p_group_id: groupId,
+  });
+
+  if (rpcErr) {
+    console.warn('[socialGroups] deleteSocialGroupAsCreator:rpc_error', rpcErr.message, rpcErr);
+    return { error: rpcErr.message };
+  }
+
+  const deleted = rpcData === true;
+  console.warn('[socialGroups] deleteSocialGroupAsCreator:rpc_result', {
+    groupId,
+    rpcData,
+    rpcData_type: typeof rpcData,
+    deleted,
+  });
+
+  if (!deleted) {
+    return {
+      error: 'Could not delete this group. You may not be the creator, or it was already removed.',
+    };
+  }
+
+  return { ok: true };
+}
+
 export type SendGroupInviteResult = {
   kind: 'in_app' | 'email' | 'already_member';
   email: string;

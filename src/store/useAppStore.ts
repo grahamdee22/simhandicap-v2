@@ -157,6 +157,8 @@ type AppState = {
   deleteRound: (roundId: string) => Promise<void>;
   addGroup: (name: string) => void;
   setGroups: (groups: FriendGroup[]) => void;
+  /** Remove a crew from local state (e.g. after server delete). Clears pending H2H prefill for that crew. */
+  removeGroupById: (groupId: string) => void;
   setInboundGroupInvites: (invites: InboundGroupInvite[]) => void;
   recomputeGroupsFromYou: () => void;
   setPendingH2hMatchup: (p: PendingH2hMatchup | null) => void;
@@ -447,6 +449,13 @@ export const useAppStore = create<AppState>()(
       },
 
       setGroups: (groups) => set({ groups }),
+
+      removeGroupById: (groupId) =>
+        set((s) => ({
+          groups: s.groups.filter((g) => g.id !== groupId),
+          pendingH2hMatchup:
+            s.pendingH2hMatchup?.h2hGroupId === groupId ? null : s.pendingH2hMatchup,
+        })),
 
       setInboundGroupInvites: (inboundGroupInvites) => set({ inboundGroupInvites }),
 
