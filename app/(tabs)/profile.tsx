@@ -21,16 +21,8 @@ import {
 } from '../../src/lib/realVsSim';
 import { currentIndexFromRounds, formatRoundMeta, useAppStore } from '../../src/store/useAppStore';
 
-/** Demo-only profile fields (replace with real account data when wired). */
-const DEMO_PROFILE = {
-  firstName: 'Jake',
-  lastName: 'Morrison',
-  addressLine1: '428 Pinehurst Lane',
-  addressLine2: 'Austin, TX 78701',
-  email: 'jake.morrison@example.com',
-  paymentSummary: 'Visa · ···· 4242',
-  paymentSub: 'Expires 09/28 · Billing address on file',
-} as const;
+/** Guest-only demo row on the Contact card (not sign-in email). */
+const DEMO_CONTACT_EMAIL = 'jake.morrison@example.com';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -204,6 +196,37 @@ export default function ProfileScreen() {
           </Pressable>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.lbl}>Display name</Text>
+          {editing ? (
+            <View style={styles.editRow}>
+              <TextInput
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder="Your name"
+                placeholderTextColor={colors.subtle}
+              />
+              <Pressable
+                onPress={() => void saveName()}
+                disabled={savingField === 'name'}
+                style={styles.saveMini}
+              >
+                {savingField === 'name' ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.saveMiniTxt}>Save</Text>
+                )}
+              </Pressable>
+            </View>
+          ) : (
+            <Pressable onPress={() => { setDraft(displayName); setEditing(true); }}>
+              <Text style={styles.name}>{displayName}</Text>
+              <Text style={styles.tap}>Tap to edit</Text>
+            </Pressable>
+          )}
+        </View>
+
         {signedIn ? (
           <View style={styles.card}>
             <Text style={styles.lbl}>Account</Text>
@@ -373,37 +396,6 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.lbl}>Display name</Text>
-          {editing ? (
-            <View style={styles.editRow}>
-              <TextInput
-                style={styles.input}
-                value={draft}
-                onChangeText={setDraft}
-                placeholder="Your name"
-                placeholderTextColor={colors.subtle}
-              />
-              <Pressable
-                onPress={() => void saveName()}
-                disabled={savingField === 'name'}
-                style={styles.saveMini}
-              >
-                {savingField === 'name' ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.saveMiniTxt}>Save</Text>
-                )}
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable onPress={() => { setDraft(displayName); setEditing(true); }}>
-              <Text style={styles.name}>{displayName}</Text>
-              <Text style={styles.tap}>Tap to edit</Text>
-            </Pressable>
-          )}
-        </View>
-
-        <View style={styles.card}>
           <Text style={styles.lbl}>Preferred sim platform</Text>
           <Text style={styles.meta}>Default when you open the Log tab (saved to your profile when signed in).</Text>
           <View style={styles.platformList}>
@@ -424,28 +416,13 @@ export default function ProfileScreen() {
           </View>
         </View>
 
-        <View style={styles.card}>
-          <Text style={styles.lbl}>Personal information</Text>
-          <Text style={styles.cardLead}>
-            {DEMO_PROFILE.firstName} {DEMO_PROFILE.lastName}
-          </Text>
-          <Text style={styles.meta}>{DEMO_PROFILE.addressLine1}</Text>
-          <Text style={styles.meta}>{DEMO_PROFILE.addressLine2}</Text>
-        </View>
-
         {!signedIn ? (
           <View style={styles.card}>
             <Text style={styles.lbl}>Contact</Text>
-            <Text style={styles.cardLead}>{DEMO_PROFILE.email}</Text>
+            <Text style={styles.cardLead}>{DEMO_CONTACT_EMAIL}</Text>
             <Text style={styles.meta}>Demo email — not used for sign-in.</Text>
           </View>
         ) : null}
-
-        <View style={styles.card}>
-          <Text style={styles.lbl}>Payment</Text>
-          <Text style={styles.cardLead}>{DEMO_PROFILE.paymentSummary}</Text>
-          <Text style={styles.meta}>{DEMO_PROFILE.paymentSub}</Text>
-        </View>
       </ScrollView>
     </ContentWidth>
   );

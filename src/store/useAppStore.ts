@@ -415,6 +415,10 @@ export const useAppStore = create<AppState>()(
             groups: syncYouInGroups(s.groups, s.displayName, full),
           };
         });
+        console.log('[store] deleteRound applied', {
+          roundId,
+          roundsCount: get().rounds.length,
+        });
       },
 
       addGroup: (name) => {
@@ -523,9 +527,17 @@ export const useAppStore = create<AppState>()(
 
 const GUEST_PERSIST_NAME = 'simhandicap-guest';
 
+/** Avoid rehydrate on every auth event (e.g. TOKEN_REFRESHED): stale disk can overwrite a just-deleted round. */
+let lastBoundPersistKey: string | undefined;
+
 export async function rebindPersistToUser(userId: string | null): Promise<void> {
+  const key = userId ?? 'guest';
+  if (lastBoundPersistKey === key) {
+    return;
+  }
   const name = userId ? `simhandicap-u-${userId}` : GUEST_PERSIST_NAME;
   await useAppStore.persist.setOptions({ name });
+  lastBoundPersistKey = key;
   await useAppStore.persist.rehydrate();
 }
 

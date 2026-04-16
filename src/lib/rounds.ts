@@ -213,8 +213,25 @@ export async function deleteRoundInSupabase(roundId: string): Promise<string | n
   } = await supabase.auth.getUser();
   if (!user) return 'Not signed in';
 
-  const { error } = await supabase.from('rounds').delete().eq('id', roundId).eq('user_id', user.id);
+  const { data, error } = await supabase
+    .from('rounds')
+    .delete()
+    .eq('id', roundId)
+    .eq('user_id', user.id)
+    .select('id');
 
   if (error) return error.message;
+
+  const deleted = data ?? [];
+  console.log('[rounds] deleteRoundInSupabase', {
+    roundId,
+    deletedRowCount: deleted.length,
+    deletedIds: deleted.map((row) => (row as { id: string }).id),
+  });
+
+  if (deleted.length === 0) {
+    return 'No round was deleted (not found, wrong account, or RLS blocked the delete)';
+  }
+
   return null;
 }
