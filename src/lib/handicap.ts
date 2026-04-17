@@ -46,6 +46,7 @@ export function rawDifferential(ags: number, courseRating: number, slope: number
   return ((ags - courseRating) * 113) / slope;
 }
 
+/** `courseRating` / `slope` are the WHS values for the tee played (from course data or custom entry). */
 export function adjustedDifferential(
   ags: number,
   courseRating: number,

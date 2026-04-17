@@ -15,6 +15,7 @@ import {
   adjustedDifferential,
   difficultyProduct,
   grossFromHoles,
+  round1,
   type Mulligans,
   type PinDay,
   type PuttingMode,
@@ -22,7 +23,15 @@ import {
 } from '../../src/lib/handicap';
 import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates';
 import { showAppAlert } from '../../src/lib/alertCompat';
-import { COURSE_SEEDS, courseMatchesSearch, getCourseById, ratingForCourse } from '../../src/lib/courses';
+import {
+  COURSE_SEEDS,
+  courseMatchesSearch,
+  CUSTOM_TEE_ID,
+  getCourseById,
+  getCourseTees,
+  middleCourseTee,
+  ratingForCourse,
+} from '../../src/lib/courses';
 import {
   difficultyConditionsLabel,
   expectedDifferentialFromIndex,
@@ -137,6 +146,9 @@ export default function LogRoundScreen() {
   const [pin, setPin] = useState<PinDay>('thu');
   const [wind, setWind] = useState<Wind>('off');
   const [mulligans, setMulligans] = useState<Mulligans>('off');
+  const [teePickKey, setTeePickKey] = useState('White');
+  const [customRating, setCustomRating] = useState('');
+  const [customSlope, setCustomSlope] = useState('');
   const [h2hOpponentPick, setH2hOpponentPick] = useState<H2hOpponentPick | null>(null);
   const [h2hModalOpen, setH2hModalOpen] = useState(false);
   const [platOpen, setPlatOpen] = useState(false);
@@ -171,6 +183,9 @@ export default function LogRoundScreen() {
     course: ReturnType<typeof getCourseById>;
     existing: SimRound | undefined;
     h2hOpponentPick: H2hOpponentPick | null;
+    teePickKey: string;
+    customRating: string;
+    customSlope: string;
   } | null>(null);
 
   const resetLogForm = useCallback(() => {
@@ -192,6 +207,22 @@ export default function LogRoundScreen() {
     setMulligans('off');
     setH2hOpponentPick(null);
     setPlayedDate(todayLocalYmd());
+    const c0 = getCourseById('pebble');
+    if (c0) {
+      const tees0 = getCourseTees(c0, preferredLogPlatform);
+      if (c0.confident === false && tees0.length > 0) {
+        setTeePickKey(tees0[Math.floor(tees0.length / 2)].name);
+      } else {
+        const def0 = c0.defaultTee?.trim();
+        setTeePickKey(
+          tees0.find((t) => t.name === def0)?.name ?? tees0[tees0.length - 1]?.name ?? tees0[0]?.name ?? 'White'
+        );
+      }
+    } else {
+      setTeePickKey('White');
+    }
+    setCustomRating('');
+    setCustomSlope('');
   }, [preferredLogPlatform]);
 
   useEffect(() => {
@@ -246,6 +277,29 @@ export default function LogRoundScreen() {
     while (hs.length < 18) hs.push(null);
     setHoleScores(hs);
     setHolesExpanded(existing.holeScores.some((h) => h != null));
+    const ec = getCourseById(existing.courseId);
+    if (ec) {
+      if (ec.confident === false) {
+        const mid = middleCourseTee(ec, existing.platform);
+        if (mid) {
+          setTeePickKey(mid.name);
+          setCustomRating('');
+          setCustomSlope('');
+        }
+      } else {
+        const teesE = getCourseTees(ec, existing.platform);
+        const matchTee = existing.teeName && teesE.find((t) => t.name === existing.teeName);
+        if (matchTee) {
+          setTeePickKey(matchTee.name);
+          setCustomRating('');
+          setCustomSlope('');
+        } else {
+          setTeePickKey(CUSTOM_TEE_ID);
+          setCustomRating(String(existing.courseRating));
+          setCustomSlope(String(existing.slope));
+        }
+      }
+    }
     const cardG = grossFromHoles(hs);
     const g0 = cardG != null ? cardG : existing.grossScore;
     stepperGrossRef.current = g0;
@@ -261,7 +315,49 @@ export default function LogRoundScreen() {
     if (courseOpen) setCourseSearchQuery('');
   }, [courseOpen]);
 
+  /** New round only: keep tee aligned with the selected course / platform. (Edit mode sets tee from the saved round.) */
+  useEffect(() => {
+    if (editId) return;
+    const c = getCourseById(courseId);
+    if (!c) return;
+    const tees = getCourseTees(c, platform);
+    if (c.confident === false && tees.length > 0) {
+      setTeePickKey(tees[Math.floor(tees.length / 2)].name);
+    } else {
+      const def = c.defaultTee?.trim();
+      setTeePickKey(tees.find((t) => t.name === def)?.name ?? tees[tees.length - 1]?.name ?? tees[0].name);
+    }
+    setCustomRating('');
+    setCustomSlope('');
+  }, [courseId, platform, editId]);
+
   const course = getCourseById(courseId);
+  const courseTees = useMemo(() => (course ? getCourseTees(course, platform) : []), [course, platform]);
+
+  const resolvedTeeRating = useMemo(() => {
+    if (!course) return { rating: 72, slope: 130, teeLabel: '' as string };
+    if (course.confident === false) {
+      const mid = middleCourseTee(course, platform);
+      if (mid) return { rating: mid.rating, slope: mid.slope, teeLabel: mid.name };
+      const fb = ratingForCourse(course, platform);
+      return { rating: fb.rating, slope: fb.slope, teeLabel: course.defaultTee ?? 'Default' };
+    }
+    if (teePickKey === CUSTOM_TEE_ID) {
+      const r = parseFloat(customRating.replace(/,/g, '.').trim());
+      const s = parseFloat(customSlope.replace(/,/g, '.').trim());
+      if (Number.isFinite(r) && Number.isFinite(s) && s > 0) {
+        return { rating: round1(r), slope: Math.round(s), teeLabel: 'Custom' };
+      }
+      const fb = ratingForCourse(course, platform);
+      return { rating: fb.rating, slope: fb.slope, teeLabel: 'Custom' };
+    }
+    const row = courseTees.find((t) => t.name === teePickKey);
+    if (row) return { rating: row.rating, slope: row.slope, teeLabel: row.name };
+    const fb = ratingForCourse(course, platform);
+    return { rating: fb.rating, slope: fb.slope, teeLabel: course.defaultTee ?? 'Default' };
+  }, [course, platform, teePickKey, customRating, customSlope, courseTees]);
+  const showTeeSelector = course?.confident !== false;
+
   const coursesForPicker = useMemo(
     () =>
       COURSE_SEEDS.filter((c) => courseMatchesSearch(c, courseSearchQuery)).sort((a, b) =>
@@ -269,7 +365,9 @@ export default function LogRoundScreen() {
       ),
     [courseSearchQuery]
   );
-  const { rating, slope } = course ? ratingForCourse(course, platform) : { rating: 72, slope: 130 };
+  const { rating, slope } = course
+    ? { rating: resolvedTeeRating.rating, slope: resolvedTeeRating.slope }
+    : { rating: 72, slope: 130 };
 
   const effectiveGross = useMemo(
     () => resolveLogGrossScore(holeScores, scoreFocused, scoreBuffer, grossScore),
@@ -350,6 +448,9 @@ export default function LogRoundScreen() {
     course,
     existing,
     h2hOpponentPick,
+    teePickKey,
+    customRating,
+    customSlope,
   };
 
   const onSave = () => {
@@ -392,6 +493,44 @@ export default function LogRoundScreen() {
         snap.grossScore,
         lastGrossSourceRef.current
       );
+
+      let teeNameSave = snap.course.defaultTee ?? 'Default';
+      let courseRatingSave: number;
+      let slopeSave: number;
+      if (snap.course.confident === false) {
+        const mid = middleCourseTee(snap.course, snap.platform);
+        if (!mid) {
+          showAppAlert('Tee', 'This course has no tee data.');
+          return;
+        }
+        courseRatingSave = mid.rating;
+        slopeSave = mid.slope;
+        teeNameSave = mid.name;
+      } else if (snap.teePickKey === CUSTOM_TEE_ID) {
+        const r = parseFloat(snap.customRating.replace(/,/g, '.').trim());
+        const s = parseFloat(snap.customSlope.replace(/,/g, '.').trim());
+        if (!Number.isFinite(r) || !Number.isFinite(s) || s < 55 || s > 155 || r < 60 || r > 85) {
+          showAppAlert(
+            'Custom tee',
+            'Enter a valid course rating and slope (rating about 60–85, slope 55–155).'
+          );
+          return;
+        }
+        courseRatingSave = round1(r);
+        slopeSave = Math.round(s);
+        teeNameSave = 'Custom';
+      } else {
+        const tees = getCourseTees(snap.course, snap.platform);
+        const row = tees.find((t) => t.name === snap.teePickKey);
+        if (!row) {
+          showAppAlert('Tee', 'Pick a tee from the list, or choose Custom and enter rating and slope.');
+          return;
+        }
+        courseRatingSave = row.rating;
+        slopeSave = row.slope;
+        teeNameSave = row.name;
+      }
+
       if (__DEV__ && DEBUG_LOG_GROSS_SAVE) {
         // eslint-disable-next-line no-console
         console.log('[simhandicap log save]', {
@@ -416,7 +555,9 @@ export default function LogRoundScreen() {
         wind: snap.wind,
         mulligans: snap.mulligans,
         playedAt,
-        teeName: snap.course.defaultTee,
+        teeName: teeNameSave,
+        courseRating: courseRatingSave,
+        slope: slopeSave,
         ...(snap.h2hOpponentPick
           ? {
               h2hGroupId: snap.h2hOpponentPick.groupId,
@@ -489,6 +630,65 @@ export default function LogRoundScreen() {
           </View>
 
           <DatePlayedField value={playedDate} onChange={setPlayedDate} />
+
+          {course && showTeeSelector ? (
+            <>
+              <Text style={styles.sectionLabel}>Tee</Text>
+              <View style={styles.teeChipWrap}>
+                {courseTees.map((t) => (
+                  <Pressable
+                    key={t.name}
+                    style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
+                    onPress={() => {
+                      setTeePickKey(t.name);
+                      setCustomRating('');
+                      setCustomSlope('');
+                    }}
+                  >
+                    <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
+                    <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
+                      {t.rating} / {t.slope}
+                    </Text>
+                  </Pressable>
+                ))}
+                <Pressable
+                  style={[styles.teeChip, teePickKey === CUSTOM_TEE_ID && styles.teeChipOn]}
+                  onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
+                >
+                  <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>Custom</Text>
+                  <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
+                    Your rating / slope
+                  </Text>
+                </Pressable>
+              </View>
+              {teePickKey === CUSTOM_TEE_ID ? (
+                <View style={styles.teeCustomRow}>
+                  <View style={styles.teeCustomField}>
+                    <Text style={styles.teeCustomLbl}>Course rating</Text>
+                    <TextInput
+                      style={styles.teeNumInput}
+                      value={customRating}
+                      onChangeText={setCustomRating}
+                      placeholder="e.g. 72.1"
+                      placeholderTextColor={colors.subtle}
+                      keyboardType="decimal-pad"
+                    />
+                  </View>
+                  <View style={styles.teeCustomField}>
+                    <Text style={styles.teeCustomLbl}>Slope</Text>
+                    <TextInput
+                      style={styles.teeNumInput}
+                      value={customSlope}
+                      onChangeText={setCustomSlope}
+                      placeholder="e.g. 128"
+                      placeholderTextColor={colors.subtle}
+                      keyboardType="number-pad"
+                    />
+                  </View>
+                </View>
+              ) : null}
+            </>
+          ) : null}
 
         <Text style={styles.sectionLabel}>Score</Text>
         <View style={styles.scoreBlock}>
@@ -902,6 +1102,19 @@ export default function LogRoundScreen() {
                     style={styles.modalRow}
                     onPress={() => {
                       setCourseId(c.id);
+                      const teesPick = getCourseTees(c, platform);
+                      if (c.confident === false && teesPick.length > 0) {
+                        setTeePickKey(teesPick[Math.floor(teesPick.length / 2)].name);
+                      } else {
+                        const defPick = c.defaultTee?.trim();
+                        setTeePickKey(
+                          teesPick.find((t) => t.name === defPick)?.name ??
+                            teesPick[teesPick.length - 1]?.name ??
+                            teesPick[0].name
+                        );
+                      }
+                      setCustomRating('');
+                      setCustomSlope('');
                       setCourseOpen(false);
                     }}
                   >
@@ -940,6 +1153,34 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 5,
     marginTop: 10,
+  },
+  teeChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  teeChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.surface,
+    minWidth: 72,
+  },
+  teeChipOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  teeChipTxt: { fontSize: 12, fontWeight: '700', color: colors.ink },
+  teeChipTxtOn: { color: colors.accentDark },
+  teeChipSub: { fontSize: 9, color: colors.subtle, marginTop: 2 },
+  teeChipSubOn: { color: colors.accent },
+  teeCustomRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  teeCustomField: { flex: 1, minWidth: 0 },
+  teeCustomLbl: { fontSize: 10, fontWeight: '600', color: colors.subtle, marginBottom: 4 },
+  teeNumInput: {
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink,
   },
   pill: {
     borderWidth: 0.5,

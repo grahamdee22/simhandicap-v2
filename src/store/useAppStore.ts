@@ -131,8 +131,6 @@ export type NewRoundInput = Omit<
   | 'difficultyModifier'
   | 'indexAfter'
   | 'indexDelta'
-  | 'courseRating'
-  | 'slope'
 >;
 
 type AppState = {
@@ -167,6 +165,27 @@ type AppState = {
   syncGhinFromProfileIfChanged: (index: number) => void;
 };
 
+function computeRoundMathFromRatingSlope(
+  gross: number,
+  courseRating: number,
+  slope: number,
+  putting: PuttingMode,
+  pin: PinDay,
+  wind: Wind,
+  mulligans: Mulligans
+) {
+  const { raw, adjusted, modifier } = adjustedDifferential(
+    gross,
+    courseRating,
+    slope,
+    putting,
+    pin,
+    wind,
+    mulligans
+  );
+  return { courseRating, slope, rawDiff: raw, adjustedDiff: adjusted, difficultyModifier: modifier };
+}
+
 function computeRoundMath(
   course: CourseSeed,
   platform: PlatformId,
@@ -177,8 +196,7 @@ function computeRoundMath(
   mulligans: Mulligans
 ) {
   const { rating, slope } = ratingForCourse(course, platform);
-  const { raw, adjusted, modifier } = adjustedDifferential(gross, rating, slope, putting, pin, wind, mulligans);
-  return { courseRating: rating, slope, rawDiff: raw, adjustedDiff: adjusted, difficultyModifier: modifier };
+  return computeRoundMathFromRatingSlope(gross, rating, slope, putting, pin, wind, mulligans);
 }
 
 function indexBeforeNewRound(sortedRounds: SimRound[]): number | null {
@@ -264,7 +282,14 @@ function recalcAllRounds(rounds: SimRound[]): SimRound[] {
     const course = getCourseById(r.courseId) ?? fallbackCourse;
     const fromHoles = grossFromHoles(r.holeScores);
     const gross = fromHoles != null ? fromHoles : r.grossScore;
-    const math = computeRoundMath(course, r.platform, gross, r.putting, r.pin, r.wind, r.mulligans);
+    const baseline = ratingForCourse(course, r.platform);
+    const cr =
+      typeof r.courseRating === 'number' && Number.isFinite(r.courseRating) && r.courseRating > 50
+        ? r.courseRating
+        : baseline.rating;
+    const sl =
+      typeof r.slope === 'number' && Number.isFinite(r.slope) && r.slope > 0 ? r.slope : baseline.slope;
+    const math = computeRoundMathFromRatingSlope(gross, cr, sl, r.putting, r.pin, r.wind, r.mulligans);
     diffsSoFar.push(math.adjustedDiff);
     const before = handicapIndexFromDifferentials(diffsSoFar.slice(0, -1));
     const after = handicapIndexFromDifferentials(diffsSoFar);
@@ -320,10 +345,21 @@ export const useAppStore = create<AppState>()(
         const grossForMath = grossFromHoles(holeScores) ?? input.grossScore;
         const sorted = [...get().rounds].sort(compareRoundsByPlayedAtAsc);
         const before = indexBeforeNewRound(sorted);
-        const math = computeRoundMath(
-          course,
-          input.platform,
+        const baseline = ratingForCourse(course, input.platform);
+        const cr =
+          typeof input.courseRating === 'number' &&
+          Number.isFinite(input.courseRating) &&
+          input.courseRating > 50
+            ? input.courseRating
+            : baseline.rating;
+        const sl =
+          typeof input.slope === 'number' && Number.isFinite(input.slope) && input.slope > 0
+            ? input.slope
+            : baseline.slope;
+        const math = computeRoundMathFromRatingSlope(
           grossForMath,
+          cr,
+          sl,
           input.putting,
           input.pin,
           input.wind,
