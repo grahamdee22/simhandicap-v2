@@ -11,6 +11,8 @@ export type CourseTee = {
 export type CourseSeed = {
   id: string;
   name: string;
+  /** City / region (optional; used for picker search when set). */
+  location?: string;
   /** Sim course rating / slope proxy per platform (championship / default tee baseline). */
   byPlatform: Partial<Record<PlatformId, { rating: number; slope: number }>>;
   pars: number[];
@@ -161,6 +163,66 @@ export const COURSE_SEEDS: CourseSeed[] = [
       { name: 'Blue', rating: 75.3, slope: 144 },
       { name: 'Black', rating: 78.5, slope: 150 },
     ],
+  },
+  {
+    id: 'torrey-north',
+    name: 'Torrey Pines North',
+    location: 'La Jolla, CA',
+    defaultTee: 'White',
+    byPlatform: uniformByPlatform(72.0, 130),
+    pars: P72,
+    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
+    confident: false,
+  },
+  {
+    id: 'fishers-island',
+    name: 'Fishers Island Club',
+    location: 'Fishers Island, NY',
+    defaultTee: 'White',
+    byPlatform: uniformByPlatform(72.0, 130),
+    pars: P72,
+    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
+    confident: false,
+  },
+  {
+    id: 'paynes-valley',
+    name: "Payne's Valley",
+    location: 'Hollister, MO',
+    defaultTee: 'White',
+    byPlatform: uniformByPlatform(72.0, 130),
+    pars: P72,
+    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
+    confident: false,
+  },
+  {
+    id: 'pasatiempo',
+    name: 'Pasatiempo Golf Club',
+    location: 'Santa Cruz, CA',
+    defaultTee: 'White',
+    byPlatform: uniformByPlatform(72.0, 130),
+    pars: P72,
+    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
+    confident: false,
+  },
+  {
+    id: 'prairie-dunes',
+    name: 'Prairie Dunes Country Club',
+    location: 'Hutchinson, KS',
+    defaultTee: 'White',
+    byPlatform: uniformByPlatform(72.0, 130),
+    pars: P72,
+    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
+    confident: false,
+  },
+  {
+    id: 'sand-hills',
+    name: 'Sand Hills Golf Club',
+    location: 'Mullen, NE',
+    defaultTee: 'White',
+    byPlatform: uniformByPlatform(72.0, 130),
+    pars: P72,
+    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
+    confident: false,
   },
   {
     id: 'whistling',
@@ -1183,5 +1245,7 @@ const normSearch = (s: string) =>
 export function courseMatchesSearch(course: CourseSeed, rawQuery: string): boolean {
   const q = normSearch(rawQuery);
   if (!q) return true;
-  return normSearch(course.name).includes(q);
+  if (normSearch(course.name).includes(q)) return true;
+  if (course.location && normSearch(course.location).includes(q)) return true;
+  return false;
 }
