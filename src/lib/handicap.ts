@@ -38,7 +38,8 @@ export function difficultyProduct(
   wind: Wind,
   mulligans: Mulligans
 ): number {
-  return PUTTING[putting] * PIN[pin] * WIND[wind] * MULLIGANS[mulligans];
+  const product = PUTTING[putting] * PIN[pin] * WIND[wind] * MULLIGANS[mulligans];
+  return Math.max(0.65, product);
 }
 
 export function rawDifferential(ags: number, courseRating: number, slope: number): number {
