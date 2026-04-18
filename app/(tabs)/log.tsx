@@ -32,11 +32,7 @@ import {
   middleCourseTee,
   ratingForCourse,
 } from '../../src/lib/courses';
-import {
-  difficultyConditionsLabel,
-  expectedDifferentialFromIndex,
-  targetGrossToImprove,
-} from '../../src/lib/preRoundPrediction';
+import { difficultyConditionsLabel, targetGrossToImprove } from '../../src/lib/preRoundPrediction';
 import { currentIndexFromRounds, useAppStore, type SimRound } from '../../src/store/useAppStore';
 
 type H2hOpponentPick = {
@@ -315,6 +311,11 @@ export default function LogRoundScreen() {
     if (courseOpen) setCourseSearchQuery('');
   }, [courseOpen]);
 
+  useEffect(() => {
+    // eslint-disable-next-line no-console -- debug: tee selection state
+    console.log('[log] teePickKey', teePickKey);
+  }, [teePickKey]);
+
   /** New round only: keep tee aligned with the selected course / platform. (Edit mode sets tee from the saved round.) */
   useEffect(() => {
     if (editId) return;
@@ -335,26 +336,31 @@ export default function LogRoundScreen() {
   const courseTees = useMemo(() => (course ? getCourseTees(course, platform) : []), [course, platform]);
 
   const resolvedTeeRating = useMemo(() => {
-    if (!course) return { rating: 72, slope: 130, teeLabel: '' as string };
-    if (course.confident === false) {
-      const mid = middleCourseTee(course, platform);
-      if (mid) return { rating: mid.rating, slope: mid.slope, teeLabel: mid.name };
+    const resolved = ((): { rating: number; slope: number; teeLabel: string } => {
+      if (!course) return { rating: 72, slope: 130, teeLabel: '' as string };
+      if (course.confident === false) {
+        const mid = middleCourseTee(course, platform);
+        if (mid) return { rating: mid.rating, slope: mid.slope, teeLabel: mid.name };
+        const fb = ratingForCourse(course, platform);
+        return { rating: fb.rating, slope: fb.slope, teeLabel: course.defaultTee ?? 'Default' };
+      }
+      if (teePickKey === CUSTOM_TEE_ID) {
+        const r = parseFloat(customRating.replace(/,/g, '.').trim());
+        const s = parseFloat(customSlope.replace(/,/g, '.').trim());
+        if (Number.isFinite(r) && Number.isFinite(s) && s > 0) {
+          return { rating: round1(r), slope: Math.round(s), teeLabel: 'Custom' };
+        }
+        const fb = ratingForCourse(course, platform);
+        return { rating: fb.rating, slope: fb.slope, teeLabel: 'Custom' };
+      }
+      const row = courseTees.find((t) => t.name === teePickKey);
+      if (row) return { rating: row.rating, slope: row.slope, teeLabel: row.name };
       const fb = ratingForCourse(course, platform);
       return { rating: fb.rating, slope: fb.slope, teeLabel: course.defaultTee ?? 'Default' };
-    }
-    if (teePickKey === CUSTOM_TEE_ID) {
-      const r = parseFloat(customRating.replace(/,/g, '.').trim());
-      const s = parseFloat(customSlope.replace(/,/g, '.').trim());
-      if (Number.isFinite(r) && Number.isFinite(s) && s > 0) {
-        return { rating: round1(r), slope: Math.round(s), teeLabel: 'Custom' };
-      }
-      const fb = ratingForCourse(course, platform);
-      return { rating: fb.rating, slope: fb.slope, teeLabel: 'Custom' };
-    }
-    const row = courseTees.find((t) => t.name === teePickKey);
-    if (row) return { rating: row.rating, slope: row.slope, teeLabel: row.name };
-    const fb = ratingForCourse(course, platform);
-    return { rating: fb.rating, slope: fb.slope, teeLabel: course.defaultTee ?? 'Default' };
+    })();
+    // eslint-disable-next-line no-console -- debug: resolved tee for handicap preview
+    console.log('[log] resolvedTeeRating', resolved.rating, resolved.slope);
+    return resolved;
   }, [course, platform, teePickKey, customRating, customSlope, courseTees]);
   const showTeeSelector = course?.confident !== false;
 
@@ -383,10 +389,11 @@ export default function LogRoundScreen() {
 
   const simIndexCurrent = useMemo(() => currentIndexFromRounds(rounds), [rounds]);
   const expectedDiffPre = useMemo(() => {
-    if (simIndexCurrent == null) return null;
-    const e = expectedDifferentialFromIndex(simIndexCurrent, modifier);
-    return Number.isFinite(e) ? e : null;
-  }, [simIndexCurrent, modifier]);
+    if (simIndexCurrent == null || modifier <= 0 || slope <= 0) return null;
+    let e = (simIndexCurrent * slope) / 113 + (rating - 72);
+    e *= modifier;
+    return Number.isFinite(e) ? round1(e) : null;
+  }, [simIndexCurrent, modifier, rating, slope]);
   const targetGrossPre = useMemo(() => {
     if (simIndexCurrent == null || !course) return null;
     const t = targetGrossToImprove(simIndexCurrent, rating, slope, modifier);
