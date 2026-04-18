@@ -168,11 +168,17 @@ export const COURSE_SEEDS: CourseSeed[] = [
     id: 'torrey-north',
     name: 'Torrey Pines North',
     location: 'La Jolla, CA',
-    defaultTee: 'White',
+    defaultTee: 'Green',
     byPlatform: uniformByPlatform(72.0, 130),
     pars: P72,
-    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
-    confident: false,
+    tees: [
+      { name: 'Silver', rating: 66.0, slope: 112 },
+      { name: 'Gold', rating: 69.3, slope: 120 },
+      { name: 'Green', rating: 71.5, slope: 125 },
+      { name: 'Black', rating: 73.6, slope: 129 },
+      { name: 'Taupe', rating: 75.8, slope: 134 },
+    ],
+    confident: true,
   },
   {
     id: 'fishers-island',
@@ -191,8 +197,13 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.0, 130),
     pars: P72,
-    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
-    confident: false,
+    tees: [
+      { name: 'Red', rating: 64.0, slope: 102 },
+      { name: 'White', rating: 69.4, slope: 119 },
+      { name: 'Blue', rating: 73.2, slope: 125 },
+      { name: 'Tiger', rating: 75.6, slope: 132 },
+    ],
+    confident: true,
   },
   {
     id: 'pasatiempo',
@@ -201,8 +212,13 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.0, 130),
     pars: P72,
-    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
-    confident: false,
+    tees: [
+      { name: 'Hollins', rating: 63.2, slope: 117 },
+      { name: 'Green', rating: 68.5, slope: 132 },
+      { name: 'White', rating: 70.8, slope: 134 },
+      { name: 'Gold', rating: 72.5, slope: 141 },
+    ],
+    confident: true,
   },
   {
     id: 'prairie-dunes',
@@ -211,8 +227,14 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.0, 130),
     pars: P72,
-    tees: [{ name: 'White', rating: 72.0, slope: 130 }],
-    confident: false,
+    tees: [
+      { name: 'Bronze', rating: 67.4, slope: 131 },
+      { name: 'Silver', rating: 69.2, slope: 135 },
+      { name: 'White', rating: 72.3, slope: 141 },
+      { name: 'Blue', rating: 74.1, slope: 144 },
+      { name: 'Gold', rating: 75.5, slope: 148 },
+    ],
+    confident: true,
   },
   {
     id: 'sand-hills',
@@ -480,19 +502,21 @@ export const COURSE_SEEDS: CourseSeed[] = [
       { name: 'White', rating: 72.0, slope: 130 },
       { name: 'Blue', rating: 74.3, slope: 131 },
     ],
-    confident: true,
+    confident: false,
   },
   {
     id: 'bandon-dunes',
     name: 'Bandon Dunes',
-    defaultTee: 'White',
-    byPlatform: uniformByPlatform(72.4, 126),
+    defaultTee: 'Green',
+    byPlatform: uniformByPlatform(71.1, 133),
     pars: P72,
     tees: [
-      { name: 'Red', rating: 68.9, slope: 115 },
-      { name: 'White', rating: 72.4, slope: 126 },
-      { name: 'Blue', rating: 74.1, slope: 132 },
+      { name: 'Royal Blue', rating: 61.6, slope: 105 },
+      { name: 'Gold', rating: 69.1, slope: 124 },
+      { name: 'Green', rating: 71.1, slope: 133 },
+      { name: 'Black', rating: 73.5, slope: 143 },
     ],
+    confident: true,
   },
   {
     id: 'bandon-trails',
@@ -521,6 +545,34 @@ export const COURSE_SEEDS: CourseSeed[] = [
       { name: 'Gold', rating: 68.9, slope: 131 },
       { name: 'Green', rating: 70.8, slope: 135 },
       { name: 'Black', rating: 73.2, slope: 143 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'old-macdonald',
+    name: 'Old Macdonald',
+    defaultTee: 'Green',
+    byPlatform: uniformByPlatform(71.4, 127),
+    pars: P72,
+    tees: [
+      { name: 'Royal Blue', rating: 62.6, slope: 104 },
+      { name: 'Gold', rating: 67.8, slope: 117 },
+      { name: 'Green', rating: 71.4, slope: 127 },
+      { name: 'Black', rating: 74.4, slope: 134 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'sheep-ranch',
+    name: 'Sheep Ranch',
+    defaultTee: 'Green',
+    byPlatform: uniformByPlatform(70.0, 116),
+    pars: P72,
+    tees: [
+      { name: 'Royal Blue', rating: 61.0, slope: 97 },
+      { name: 'Gold', rating: 67.9, slope: 109 },
+      { name: 'Green', rating: 70.0, slope: 116 },
+      { name: 'Black', rating: 71.9, slope: 121 },
     ],
     confident: true,
   },
@@ -742,7 +794,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
       { name: 'Yellow', rating: 72.7, slope: 142 },
       { name: 'White', rating: 74.8, slope: 145 },
     ],
-    confident: true,
+    confident: false,
   },
   {
     id: 'celtic-manor-twenty-ten',
@@ -751,7 +803,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     byPlatform: uniformByPlatform(72.5, 131),
     pars: P72,
     tees: [{ name: 'Yellow', rating: 72.5, slope: 131 }],
-    confident: true,
+    confident: false,
   },
   {
     id: 'gleneagles-kings',
@@ -763,7 +815,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
       { name: 'Yellow', rating: 71.1, slope: 128 },
       { name: 'Blue', rating: 75.6, slope: 136 },
     ],
-    confident: true,
+    confident: false,
   },
   {
     id: 'royal-birkdale',
@@ -772,7 +824,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     byPlatform: uniformByPlatform(72.0, 132),
     pars: P72,
     tees: [{ name: 'Yellow', rating: 72.0, slope: 132 }],
-    confident: true,
+    confident: false,
   },
   {
     id: 'royal-lytham-st-annes',
@@ -838,7 +890,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
       { name: 'Amarilla', rating: 72.7, slope: 133 },
       { name: 'Blanca', rating: 74.2, slope: 136 },
     ],
-    confident: true,
+    confident: false,
   },
   {
     id: 'hirono',
@@ -1078,6 +1130,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.8, 133),
     pars: P72,
+    confident: false,
   },
   {
     id: 'colonial-cc',
@@ -1085,6 +1138,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(71.9, 127),
     pars: P72,
+    confident: false,
   },
   {
     id: 'quail-hollow',
@@ -1105,6 +1159,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(71.3, 127),
     pars: P72,
+    confident: false,
   },
   {
     id: 'wilmington-cc',
@@ -1112,6 +1167,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(74.5, 130),
     pars: P72,
+    confident: false,
   },
   {
     id: 'liberty-national',
@@ -1119,6 +1175,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.2, 131),
     pars: P72,
+    confident: false,
   },
   {
     id: 'ridgewood-cc',
@@ -1126,6 +1183,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(74.1, 132),
     pars: P72,
+    confident: false,
   },
   {
     id: 'caves-valley',
@@ -1133,6 +1191,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(74.8, 135),
     pars: P72,
+    confident: false,
   },
   {
     id: 'workday-bradenton-cc',
@@ -1140,6 +1199,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.0, 128),
     pars: P72,
+    confident: false,
   },
   {
     id: 'castle-pines',
@@ -1153,6 +1213,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
       GSPro: rp(73.9, 138),
     },
     pars: P72,
+    confident: false,
   },
   {
     id: 'winged-foot',
@@ -1166,6 +1227,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
       GSPro: rp(76.8, 147),
     },
     pars: P72,
+    confident: false,
   },
 ];
 

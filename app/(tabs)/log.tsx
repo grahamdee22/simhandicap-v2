@@ -360,7 +360,7 @@ export default function LogRoundScreen() {
 
   const coursesForPicker = useMemo(
     () =>
-      COURSE_SEEDS.filter((c) => courseMatchesSearch(c, courseSearchQuery)).sort((a, b) =>
+      COURSE_SEEDS.filter((c) => c.confident !== false && courseMatchesSearch(c, courseSearchQuery)).sort((a, b) =>
         a.name.localeCompare(b.name)
       ),
     [courseSearchQuery]
