@@ -66,15 +66,7 @@ export function SimCapLogoHero({ style, showTagline = true, wordmarkSize = 34 }:
         </View>
         <View style={styles.wordBlock}>
           <SimCapWordmark accessible={false} fontSize={wordmarkSize} />
-          {showTagline ? (
-            <Text
-              style={styles.tagline}
-              numberOfLines={1}
-              adjustsFontSizeToFit
-            >
-              THE SIM GOLF HANDICAP APP
-            </Text>
-          ) : null}
+          {showTagline ? <Text style={styles.tagline}>THE SIM GOLF HANDICAP APP</Text> : null}
         </View>
       </View>
     </View>
@@ -106,9 +98,10 @@ const styles = StyleSheet.create({
   },
   tagline: {
     marginTop: 4,
-    fontSize: 11,
+    fontSize: 9,
+    lineHeight: 12,
     fontWeight: '500',
     color: '#6aab8a',
-    letterSpacing: 0.8,
+    letterSpacing: 0.55,
   },
 });
