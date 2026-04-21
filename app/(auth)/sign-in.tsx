@@ -1,4 +1,4 @@
-import { Link, useRouter } from 'expo-router';
+import { Link, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -103,6 +103,14 @@ export default function SignInScreen() {
             <Text style={styles.primaryTxt}>Sign in</Text>
           )}
         </Pressable>
+
+        <View style={styles.forgotRow}>
+          <Link href={'/(auth)/forgot-password' as Href} asChild>
+            <Pressable accessibilityRole="link" hitSlop={8} style={({ pressed }) => [pressed && styles.forgotLinkPressed]}>
+              <Text style={styles.forgotLink}>Forgot password?</Text>
+            </Pressable>
+          </Link>
+        </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -176,4 +184,12 @@ const styles = StyleSheet.create({
   },
   primaryDisabled: { opacity: 0.7 },
   primaryTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  forgotRow: { marginTop: 16, alignItems: 'center' },
+  forgotLink: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.header,
+    textDecorationLine: 'underline',
+  },
+  forgotLinkPressed: { opacity: 0.65 },
 });

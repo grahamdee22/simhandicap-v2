@@ -38,10 +38,22 @@ async function syncProfileIntoStore(): Promise<void> {
 /** Expo Router may omit route groups from segments; pathname is usually `/sign-in`, `/sign-up`. */
 function isAuthRoute(segments: string[], pathname: string): boolean {
   if (segments[0] === '(auth)' || segments.includes('(auth)')) return true;
-  if (segments.includes('sign-in') || segments.includes('sign-up')) return true;
+  if (
+    segments.includes('sign-in') ||
+    segments.includes('sign-up') ||
+    segments.includes('forgot-password') ||
+    segments.includes('reset-password')
+  )
+    return true;
   const p = pathname.replace(/\/$/, '') || '/';
-  if (p === '/sign-in' || p === '/sign-up') return true;
-  if (p.endsWith('/sign-in') || p.endsWith('/sign-up')) return true;
+  if (p === '/sign-in' || p === '/sign-up' || p === '/forgot-password' || p === '/reset-password') return true;
+  if (
+    p.endsWith('/sign-in') ||
+    p.endsWith('/sign-up') ||
+    p.endsWith('/forgot-password') ||
+    p.endsWith('/reset-password')
+  )
+    return true;
   return false;
 }
 
@@ -120,9 +132,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!configured || loading || !navReady) return;
     const inAuth = isAuthRoute(segments, pathname);
+    const p = pathname.replace(/\/$/, '') || '/';
+    const onPasswordReset = p.includes('reset-password');
     if (!session && !inAuth) {
       router.replace('/(auth)/sign-in');
-    } else if (session && inAuth) {
+    } else if (session && inAuth && !onPasswordReset) {
       router.replace('/');
     }
   }, [configured, loading, session, segments, pathname, navReady, router]);

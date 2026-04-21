@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "simhandicapv2",
+    "scheme": "simcap",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "splash": {
@@ -14,7 +14,12 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "associatedDomains": [
+        "applinks:app.sim-cap.com",
+        "applinks:app.sim-cap.com"
+      ],
+      "bundleIdentifier": "com.anonymous.simhandicapv2"
     },
     "android": {
       "adaptiveIcon": {
@@ -22,7 +27,48 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "simcap",
+              "host": "reset-password"
+            },
+            {
+              "scheme": "https",
+              "host": "app.sim-cap.com",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        },
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "simcap",
+              "host": "reset-password"
+            },
+            {
+              "scheme": "https",
+              "host": "app.sim-cap.com",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ],
+      "package": "com.anonymous.simhandicapv2"
     },
     "web": {
       "bundler": "metro",
