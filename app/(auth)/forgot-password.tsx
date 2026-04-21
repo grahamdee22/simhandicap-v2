@@ -35,9 +35,9 @@ export default function ForgotPasswordScreen() {
       return;
     }
     setBusy(true);
-    // Supabase Dashboard → Auth → URL configuration: allow `simcap://reset-password` in Redirect URLs; set the same in the reset email template.
+    // Supabase Dashboard → Auth → URL configuration: allow `https://app.sim-cap.com/reset-password` in Redirect URLs; set the same in the reset email template.
     const { error: resetError } = await supabase.auth.resetPasswordForEmail(trimmed, {
-      redirectTo: 'simcap://reset-password',
+      redirectTo: 'https://app.sim-cap.com/reset-password',
     });
     setBusy(false);
     if (resetError) {
