@@ -3,6 +3,7 @@ import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
 import { SIMCAP_INSTAGRAM_URL } from '../lib/socialLinks';
 import { SimCapMark } from './SimCapMark';
+import { SimCapWordmark } from './SimCapWordmark';
 
 const HEADER_ICON_COLOR = '#fff';
 /** Sits beside 42pt SimCap mark; matches typical nav icon scale. */
@@ -39,7 +40,10 @@ export function HeaderInstagramAndSimCap() {
         <Ionicons name="logo-instagram" size={HEADER_INSTAGRAM_SIZE} color={HEADER_ICON_COLOR} />
       </Pressable>
       <View style={styles.headerMarkWrap}>
-        <SimCapMark size={42} />
+        <SimCapMark size={34} />
+        <View style={styles.headerWordWrap}>
+          <SimCapWordmark fontSize={22} />
+        </View>
       </View>
     </View>
   );
@@ -67,9 +71,14 @@ const styles = StyleSheet.create({
     marginRight: 2,
   },
   headerMarkWrap: {
-    justifyContent: 'center',
+    flexDirection: 'row',
     alignItems: 'center',
-    minWidth: 48,
+    gap: 6,
     minHeight: 48,
+    paddingLeft: 2,
+  },
+  headerWordWrap: {
+    justifyContent: 'center',
+    paddingBottom: 2,
   },
 });

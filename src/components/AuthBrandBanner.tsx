@@ -12,12 +12,8 @@ type Props = {
 export function AuthBrandBanner({ variant }: Props) {
   return (
     <View style={styles.panel}>
-      <SimCapLogoHero style={styles.logo} />
-      {variant === 'signIn' ? (
-        <Text style={styles.tagline}>The sim golf handicap app</Text>
-      ) : (
-        <Text style={styles.welcome}>Welcome to SimCap — beta</Text>
-      )}
+      <SimCapLogoHero style={styles.logo} wordmarkSize={36} />
+      {variant === 'signUp' ? <Text style={styles.welcome}>Welcome to SimCap — beta</Text> : null}
     </View>
   );
 }
@@ -26,24 +22,18 @@ const styles = StyleSheet.create({
   panel: {
     backgroundColor: colors.header,
     borderRadius: 16,
+    minHeight: 200,
     paddingVertical: 22,
     paddingHorizontal: 18,
     marginBottom: 4,
     alignItems: 'center',
+    justifyContent: 'center',
     overflow: 'hidden',
   },
   logo: {
     width: '100%',
     maxWidth: 280,
     aspectRatio: SIM_CAP_LOGO_ASPECT,
-  },
-  tagline: {
-    marginTop: 10,
-    fontSize: 15,
-    lineHeight: 21,
-    color: 'rgba(255,255,255,0.92)',
-    fontWeight: '500',
-    textAlign: 'center',
   },
   welcome: {
     marginTop: 12,
