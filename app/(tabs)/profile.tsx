@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { Link, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
@@ -23,6 +23,8 @@ import { currentIndexFromRounds, formatRoundMeta, useAppStore } from '../../src/
 
 /** Guest-only demo row on the Contact card (not sign-in email). */
 const DEMO_CONTACT_EMAIL = 'jake.morrison@example.com';
+
+const PRIVACY_POLICY_URL = 'https://sim-cap.com/privacy.html';
 
 export default function ProfileScreen() {
   const router = useRouter();
@@ -423,6 +425,15 @@ export default function ProfileScreen() {
             <Text style={styles.meta}>Demo email — not used for sign-in.</Text>
           </View>
         ) : null}
+
+        <Pressable
+          onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
+          style={({ pressed }) => [styles.privacyLinkWrap, pressed && styles.privacyLinkPressed]}
+          accessibilityRole="link"
+          accessibilityLabel="Privacy policy (opens in browser)"
+        >
+          <Text style={styles.privacyLink}>Privacy Policy</Text>
+        </Pressable>
       </ScrollView>
     </ContentWidth>
   );
@@ -610,4 +621,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontStyle: 'italic',
   },
+  privacyLinkWrap: { alignSelf: 'center', marginTop: 8, paddingVertical: 10, paddingHorizontal: 8 },
+  privacyLinkPressed: { opacity: 0.75 },
+  privacyLink: { fontSize: 12, fontWeight: '600', color: colors.sage },
 });
