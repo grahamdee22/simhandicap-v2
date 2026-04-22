@@ -1,6 +1,6 @@
 {
   "rewrites": [
     { "source": "/reset-password", "destination": "/reset-password.html" },
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/((?!.*\\.(?:png|jpg|json|ico|css|js|svg|woff|woff2|ttf)$).*)", "destination": "/index.html" }
   ]
 }
