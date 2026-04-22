@@ -19,7 +19,7 @@
         "applinks:app.sim-cap.com",
         "applinks:app.sim-cap.com"
       ],
-      "bundleIdentifier": "com.anonymous.simhandicapv2"
+      "bundleIdentifier": "com.simcap.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -68,7 +68,7 @@
           ]
         }
       ],
-      "package": "com.anonymous.simhandicapv2"
+      "package": "com.simcap.app"
     },
     "web": {
       "bundler": "metro",
