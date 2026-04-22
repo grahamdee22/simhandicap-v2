@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "simhandicap-v2",
+    "name": "SimCap",
     "slug": "simhandicap-v2",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -73,7 +73,14 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "SimCap",
+      "shortName": "SimCap",
+      "description": "The GHIN for simulator golf",
+      "themeColor": "#1a3a2a",
+      "backgroundColor": "#1a3a2a",
+      "display": "standalone",
+      "orientation": "portrait"
     },
     "plugins": [
       "expo-router",
