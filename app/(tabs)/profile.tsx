@@ -164,11 +164,10 @@ export default function ProfileScreen() {
         style={styles.screen}
         contentContainerStyle={{
           paddingHorizontal: gutter,
-          paddingTop: Math.max(gutter, 16),
+          paddingTop: Math.max(gutter, 10),
           paddingBottom: insets.bottom + 32,
         }}
       >
-        <Text style={[styles.h1, isWide && styles.h1Lg]}>Profile</Text>
         <Text style={[styles.sub, isWide && styles.subLg]}>
           {signedIn
             ? 'Rounds stay on this device per account; your name, preferred sim, and GHIN sync to your profile.'
@@ -441,8 +440,6 @@ export default function ProfileScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, minHeight: 0, backgroundColor: colors.bg, width: '100%' },
-  h1: { fontSize: 22, fontWeight: '700', color: colors.ink, marginBottom: 6 },
-  h1Lg: { fontSize: 26 },
   sub: { fontSize: 13, color: colors.muted, marginBottom: 20, lineHeight: 18 },
   subLg: { fontSize: 14, lineHeight: 20, maxWidth: 720 },
   card: {

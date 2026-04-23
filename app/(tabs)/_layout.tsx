@@ -36,7 +36,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
-      detachInactiveScreens={false}
+      detachInactiveScreens
       screenOptions={{
         animation: 'none',
         ...(Platform.OS === 'web' ? { sceneStyle: { flex: 1, minHeight: 0 } } : {}),
@@ -94,6 +94,17 @@ export default function TabLayout() {
         headerStyle: { backgroundColor: colors.header },
         headerTintColor: '#fff',
         headerShadowVisible: false,
+        /** Left-aligned so long titles never sit under the wide headerRight (Instagram + mark). iOS defaults to center. */
+        headerTitleAlign: 'left',
+        headerTitleContainerStyle: {
+          paddingRight: 8,
+          marginRight: 4,
+          maxWidth: '62%',
+        },
+        headerRightContainerStyle: {
+          paddingLeft: 10,
+          flexShrink: 0,
+        },
         headerTitleStyle: { fontWeight: '700', fontSize: 22 },
       }}
     >

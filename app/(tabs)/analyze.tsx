@@ -3,7 +3,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
-import { IconAnalyticsBars, IconCalendarOutline } from '../../src/components/SvgUiIcons';
+import { IconCalendarOutline } from '../../src/components/SvgUiIcons';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
 import { type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
@@ -465,7 +465,7 @@ export default function AnalyzeScreen() {
     </>
   );
 
-  const introPadTop = Math.max(insets.top, 8) + 4;
+  const introPadTop = Math.max(gutter, 6);
 
   return (
     <ContentWidth>
@@ -475,11 +475,7 @@ export default function AnalyzeScreen() {
         showsVerticalScrollIndicator={false}
         nestedScrollEnabled
       >
-        <View style={[styles.intro, { paddingTop: introPadTop, paddingHorizontal: gutter, paddingBottom: 14 }]}>
-          <View style={styles.introIconWrap}>
-            <IconAnalyticsBars size={22} color={colors.sage} />
-          </View>
-          <Text style={[styles.introTitle, isWide && styles.introTitleLg]}>Round analysis</Text>
+        <View style={[styles.intro, { paddingTop: introPadTop, paddingHorizontal: gutter, paddingBottom: 12 }]}>
           <Text style={styles.introSub}>
             Filter by how you played the sim (putting, pins, wind, etc.) and compare scores and differentials for that
             slice of your history.
@@ -523,19 +519,8 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
     width: '100%',
   },
-  introIconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 10,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  introTitle: { fontSize: 18, fontWeight: '700', color: colors.ink },
-  introTitleLg: { fontSize: 20 },
-  introSub: { fontSize: 12, color: colors.muted, marginTop: 6, lineHeight: 17, maxWidth: 520 },
-  splitRow: { flexDirection: 'row', alignItems: 'flex-start', width: '100%', marginTop: 8 },
+  introSub: { fontSize: 12, color: colors.muted, lineHeight: 17, maxWidth: 520 },
+  splitRow: { flexDirection: 'row', alignItems: 'flex-start', width: '100%', marginTop: 4 },
   splitLeft: { flex: 1 },
   splitRight: { flexShrink: 0 },
   sideCard: {

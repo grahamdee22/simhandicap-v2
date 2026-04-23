@@ -1,10 +1,7 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, ScrollView as RNScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { Pressable, ScrollView as GHScrollView } from 'react-native-gesture-handler';
-
-/** RN scroll on web (RNGH scroll + web can swallow taps); RNGH scroll on native (works with GH Pressable under root). */
-const LogScrollView = Platform.OS === 'web' ? RNScrollView : GHScrollView;
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
@@ -165,7 +162,7 @@ export default function LogRoundScreen() {
   const grossScoreInputRef = useRef<TextInput | null>(null);
   /** Last change to manual gross: typing vs +/- (avoids wrong branch if save runs before blur updates focus flags). */
   const lastGrossSourceRef = useRef<'type' | 'step'>('step');
-  /** Latest form fields for save (RNGH / deferred save must not read stale render closures). */
+  /** Latest form fields for save (deferred save must not read stale render closures). */
   const latestSaveRef = useRef<{
     holeScores: (number | null)[];
     grossScore: number;
@@ -183,6 +180,16 @@ export default function LogRoundScreen() {
     customRating: string;
     customSlope: string;
   } | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        setPlatOpen(false);
+        setCourseOpen(false);
+        setH2hModalOpen(false);
+      };
+    }, [])
+  );
 
   const resetLogForm = useCallback(() => {
     setPlatform(preferredLogPlatform);
@@ -608,7 +615,7 @@ export default function LogRoundScreen() {
     <ContentWidth bg={colors.surface}>
       <>
       <View style={styles.root}>
-        <LogScrollView
+        <ScrollView
           style={styles.scroll}
           contentContainerStyle={{
             paddingHorizontal: gutter,
@@ -824,7 +831,7 @@ export default function LogRoundScreen() {
                 })}
               </View>
             ) : (
-              <RNScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holeScroll}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holeScroll}>
                 {holeScores.map((h, i) => {
                   const par = pars[i] ?? 4;
                   return (
@@ -842,7 +849,7 @@ export default function LogRoundScreen() {
                     </View>
                   );
                 })}
-              </RNScrollView>
+              </ScrollView>
             )}
             <View style={styles.totals}>
               <Text style={styles.totTxt}>Out {sum(front) || '—'}</Text>
@@ -988,7 +995,7 @@ export default function LogRoundScreen() {
         <Text style={styles.saveHint}>
           Saves to this device, opens Round analysis, and updates your sim index, home chart, and profile.
         </Text>
-        </LogScrollView>
+        </ScrollView>
       </View>
 
       <Modal
@@ -1028,7 +1035,7 @@ export default function LogRoundScreen() {
           <Pressable style={styles.modalBackdropPress} onPress={() => setH2hModalOpen(false)} />
           <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
             <Text style={styles.modalTitle}>Head-to-head</Text>
-            <RNScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
               <Pressable
                 style={styles.modalRow}
                 onPress={() => {
@@ -1074,7 +1081,7 @@ export default function LogRoundScreen() {
                   </View>
                 );
               })}
-            </RNScrollView>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1099,7 +1106,7 @@ export default function LogRoundScreen() {
               autoCorrect={false}
               clearButtonMode="while-editing"
             />
-            <RNScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
               {coursesForPicker.length === 0 ? (
                 <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
               ) : (
@@ -1130,7 +1137,7 @@ export default function LogRoundScreen() {
                   </Pressable>
                 ))
               )}
-            </RNScrollView>
+            </ScrollView>
           </View>
         </View>
       </Modal>

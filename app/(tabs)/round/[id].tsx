@@ -389,20 +389,6 @@ export default function RoundDetailScreen() {
           ) : null}
 
           <View style={[styles.actions, { marginHorizontal: gutter }]}>
-            <Pressable
-              style={styles.actionBtn}
-              onPress={() => {
-                if (Platform.OS === 'web' && typeof window !== 'undefined') {
-                  window.alert(
-                    'Share\n\nGroup invites and share links hook up with Supabase in production.'
-                  );
-                  return;
-                }
-                Alert.alert('Share', 'Group invites and share links hook up with Supabase in production.');
-              }}
-            >
-              <Text style={styles.actionTxt}>Share to group</Text>
-            </Pressable>
             <Link href="/(tabs)/log" asChild>
               <Pressable style={mergeViewStyles(styles.actionBtn, styles.actionPrimary)}>
                 <Text style={[styles.actionTxt, styles.actionPrimaryTxt]}>Log another</Text>
