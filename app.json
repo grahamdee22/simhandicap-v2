@@ -17,9 +17,14 @@
       "supportsTablet": true,
       "associatedDomains": [
         "applinks:app.sim-cap.com",
+        "applinks:app.sim-cap.com",
+        "applinks:app.sim-cap.com",
         "applinks:app.sim-cap.com"
       ],
-      "bundleIdentifier": "com.simcap.app"
+      "bundleIdentifier": "com.simcap.app",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -88,6 +93,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "39ea49ed-98b0-411c-8570-22c8c6284769"
+      }
+    },
+    "owner": "grahamdee22"
   }
 }
