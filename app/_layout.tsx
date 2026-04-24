@@ -12,6 +12,7 @@ import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
+import { BrandedSplashGate } from '@/src/components/BrandedSplashGate';
 import { colors } from '@/src/lib/constants';
 
 export { ErrorBoundary } from 'expo-router';
@@ -54,7 +55,9 @@ export default function RootLayout() {
 
   return (
     <AuthProvider>
-      <RootLayoutNav />
+      <BrandedSplashGate>
+        <RootLayoutNav />
+      </BrandedSplashGate>
     </AuthProvider>
   );
 }
