@@ -42,6 +42,8 @@ export type SimRound = {
   difficultyModifier: number;
   indexAfter: number | null;
   indexDelta: number | null;
+  /** Sim index (same as home screen `currentIndexFromRounds`) at save time; absent/null for legacy rounds. */
+  simcapIndexAtTime?: number | null;
   /** Optional: logged as a head-to-head vs someone in this crew (Social tab). */
   h2hGroupId?: string;
   h2hOpponentMemberId?: string;
@@ -131,6 +133,7 @@ export type NewRoundInput = Omit<
   | 'difficultyModifier'
   | 'indexAfter'
   | 'indexDelta'
+  | 'simcapIndexAtTime'
 >;
 
 type AppState = {
@@ -300,6 +303,7 @@ function recalcAllRounds(rounds: SimRound[]): SimRound[] {
       ...math,
       indexAfter: after,
       indexDelta: before != null && after != null ? round1(after - before) : null,
+      simcapIndexAtTime: r.simcapIndexAtTime ?? null,
     });
   }
   return out.sort(compareRoundsByPlayedAtDesc);
@@ -376,6 +380,7 @@ export const useAppStore = create<AppState>()(
           ...math,
           indexAfter: after,
           indexDelta: before != null && after != null ? round1(after - before) : null,
+          simcapIndexAtTime: before,
         };
 
         let id = newId();
@@ -411,7 +416,10 @@ export const useAppStore = create<AppState>()(
 
       updateRound: async (roundId, patch) => {
         const s = get();
-        const rounds = s.rounds.map((r) => (r.id === roundId ? { ...r, ...patch } : r));
+        const indexAtSave = currentIndexFromRounds(s.rounds);
+        const rounds = s.rounds.map((r) =>
+          r.id === roundId ? { ...r, ...patch, simcapIndexAtTime: indexAtSave } : r
+        );
         const full = recalcAllRounds(rounds);
         const updated = full.find((r) => r.id === roundId);
         if (!updated) return;
