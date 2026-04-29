@@ -29,7 +29,7 @@ import {
   middleCourseTee,
   ratingForCourse,
 } from '../../src/lib/courses';
-import { difficultyConditionsLabel, targetGrossToImprove } from '../../src/lib/preRoundPrediction';
+import { targetGrossToImprove } from '../../src/lib/preRoundPrediction';
 import { currentIndexFromRounds, useAppStore, type SimRound } from '../../src/store/useAppStore';
 
 type H2hOpponentPick = {
@@ -941,14 +941,14 @@ export default function LogRoundScreen() {
           <View style={styles.diffTrack}>
             <View style={[styles.diffFill, { width: `${modPct}%` }]} />
           </View>
-          <Text style={styles.diffLive}>
-            Raw diff {preview.raw.toFixed(1)} × modifier {modifier.toFixed(2)} →{' '}
-            <Text style={styles.diffStrong}>{preview.adjusted.toFixed(1)}</Text> adjusted
-          </Text>
         </View>
 
         {course ? (
           <View style={styles.predCard}>
+            <Text style={styles.predAdjustedLine}>
+              <Text style={styles.predAdjustedLbl}>Adjusted differential: </Text>
+              <Text style={styles.predAdjustedNum}>{preview.adjusted.toFixed(1)}</Text>
+            </Text>
             {expectedDiffPre != null ? (
               <>
                 <Text style={styles.predExpectedLine}>
@@ -971,11 +971,6 @@ export default function LogRoundScreen() {
                 Log at least one round to see your expected differential and a target gross for these conditions.
               </Text>
             )}
-            <Text style={styles.predDifficulty}>
-              <Text style={styles.predDifficultyLbl}>{difficultyConditionsLabel(modifier)}</Text>
-              <Text style={styles.predDifficultySep}> · </Text>
-              <Text style={styles.predDifficultyMod}>{modifier.toFixed(2)} modifier</Text>
-            </Text>
           </View>
         ) : null}
 
@@ -1297,8 +1292,6 @@ const styles = StyleSheet.create({
   diffNum: { fontSize: 16, fontWeight: '600', color: colors.ink },
   diffTrack: { height: 5, borderRadius: 99, backgroundColor: colors.pillBorder, marginTop: 6, overflow: 'hidden' },
   diffFill: { height: 5, borderRadius: 99, backgroundColor: colors.accent },
-  diffLive: { fontSize: 11, color: colors.muted, marginTop: 6, lineHeight: 15 },
-  diffStrong: { fontWeight: '700', color: colors.ink },
   predCard: {
     backgroundColor: '#f0f7f4',
     borderRadius: 12,
@@ -1309,7 +1302,20 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#cfe8dc',
   },
-  predExpectedLine: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'baseline' },
+  predAdjustedLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    marginBottom: 10,
+  },
+  predAdjustedLbl: { fontSize: 15, fontWeight: '600', color: '#1a3d2b' },
+  predAdjustedNum: { fontSize: 28, fontWeight: '700', color: '#1a3d2b' },
+  predExpectedLine: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+    marginTop: 2,
+  },
   predExpectedLbl: { fontSize: 15, fontWeight: '600', color: '#1a3d2b' },
   predExpectedNum: { fontSize: 26, fontWeight: '700', color: '#1a3d2b' },
   predTarget: {
@@ -1321,10 +1327,6 @@ const styles = StyleSheet.create({
   },
   predTargetSoft: { fontSize: 12, color: '#3d5a4f', marginTop: 10, lineHeight: 17 },
   predNoIndex: { fontSize: 13, color: '#3d5a4f', lineHeight: 19, marginBottom: 4 },
-  predDifficulty: { marginTop: 12, fontSize: 13, lineHeight: 20 },
-  predDifficultyLbl: { fontWeight: '600', color: '#1a3d2b' },
-  predDifficultySep: { color: '#5a6b62' },
-  predDifficultyMod: { fontWeight: '700', color: '#52b788' },
   saveBtn: {
     backgroundColor: colors.header,
     borderRadius: 10,

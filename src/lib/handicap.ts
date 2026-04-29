@@ -8,29 +8,59 @@ export type PinDay = 'thu' | 'fri' | 'sat' | 'sun';
 export type Wind = 'off' | 'light' | 'strong';
 export type Mulligans = 'on' | 'off';
 
+/** Putting multipliers (higher → higher adjusted diff for same gross). Order: putt_all < gimme < auto_2putt. */
 const PUTTING: Record<PuttingMode, number> = {
-  auto_2putt: 0.62,
-  gimme_5: 0.82,
   putt_all: 1.0,
+  auto_2putt: 1.15,
+  gimme_5: 1.05,
 };
 
+/** Putting slice of `difficultyProduct` (single source of truth for UI breakdowns). */
+export function puttingDifficultyMultiplier(mode: PuttingMode): number {
+  return PUTTING[mode];
+}
+
+/**
+ * Pin placement: easier Thu pins → higher multiplier (penalize); hardest Sun → lowest (most credit).
+ */
 const PIN: Record<PinDay, number> = {
-  thu: 0.9,
-  fri: 0.92,
-  sat: 0.97,
+  thu: 1.12,
+  fri: 1.08,
+  sat: 1.04,
   sun: 1.0,
 };
 
+/** Pin slice of `difficultyProduct` (single source of truth for UI breakdowns). */
+export function pinDifficultyMultiplier(day: PinDay): number {
+  return PIN[day];
+}
+
+/**
+ * Wind: off (easiest) → higher multiplier; strong (hardest) → lowest (most credit).
+ */
 const WIND: Record<Wind, number> = {
-  off: 0.92,
-  light: 0.96,
+  off: 1.1,
+  light: 1.05,
   strong: 1.0,
 };
 
+/** Wind slice of `difficultyProduct` (single source of truth for UI breakdowns). */
+export function windDifficultyMultiplier(mode: Wind): number {
+  return WIND[mode];
+}
+
 const MULLIGANS: Record<Mulligans, number> = {
-  on: 0.88,
+  on: 1.15,
   off: 1.0,
 };
+
+/**
+ * Universal sim baseline (~12% discount): flat lies, no sand, ideal turf — not modeled as inputs.
+ * Applied after putting × pin × wind × mulligans, before the floor clamp. Tune when real-world data lands.
+ */
+export const SIM_BASELINE = 0.88;
+
+const MIN_DIFFICULTY_MODIFIER = 0.5;
 
 export function difficultyProduct(
   putting: PuttingMode,
@@ -38,8 +68,9 @@ export function difficultyProduct(
   wind: Wind,
   mulligans: Mulligans
 ): number {
-  const product = PUTTING[putting] * PIN[pin] * WIND[wind] * MULLIGANS[mulligans];
-  return Math.max(0.65, product);
+  const conditioned = PUTTING[putting] * PIN[pin] * WIND[wind] * MULLIGANS[mulligans];
+  const product = conditioned * SIM_BASELINE;
+  return Math.max(MIN_DIFFICULTY_MODIFIER, product);
 }
 
 export function rawDifferential(ags: number, courseRating: number, slope: number): number {

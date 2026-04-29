@@ -18,7 +18,14 @@ import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { mergeViewStyles } from '../../../src/lib/mergeStyles';
 import { useResponsive } from '../../../src/lib/responsive';
-import { formatHandicapIndexDisplay, scoreToParStyle } from '../../../src/lib/handicap';
+import {
+  formatHandicapIndexDisplay,
+  pinDifficultyMultiplier,
+  puttingDifficultyMultiplier,
+  scoreToParStyle,
+  SIM_BASELINE,
+  windDifficultyMultiplier,
+} from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
 
@@ -71,10 +78,10 @@ function top8Ids(all: SimRound[]): Set<string> {
 }
 
 function modifierParts(r: SimRound) {
-  const put = r.putting === 'auto_2putt' ? 0.62 : r.putting === 'gimme_5' ? 0.82 : 1.0;
-  const pin = r.pin === 'thu' ? 0.9 : r.pin === 'fri' ? 0.92 : r.pin === 'sat' ? 0.97 : 1.0;
-  const win = r.wind === 'off' ? 0.92 : r.wind === 'light' ? 0.96 : 1.0;
-  const mul = r.mulligans === 'on' ? 0.88 : 1.0;
+  const put = puttingDifficultyMultiplier(r.putting);
+  const pin = pinDifficultyMultiplier(r.pin);
+  const win = windDifficultyMultiplier(r.wind);
+  const mul = r.mulligans === 'on' ? 1.15 : 1.0;
   return [
     {
       label: 'Raw differential',
@@ -91,6 +98,12 @@ function modifierParts(r: SimRound) {
     },
     { label: 'Wind', display: `×${win}`, width: win * 100, color: colors.accent },
     { label: 'Mulligans', display: `×${mul}`, width: mul * 100, color: colors.accent },
+    {
+      label: 'Sim baseline',
+      display: `×${SIM_BASELINE}`,
+      width: SIM_BASELINE * 100,
+      color: colors.accentMuted,
+    },
   ];
 }
 
