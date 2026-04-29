@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconCalendarOutline } from '../../src/components/SvgUiIcons';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
-import { type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
+import { formatDifferentialDisplay, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
 import { formatRoundMeta, useAppStore, type SimRound } from '../../src/store/useAppStore';
@@ -408,7 +408,7 @@ export default function AnalyzeScreen() {
         <View style={[styles.statCard, isWide && styles.statCardLg]}>
           <Text style={styles.statLbl}>Best diff.</Text>
           <Text style={[styles.statVal, isWide && styles.statValLg]}>
-            {listStats.bestDiff != null ? listStats.bestDiff.toFixed(1) : '—'}
+            {formatDifferentialDisplay(listStats.bestDiff)}
           </Text>
           <Text style={[styles.statSub, { color: colors.subtle }]} numberOfLines={1}>
             {listStats.bestCourse || '—'}
@@ -456,7 +456,7 @@ export default function AnalyzeScreen() {
               </View>
               <View style={styles.roundRight}>
                 <Text style={[styles.roundScore, isWide && styles.roundScoreLg]}>{r.grossScore}</Text>
-                <Text style={styles.roundDiff}>diff {r.adjustedDiff.toFixed(1)}</Text>
+                <Text style={styles.roundDiff}>diff {formatDifferentialDisplay(r.adjustedDiff)}</Text>
               </View>
             </Pressable>
           </Link>

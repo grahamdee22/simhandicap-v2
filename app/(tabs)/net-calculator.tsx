@@ -1,4 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Modal,
@@ -14,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { GolferPickerModal } from '../../src/components/GolferPickerModal';
+import { SimCapMark } from '../../src/components/SimCapMark';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { COURSE_SEEDS, courseMatchesSearch, getCourseById, ratingForCourse } from '../../src/lib/courses';
@@ -36,7 +38,7 @@ import {
   type Wind,
 } from '../../src/lib/handicap';
 import { useResponsive } from '../../src/lib/responsive';
-import { initialsFrom, useAppStore, type GroupMember } from '../../src/store/useAppStore';
+import { useAppStore, type GroupMember } from '../../src/store/useAppStore';
 
 const PUTTING_OPTS: { key: PuttingMode; label: string }[] = [
   { key: 'auto_2putt', label: 'Auto 2-putt' },
@@ -64,12 +66,10 @@ const MULL_OPTS: { key: Mulligans; label: string }[] = [
 
 type PlayerSlot =
   | { kind: 'empty' }
-  | { kind: 'pick'; userId: string }
-  | { kind: 'manual'; name: string; index: string };
+  | { kind: 'pick'; userId: string };
 
 function slotToForm(slot: PlayerSlot, roster: GroupMember[]): { name: string; indexStr: string } {
   if (slot.kind === 'empty') return { name: '', indexStr: '' };
-  if (slot.kind === 'manual') return { name: slot.name, indexStr: slot.index };
   const m = roster.find((x) => x.userId === slot.userId);
   if (!m) return { name: '', indexStr: '' };
   return {
@@ -104,6 +104,7 @@ function giftPhrase(
 type PickerTarget = 1 | 2 | null;
 
 export default function NetCalculatorScreen() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter, isWide } = useResponsive();
   const { session } = useAuth();
@@ -135,7 +136,6 @@ export default function NetCalculatorScreen() {
   }, [groups]);
 
   useEffect(() => {
-    setP1Slot({ kind: 'empty' });
     setP2Slot({ kind: 'empty' });
   }, [selectedGroupId]);
 
@@ -154,13 +154,30 @@ export default function NetCalculatorScreen() {
     });
   }, [selectedGroup]);
 
+  useEffect(() => {
+    const me =
+      rosterSorted.find((m) => m.isYou) ??
+      rosterSorted.find((m) => (session?.user?.id ? m.userId === session.user.id : false));
+    setP1Slot(me ? { kind: 'pick', userId: me.userId } : { kind: 'empty' });
+  }, [rosterSorted, session?.user?.id]);
+
   const pickerGolfers = useMemo(() => rosterSorted.map(memberToPickerGolfer), [rosterSorted]);
+  const hasGroups = groups.length > 0;
+  const selectedGroupHasOpponent = useMemo(
+    () => rosterSorted.some((m) => !m.isYou),
+    [rosterSorted]
+  );
+  const p1Member = useMemo(
+    () => (p1Slot.kind === 'pick' ? rosterSorted.find((x) => x.userId === p1Slot.userId) ?? null : null),
+    [p1Slot, rosterSorted]
+  );
 
   const rosterUnavailable =
     !session?.user ||
     !supabaseOn ||
-    groups.length === 0 ||
-    rosterSorted.length === 0;
+    !hasGroups ||
+    !selectedGroupHasOpponent;
+  const canOpenGroupPicker = hasGroups;
 
   const [courseId, setCourseId] = useState('pebble');
   const [platform, setPlatform] = useState<PlatformId>('Trackman');
@@ -286,41 +303,8 @@ export default function NetCalculatorScreen() {
     </View>
   );
 
-  const renderSlot = (which: 1 | 2, slot: PlayerSlot, setSlot: (s: PlayerSlot) => void) => {
+  const renderSlot = (which: 1 | 2, slot: PlayerSlot) => {
     const open = () => setPickerTarget(which);
-
-    if (slot.kind === 'manual') {
-      return (
-        <View style={styles.manualBlock}>
-          <Text style={[styles.fieldLbl, styles.manualLblFirst]}>Name</Text>
-          <TextInput
-            style={styles.input}
-            value={slot.name}
-            onChangeText={(name) => setSlot({ kind: 'manual', name, index: slot.index })}
-            placeholder="Name"
-            placeholderTextColor={colors.subtle}
-          />
-          <Text style={styles.fieldLbl}>Sim index</Text>
-          <TextInput
-            style={styles.input}
-            value={slot.index}
-            onChangeText={(index) => setSlot({ kind: 'manual', name: slot.name, index })}
-            placeholder="e.g. 4.2"
-            placeholderTextColor={colors.subtle}
-            keyboardType="decimal-pad"
-          />
-          <Pressable
-            style={styles.rosterLink}
-            onPress={() => {
-              setSlot({ kind: 'empty' });
-              setPickerTarget(which);
-            }}
-          >
-            <Text style={styles.rosterLinkTxt}>Choose from group roster</Text>
-          </Pressable>
-        </View>
-      );
-    }
 
     if (slot.kind === 'pick') {
       const m = rosterSorted.find((x) => x.userId === slot.userId);
@@ -335,7 +319,7 @@ export default function NetCalculatorScreen() {
       return (
         <Pressable style={styles.slotCard} onPress={open}>
           <View style={styles.slotAvatar}>
-            <Text style={styles.slotAvatarTxt}>{m.initials}</Text>
+            <SimCapMark size={24} />
           </View>
           <View style={styles.slotBody}>
             <Text style={styles.slotName} numberOfLines={1}>
@@ -356,10 +340,22 @@ export default function NetCalculatorScreen() {
     }
 
     return (
-      <Pressable style={styles.slotEmpty} onPress={open}>
-        <Text style={styles.slotEmptyTitle}>Tap to choose</Text>
-        <Text style={styles.slotEmptyHint}>Player {which} · Group roster or enter manually</Text>
-      </Pressable>
+      <View style={styles.slotEmpty}>
+        {which === 2 && selectedGroupHasOpponent ? (
+          <Pressable onPress={open}>
+            <Text style={styles.slotEmptyTitle}>Add golfer</Text>
+            <Text style={styles.slotEmptyHint}>Player 2 · Group roster</Text>
+          </Pressable>
+        ) : (
+          <>
+            <Text style={styles.slotEmptyTitle}>Add members to your group to use this feature</Text>
+            <Text style={styles.slotEmptyHint}>Invite at least one other player in Groups.</Text>
+            <Pressable style={styles.slotActionBtn} onPress={() => router.push('/(tabs)/groups')}>
+              <Text style={styles.slotActionBtnTxt}>Manage Group</Text>
+            </Pressable>
+          </>
+        )}
+      </View>
     );
   };
 
@@ -375,20 +371,14 @@ export default function NetCalculatorScreen() {
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.title, isWide && styles.titleLg]}>Net score calculator</Text>
-        <Text style={styles.sub}>
-          Pre-round match play strokes from sim indexes, course slope/rating, and today’s sim settings.
-        </Text>
-
         <View style={styles.playersCard}>
-          <Text style={styles.cardSection}>Players</Text>
           {rosterUnavailable ? (
-            <Text style={styles.rosterHint}>Start groups with friends to get matches going</Text>
+            <Text style={styles.rosterHint}>Select which crew you're playing with</Text>
           ) : null}
           <Pressable
-            style={[styles.picker, rosterUnavailable && styles.pickerDisabled]}
+            style={[styles.picker, !canOpenGroupPicker && styles.pickerDisabled]}
             onPress={() => {
-              if (!rosterUnavailable) setGroupOpen(true);
+              if (canOpenGroupPicker) setGroupOpen(true);
             }}
           >
             <Text style={styles.pickerLbl}>Crew</Text>
@@ -398,9 +388,36 @@ export default function NetCalculatorScreen() {
             <Text style={styles.chev}>▾</Text>
           </Pressable>
           <Text style={styles.fieldLbl}>Player 1</Text>
-          {renderSlot(1, p1Slot, setP1Slot)}
+          {p1Slot.kind === 'pick' ? (
+            <View style={styles.slotCard}>
+              <View style={styles.slotAvatar}>
+                <SimCapMark size={24} />
+              </View>
+              <View style={styles.slotBody}>
+                <Text style={styles.slotName} numberOfLines={1}>
+                  {p1Member?.displayName ?? 'You'}
+                </Text>
+                <View style={styles.slotMetaRow}>
+                  <View style={styles.slotIdxPill}>
+                    <Text style={styles.slotIdxPillTxt}>{formatHandicapIndexDisplay(p1Member?.index)}</Text>
+                  </View>
+                  <Text style={styles.slotPlat} numberOfLines={1}>
+                    {p1Member?.platform ?? ''}
+                  </Text>
+                </View>
+              </View>
+            </View>
+          ) : (
+            <View style={styles.slotEmpty}>
+              <Text style={styles.slotEmptyTitle}>Add members to your group to use this feature</Text>
+              <Text style={styles.slotEmptyHint}>Invite at least one other player in Groups.</Text>
+              <Pressable style={styles.slotActionBtn} onPress={() => router.push('/(tabs)/groups')}>
+                <Text style={styles.slotActionBtnTxt}>Manage Group</Text>
+              </Pressable>
+            </View>
+          )}
           <Text style={[styles.fieldLbl, styles.fieldSp]}>Player 2</Text>
-          {renderSlot(2, p2Slot, setP2Slot)}
+          {renderSlot(2, p2Slot)}
         </View>
 
         {result ? (
@@ -418,7 +435,7 @@ export default function NetCalculatorScreen() {
             <View style={styles.resultPlayers}>
               <View style={styles.avCol}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarTxt}>{initialsFrom(p1Name)}</Text>
+                  <SimCapMark size={26} />
                 </View>
                 <Text style={styles.avName} numberOfLines={2}>
                   {p1Name.trim()}
@@ -437,7 +454,7 @@ export default function NetCalculatorScreen() {
               </View>
               <View style={styles.avCol}>
                 <View style={styles.avatar}>
-                  <Text style={styles.avatarTxt}>{initialsFrom(p2Name)}</Text>
+                  <SimCapMark size={26} />
                 </View>
                 <Text style={styles.avName} numberOfLines={2}>
                   {p2Name.trim()}
@@ -448,7 +465,7 @@ export default function NetCalculatorScreen() {
           </View>
         ) : (
           <Text style={[styles.needInput, styles.needInputTop]}>
-            Pick two players (or enter manually), then adjust course and sim settings below to see strokes.
+            Pick two players, then adjust course and sim settings below to see strokes.
           </Text>
         )}
 
@@ -502,10 +519,7 @@ export default function NetCalculatorScreen() {
           if (pickerTarget === 1) setP1Slot({ kind: 'pick', userId: g.id });
           if (pickerTarget === 2) setP2Slot({ kind: 'pick', userId: g.id });
         }}
-        onEnterManually={() => {
-          if (pickerTarget === 1) setP1Slot({ kind: 'manual', name: '', index: '' });
-          if (pickerTarget === 2) setP2Slot({ kind: 'manual', name: '', index: '' });
-        }}
+        allowManualEntry={false}
       />
 
       <Modal
@@ -658,6 +672,17 @@ const styles = StyleSheet.create({
   },
   slotEmptyTitle: { fontSize: 15, fontWeight: '600', color: colors.accentDark, textAlign: 'center' },
   slotEmptyHint: { fontSize: 11, color: colors.subtle, textAlign: 'center', marginTop: 4, lineHeight: 15 },
+  slotActionBtn: {
+    marginTop: 10,
+    alignSelf: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.sage,
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    backgroundColor: colors.accentSoft,
+  },
+  slotActionBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.accentDark },
   slotCard: {
     marginTop: 4,
     flexDirection: 'row',
@@ -683,11 +708,10 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.header,
+    backgroundColor: '#1a3a2a',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  slotAvatarTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
   slotBody: { flex: 1, minWidth: 0 },
   slotName: { fontSize: 16, fontWeight: '700', color: colors.ink },
   slotMetaRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 6, flexWrap: 'wrap' },
@@ -702,10 +726,6 @@ const styles = StyleSheet.create({
   slotIdxPillTxt: { fontSize: 13, fontWeight: '700', color: colors.accentDark },
   slotPlat: { fontSize: 12, fontWeight: '600', color: colors.sage, flex: 1, minWidth: 0 },
   slotChev: { fontSize: 22, color: colors.subtle, fontWeight: '300' },
-  manualBlock: { marginTop: 4 },
-  manualLblFirst: { marginTop: 0 },
-  rosterLink: { alignSelf: 'flex-start', marginTop: 10, paddingVertical: 4 },
-  rosterLinkTxt: { fontSize: 13, fontWeight: '600', color: colors.sage },
   picker: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -749,7 +769,7 @@ const styles = StyleSheet.create({
     width: 52,
     height: 52,
     borderRadius: 26,
-    backgroundColor: colors.accentSoft,
+    backgroundColor: '#1a3a2a',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 6,

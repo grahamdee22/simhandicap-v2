@@ -1,7 +1,7 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
@@ -11,7 +11,7 @@ import { useResponsive } from '../../src/lib/responsive';
 import {
   adjustedDifferential,
   difficultyProduct,
-  grossFromHoles,
+  formatDifferentialDisplay,
   round1,
   type Mulligans,
   type PinDay,
@@ -63,58 +63,11 @@ const PIN_OPTS: { key: PinDay; dn: string; ds: string }[] = [
   { key: 'sun', dn: 'Sun', ds: 'Round 4' },
 ];
 
-const emptyHoles = (): (number | null)[] => Array(18).fill(null);
-
 /** Set true to log gross resolution in dev tools when saving a round. */
 const DEBUG_LOG_GROSS_SAVE = false;
 
-/** Parse digits from score field text (what the user sees). */
-function parseGrossFromBuffer(scoreBuffer: string): number | null {
-  const digits = scoreBuffer.replace(/\D/g, '').slice(0, 3);
-  if (digits === '') return null;
-  const n = parseInt(digits, 10);
-  if (Number.isNaN(n)) return null;
-  return Math.min(125, Math.max(55, n));
-}
-
-/** Gross used for preview + save: full hole card wins; else live TextInput buffer while focused; else stepper state. */
-function resolveLogGrossScore(
-  holeScores: (number | null)[],
-  scoreFocused: boolean,
-  scoreBuffer: string,
-  grossScore: number
-): number {
-  const fromHoles = grossFromHoles(holeScores);
-  if (fromHoles != null) return fromHoles;
-  if (scoreFocused) {
-    const digits = scoreBuffer.replace(/\D/g, '').slice(0, 3);
-    if (digits !== '') {
-      const n = parseInt(digits, 10);
-      if (!Number.isNaN(n)) return Math.min(125, Math.max(55, n));
-    }
-  }
-  return grossScore;
-}
-
-/** Gross for persist: full card wins; else prefer last user edit (typed vs stepper) so save isn’t one frame behind blur/focus. */
-function grossToPersistForLog(
-  hs: (number | null)[],
-  bufferStr: string,
-  stepper: number,
-  stateGross: number,
-  lastSource: 'type' | 'step'
-): number {
-  const fromCard = grossFromHoles(hs);
-  if (fromCard != null) return fromCard;
-  const fromBuf = parseGrossFromBuffer(bufferStr);
-  if (lastSource === 'step') {
-    return stepper ?? fromBuf ?? stateGross;
-  }
-  return fromBuf ?? stepper ?? stateGross;
-}
-
 export default function LogRoundScreen() {
-  const { gutter, isWide, isVeryWide } = useResponsive();
+  const { gutter, isWide } = useResponsive();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ editId?: string }>();
@@ -133,8 +86,6 @@ export default function LogRoundScreen() {
   const [platform, setPlatform] = useState<PlatformId>(preferredLogPlatform);
   const [courseId, setCourseId] = useState('pebble');
   const [grossScore, setGrossScore] = useState(72);
-  const [holesExpanded, setHolesExpanded] = useState(false);
-  const [holeScores, setHoleScores] = useState<(number | null)[]>(emptyHoles);
   const [putting, setPutting] = useState<PuttingMode>('auto_2putt');
   const [pin, setPin] = useState<PinDay>('thu');
   const [wind, setWind] = useState<Wind>('off');
@@ -148,23 +99,8 @@ export default function LogRoundScreen() {
   const [courseOpen, setCourseOpen] = useState(false);
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [playedDate, setPlayedDate] = useState(todayLocalYmd);
-  const [scoreFocused, setScoreFocused] = useState(false);
-  const scoreFocusedRef = useRef(false);
-  const [scoreEditSession, setScoreEditSession] = useState(0);
-  /** Seed for the uncontrolled score field while focused (avoids controlled-input one-keystroke lag). */
-  const grossSeedForEditRef = useRef('72');
-  const [scoreBuffer, setScoreBuffer] = useState('');
-  /** Mirrors scoreBuffer on each keystroke so Save always sees the literal field text (state can lag one frame). */
-  const scoreBufferRef = useRef('');
-  /** Stepper / committed gross when not using buffer parse. */
-  const stepperGrossRef = useRef(72);
-  /** Real input node: on web, `.value` backup read at save. */
-  const grossScoreInputRef = useRef<TextInput | null>(null);
-  /** Last change to manual gross: typing vs +/- (avoids wrong branch if save runs before blur updates focus flags). */
-  const lastGrossSourceRef = useRef<'type' | 'step'>('step');
   /** Latest form fields for save (deferred save must not read stale render closures). */
   const latestSaveRef = useRef<{
-    holeScores: (number | null)[];
     grossScore: number;
     playedDate: string;
     courseId: string;
@@ -181,29 +117,30 @@ export default function LogRoundScreen() {
     customSlope: string;
   } | null>(null);
 
+  const closeH2hModal = useCallback(() => {
+    setH2hModalOpen(false);
+    Keyboard.dismiss();
+  }, []);
+
+  const openH2hModal = useCallback(() => {
+    Keyboard.dismiss();
+    setH2hModalOpen(true);
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       return () => {
         setPlatOpen(false);
         setCourseOpen(false);
-        setH2hModalOpen(false);
+        closeH2hModal();
       };
-    }, [])
+    }, [closeH2hModal])
   );
 
   const resetLogForm = useCallback(() => {
     setPlatform(preferredLogPlatform);
     setCourseId('pebble');
     setGrossScore(72);
-    stepperGrossRef.current = 72;
-    scoreFocusedRef.current = false;
-    setScoreFocused(false);
-    setScoreBuffer('');
-    scoreBufferRef.current = '';
-    setScoreEditSession(0);
-    lastGrossSourceRef.current = 'step';
-    setHolesExpanded(false);
-    setHoleScores(emptyHoles());
     setPutting('auto_2putt');
     setPin('thu');
     setWind('off');
@@ -276,10 +213,6 @@ export default function LogRoundScreen() {
         : null
     );
     setPlayedDate(isoToLocalYmd(existing.playedAt));
-    const hs = [...existing.holeScores];
-    while (hs.length < 18) hs.push(null);
-    setHoleScores(hs);
-    setHolesExpanded(existing.holeScores.some((h) => h != null));
     const ec = getCourseById(existing.courseId);
     if (ec) {
       if (ec.confident === false) {
@@ -303,15 +236,7 @@ export default function LogRoundScreen() {
         }
       }
     }
-    const cardG = grossFromHoles(hs);
-    const g0 = cardG != null ? cardG : existing.grossScore;
-    stepperGrossRef.current = g0;
-    scoreFocusedRef.current = false;
-    setScoreFocused(false);
-    lastGrossSourceRef.current = 'step';
-    const s0 = String(g0);
-    setScoreBuffer(s0);
-    scoreBufferRef.current = s0;
+    setGrossScore(Math.min(120, Math.max(55, existing.grossScore)));
   }, [existing, groups]);
 
   useEffect(() => {
@@ -378,18 +303,20 @@ export default function LogRoundScreen() {
       ),
     [courseSearchQuery]
   );
+  const hasH2hEligibleGroups = useMemo(
+    () => groups.some((gr) => gr.members.some((m) => !m.isYou)),
+    [groups]
+  );
   const { rating, slope } = course
     ? { rating: resolvedTeeRating.rating, slope: resolvedTeeRating.slope }
     : { rating: 72, slope: 130 };
 
-  const effectiveGross = useMemo(
-    () => resolveLogGrossScore(holeScores, scoreFocused, scoreBuffer, grossScore),
-    [holeScores, scoreFocused, scoreBuffer, grossScore]
-  );
+  const effectiveGross = grossScore;
 
   const preview = useMemo(() => {
     return adjustedDifferential(effectiveGross, rating, slope, putting, pin, wind, mulligans);
   }, [effectiveGross, rating, slope, putting, pin, wind, mulligans]);
+  const adjustedDisplay = formatDifferentialDisplay(preview.adjusted);
 
   const modifier = difficultyProduct(putting, pin, wind, mulligans);
   const modPct = Math.min(100, Math.max(0, ((modifier - 0.5) / 0.5) * 100));
@@ -407,50 +334,7 @@ export default function LogRoundScreen() {
     return Number.isFinite(t) ? t : null;
   }, [simIndexCurrent, course, rating, slope, modifier]);
 
-  const setHole = useCallback((i: number, text: string) => {
-    const t = text.replace(/[^0-9]/g, '');
-    const v = t === '' ? null : Math.min(15, Math.max(1, parseInt(t, 10)));
-    setHoleScores((prev) => {
-      const next = [...prev];
-      next[i] = v;
-      return next;
-    });
-  }, []);
-
-  const front = holeScores.slice(0, 9);
-  const back = holeScores.slice(9, 18);
-  const sum = (arr: (number | null)[]) => arr.reduce<number>((s, h) => s + (h ?? 0), 0);
-  const filledAll = grossFromHoles(holeScores) != null;
-  const displayGross = effectiveGross;
-
-  const commitScoreFieldBlur = useCallback((raw: string) => {
-    lastGrossSourceRef.current = 'type';
-    const digits = String(raw).replace(/\D/g, '').slice(0, 3);
-    scoreBufferRef.current = digits;
-    setScoreBuffer(digits);
-    const n = parseInt(digits, 10);
-    if (digits === '' || Number.isNaN(n)) {
-      setGrossScore((g) => {
-        stepperGrossRef.current = g;
-        return g;
-      });
-    } else {
-      const ng = Math.min(125, Math.max(55, n));
-      stepperGrossRef.current = ng;
-      setGrossScore(ng);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!scoreFocused) {
-      const s = String(effectiveGross);
-      setScoreBuffer(s);
-      scoreBufferRef.current = s;
-    }
-  }, [effectiveGross, scoreFocused]);
-
   latestSaveRef.current = {
-    holeScores,
     grossScore,
     playedDate,
     courseId,
@@ -485,28 +369,8 @@ export default function LogRoundScreen() {
         return;
       }
 
-      if (Platform.OS === 'web') {
-        const el = grossScoreInputRef.current as unknown as HTMLInputElement | null;
-        if (el != null && typeof el.value === 'string') {
-          const digits = el.value.replace(/\D/g, '').slice(0, 3);
-          scoreBufferRef.current = digits;
-          const n = parseInt(digits, 10);
-          if (digits !== '' && !Number.isNaN(n)) {
-            stepperGrossRef.current = Math.min(125, Math.max(55, n));
-          }
-        }
-      }
-
-      const hs = [...snap.holeScores];
-      while (hs.length < 18) hs.push(null);
       const playedAt = localYmdToIso(snap.playedDate);
-      const grossToSave = grossToPersistForLog(
-        hs,
-        scoreBufferRef.current,
-        stepperGrossRef.current,
-        snap.grossScore,
-        lastGrossSourceRef.current
-      );
+      const grossToSave = Math.min(120, Math.max(55, snap.grossScore));
 
       let teeNameSave = snap.course.defaultTee ?? 'Default';
       let courseRatingSave: number;
@@ -549,12 +413,7 @@ export default function LogRoundScreen() {
         // eslint-disable-next-line no-console
         console.log('[simhandicap log save]', {
           platform: Platform.OS,
-          scoreFocusedRef: scoreFocusedRef.current,
-          lastSource: lastGrossSourceRef.current,
-          buffer: scoreBufferRef.current,
-          stepper: stepperGrossRef.current,
           stateGross: snap.grossScore,
-          fromCard: grossFromHoles(hs),
           grossToSave,
         });
       }
@@ -563,7 +422,7 @@ export default function LogRoundScreen() {
         courseName: snap.course.name,
         platform: snap.platform,
         grossScore: grossToSave,
-        holeScores: hs,
+        holeScores: [],
         putting: snap.putting,
         pin: snap.pin,
         wind: snap.wind,
@@ -600,16 +459,8 @@ export default function LogRoundScreen() {
       }
     };
 
-    if (scoreFocusedRef.current) {
-      grossScoreInputRef.current?.blur();
-      setTimeout(() => void finishSave(), 48);
-      return;
-    }
-
     void finishSave();
   };
-
-  const pars = course?.pars ?? [];
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -708,156 +559,26 @@ export default function LogRoundScreen() {
         <View style={styles.scoreBlock}>
           <View style={styles.scoreMain}>
             <Pressable
-              style={[styles.scoreBtn, (filledAll || scoreFocused) && styles.scoreBtnDisabled]}
-              disabled={filledAll || scoreFocused}
+              style={styles.scoreBtn}
               onPress={() => {
-                lastGrossSourceRef.current = 'step';
-                setGrossScore((g) => {
-                  const ng = Math.max(55, g - 1);
-                  stepperGrossRef.current = ng;
-                  if (!scoreFocusedRef.current) scoreBufferRef.current = String(ng);
-                  return ng;
-                });
+                setGrossScore((g) => Math.max(55, g - 1));
               }}
             >
               <Text style={styles.scoreBtnTxt}>−</Text>
             </Pressable>
-            {filledAll ? (
-              <View style={[styles.scoreInput, styles.scoreInputStatic]} accessibilityLabel="Gross score from hole by hole">
-                <Text style={styles.scoreInputStaticTxt}>{String(displayGross)}</Text>
-              </View>
-            ) : !scoreFocused ? (
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel="Edit gross score"
-                onPress={() => {
-                  const seed = String(displayGross);
-                  grossSeedForEditRef.current = seed;
-                  scoreBufferRef.current = seed;
-                  setScoreBuffer(seed);
-                  scoreFocusedRef.current = true;
-                  setScoreFocused(true);
-                  setScoreEditSession((s) => s + 1);
-                }}
-                style={[styles.scoreInput, styles.scoreInputStatic]}
-              >
-                <Text style={styles.scoreInputStaticTxt}>{String(displayGross)}</Text>
-              </Pressable>
-            ) : (
-              <TextInput
-                key={`gross-e-${scoreEditSession}`}
-                ref={grossScoreInputRef}
-                style={styles.scoreInput}
-                keyboardType="number-pad"
-                inputMode="numeric"
-                maxLength={3}
-                selectTextOnFocus
-                autoFocus
-                defaultValue={grossSeedForEditRef.current}
-                onEndEditing={(e) => {
-                  const raw = e.nativeEvent.text ?? '';
-                  commitScoreFieldBlur(raw);
-                }}
-                onChangeText={(t) => {
-                  lastGrossSourceRef.current = 'type';
-                  const digits = t.replace(/\D/g, '').slice(0, 3);
-                  scoreBufferRef.current = digits;
-                  setScoreBuffer(digits);
-                  const n = parseInt(digits, 10);
-                  if (digits !== '' && !Number.isNaN(n)) {
-                    const ng = Math.min(125, Math.max(55, n));
-                    stepperGrossRef.current = ng;
-                    setGrossScore(ng);
-                  }
-                }}
-                onBlur={(e) => {
-                  scoreFocusedRef.current = false;
-                  setScoreFocused(false);
-                  const ev = e.nativeEvent as { text?: string };
-                  const raw = typeof ev.text === 'string' ? ev.text : scoreBufferRef.current;
-                  commitScoreFieldBlur(raw);
-                }}
-              />
-            )}
+            <View style={[styles.scoreInput, styles.scoreInputStatic]}>
+              <Text style={styles.scoreInputStaticTxt}>{String(grossScore)}</Text>
+            </View>
             <Pressable
-              style={[styles.scoreBtn, (filledAll || scoreFocused) && styles.scoreBtnDisabled]}
-              disabled={filledAll || scoreFocused}
+              style={styles.scoreBtn}
               onPress={() => {
-                lastGrossSourceRef.current = 'step';
-                setGrossScore((g) => {
-                  const ng = Math.min(125, g + 1);
-                  stepperGrossRef.current = ng;
-                  if (!scoreFocusedRef.current) scoreBufferRef.current = String(ng);
-                  return ng;
-                });
+                setGrossScore((g) => Math.min(120, g + 1));
               }}
             >
               <Text style={styles.scoreBtnTxt}>+</Text>
             </Pressable>
           </View>
-          <Pressable style={styles.scoreExpand} onPress={() => setHolesExpanded((e) => !e)}>
-            <Text style={styles.scoreExpandLbl}>Add hole-by-hole scores (optional)</Text>
-            <Text style={styles.chev}>{holesExpanded ? '▴' : '▾'}</Text>
-          </Pressable>
         </View>
-
-        {holesExpanded ? (
-          <View style={styles.holesWrap}>
-            <Text style={styles.holeHint}>
-              All 18 holes filled → that total is what we save as gross (overrides the score above). Partial scores → the
-              stepper / score field is used.
-            </Text>
-            {isWide ? (
-              <View style={styles.holeGrid}>
-                {holeScores.map((h, i) => {
-                  const par = pars[i] ?? 4;
-                  return (
-                    <View
-                      key={i}
-                      style={[styles.holeCell, isVeryWide && styles.holeCellLg]}
-                    >
-                      <Text style={styles.holeNum}>H{i + 1}</Text>
-                      <Text style={styles.holePar}>P{par}</Text>
-                      <TextInput
-                        style={[styles.holeInput, isVeryWide && styles.holeInputLg]}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        value={h == null ? '' : String(h)}
-                        onChangeText={(t) => setHole(i, t)}
-                        placeholder="—"
-                      />
-                    </View>
-                  );
-                })}
-              </View>
-            ) : (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.holeScroll}>
-                {holeScores.map((h, i) => {
-                  const par = pars[i] ?? 4;
-                  return (
-                    <View key={i} style={styles.holeCell}>
-                      <Text style={styles.holeNum}>H{i + 1}</Text>
-                      <Text style={styles.holePar}>P{par}</Text>
-                      <TextInput
-                        style={styles.holeInput}
-                        keyboardType="number-pad"
-                        maxLength={2}
-                        value={h == null ? '' : String(h)}
-                        onChangeText={(t) => setHole(i, t)}
-                        placeholder="—"
-                      />
-                    </View>
-                  );
-                })}
-              </ScrollView>
-            )}
-            <View style={styles.totals}>
-              <Text style={styles.totTxt}>Out {sum(front) || '—'}</Text>
-              <Text style={styles.totTxt}>In {sum(back) || '—'}</Text>
-              <Text style={styles.totTxtStrong}>Tot {sum(holeScores) || '—'}</Text>
-            </View>
-          </View>
-        ) : null}
 
         <Text style={styles.sectionLabel}>Putting mode</Text>
         <View style={styles.dayRow}>
@@ -911,26 +632,25 @@ export default function LogRoundScreen() {
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>Head-to-head (optional)</Text>
-        <Text style={styles.h2hHint}>
-          Was this round a match against someone in your crew? Pick them to show it under Recent head-to-head on
-          Social. Leave as solo if you played alone.
-        </Text>
-        <Pressable
-          style={[styles.pill, h2hModalOpen && styles.pillActive]}
-          onPress={() => setH2hModalOpen(true)}
-        >
-          <Text style={styles.pillVal} numberOfLines={2}>
-            {h2hOpponentPick
-              ? `vs ${h2hOpponentPick.memberName} · ${h2hOpponentPick.groupName}`
-              : 'Solo round — not vs a crewmate'}
-          </Text>
-          <Text style={styles.chev}>▾</Text>
-        </Pressable>
-        {groups.every((gr) => gr.members.filter((m) => !m.isYou).length === 0) ? (
-          <Text style={styles.h2hHintMuted}>
-            Add friends in the Social tab (invite or join a crew) to tag an opponent here.
-          </Text>
+        {hasH2hEligibleGroups ? (
+          <>
+            <Text style={styles.sectionLabel}>Head-to-head (optional)</Text>
+            <Text style={styles.h2hHint}>
+              Was this round a match against someone in your crew? Pick them to show it under Recent head-to-head on
+              Social. Leave as solo if you played alone.
+            </Text>
+            <Pressable
+              style={[styles.pill, h2hModalOpen && styles.pillActive]}
+              onPress={openH2hModal}
+            >
+              <Text style={styles.pillVal} numberOfLines={2}>
+                {h2hOpponentPick
+                  ? `vs ${h2hOpponentPick.memberName} · ${h2hOpponentPick.groupName}`
+                  : 'Solo round — not vs a crewmate'}
+              </Text>
+              <Text style={styles.chev}>▾</Text>
+            </Pressable>
+          </>
         ) : null}
 
         <View style={styles.diffWrap}>
@@ -947,13 +667,13 @@ export default function LogRoundScreen() {
           <View style={styles.predCard}>
             <Text style={styles.predAdjustedLine}>
               <Text style={styles.predAdjustedLbl}>Adjusted differential: </Text>
-              <Text style={styles.predAdjustedNum}>{preview.adjusted.toFixed(1)}</Text>
+              <Text style={styles.predAdjustedNum}>{adjustedDisplay}</Text>
             </Text>
             {expectedDiffPre != null ? (
               <>
                 <Text style={styles.predExpectedLine}>
                   <Text style={styles.predExpectedLbl}>Expected differential: </Text>
-                  <Text style={styles.predExpectedNum}>{expectedDiffPre.toFixed(1)}</Text>
+                  <Text style={styles.predExpectedNum}>{formatDifferentialDisplay(expectedDiffPre)}</Text>
                 </Text>
                 {targetGrossPre != null && targetGrossPre >= 55 && targetGrossPre <= 125 ? (
                   <Text style={styles.predTarget}>
@@ -1024,10 +744,10 @@ export default function LogRoundScreen() {
         visible={h2hModalOpen}
         animationType={Platform.OS === 'web' ? 'none' : 'fade'}
         transparent
-        onRequestClose={() => setH2hModalOpen(false)}
+        onRequestClose={closeH2hModal}
       >
         <View style={styles.modalRoot}>
-          <Pressable style={styles.modalBackdropPress} onPress={() => setH2hModalOpen(false)} />
+          <Pressable style={styles.modalBackdropPress} onPress={closeH2hModal} />
           <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
             <Text style={styles.modalTitle}>Head-to-head</Text>
             <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
@@ -1035,7 +755,7 @@ export default function LogRoundScreen() {
                 style={styles.modalRow}
                 onPress={() => {
                   setH2hOpponentPick(null);
-                  setH2hModalOpen(false);
+                  closeH2hModal();
                 }}
               >
                 <View style={{ flex: 1 }}>
@@ -1065,7 +785,7 @@ export default function LogRoundScreen() {
                               memberId: m.id,
                               memberName: label,
                             });
-                            setH2hModalOpen(false);
+                            closeH2hModal();
                           }}
                         >
                           <Text style={styles.modalRowTxt}>{label}</Text>
@@ -1146,14 +866,6 @@ const styles = StyleSheet.create({
   scroll: { flex: 1, minHeight: 0, width: '100%' },
   pickRow: { flexDirection: 'row', gap: 12, width: '100%' },
   pickCol: { flex: 1, minWidth: 0 },
-  holeGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    rowGap: 10,
-    justifyContent: 'flex-start',
-    marginTop: 4,
-  },
   sectionLabel: {
     fontSize: 10,
     fontWeight: '600',
@@ -1215,7 +927,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   scoreBtnTxt: { fontSize: 18, color: colors.muted },
-  scoreBtnDisabled: { opacity: 0.35 },
   scoreInput: {
     flex: 1,
     textAlign: 'center',
@@ -1239,38 +950,6 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     width: '100%',
   },
-  scoreExpand: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 12,
-    borderTopWidth: 0.5,
-    borderTopColor: colors.border,
-  },
-  scoreExpandLbl: { fontSize: 11, color: colors.accent, fontWeight: '600' },
-  holesWrap: { marginTop: 8 },
-  holeHint: { fontSize: 10, color: colors.muted, marginBottom: 6 },
-  holeScroll: { flexGrow: 0 },
-  holeCell: { width: 44, marginRight: 6, alignItems: 'center' },
-  holeCellLg: { width: '15.5%', minWidth: 52, maxWidth: 72, marginRight: 0 },
-  holeNum: { fontSize: 9, color: colors.subtle },
-  holePar: { fontSize: 8, color: colors.subtle, marginBottom: 2 },
-  holeInput: {
-    borderWidth: 0.5,
-    borderColor: colors.pillBorder,
-    borderRadius: 6,
-    width: 40,
-    height: 32,
-    textAlign: 'center',
-    fontSize: 14,
-    fontWeight: '600',
-    color: colors.ink,
-  },
-  holeInputLg: { width: '100%', minWidth: 40, height: 36, fontSize: 15 },
-  totals: { flexDirection: 'row', gap: 12, marginTop: 8 },
-  totTxt: { fontSize: 11, color: colors.muted },
-  totTxtStrong: { fontSize: 11, fontWeight: '600', color: colors.ink },
   dayRow: { flexDirection: 'row', gap: 5 },
   dayBtn: {
     flex: 1,

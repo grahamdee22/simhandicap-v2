@@ -9,7 +9,7 @@ import { DualIndexChart } from '../../src/components/DualIndexChart';
 import { IconAddCircleOutline, IconCheckmark, IconChevronForward } from '../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
-import { formatHandicapIndexDisplay } from '../../src/lib/handicap';
+import { formatDifferentialDisplay, formatHandicapIndexDisplay } from '../../src/lib/handicap';
 import { applyProfileRowToStore, fetchMyProfile, upsertMyProfile } from '../../src/lib/profiles';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useResponsive } from '../../src/lib/responsive';
@@ -264,7 +264,7 @@ export default function ProfileScreen() {
                       day: 'numeric',
                       year: 'numeric',
                     })}{' '}
-                    · {latest.grossScore} gross · diff {latest.adjustedDiff.toFixed(1)}
+                    · {latest.grossScore} gross · diff {formatDifferentialDisplay(latest.adjustedDiff)}
                   </Text>
                   <Text style={styles.lastRoundSettings} numberOfLines={2}>
                     {formatRoundMeta(latest)}

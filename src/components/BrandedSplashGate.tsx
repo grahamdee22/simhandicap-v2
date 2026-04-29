@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Animated, StyleSheet, View } from 'react-native';
 
 const SPLASH_BG = '#1a3a2a';
-const HOLD_MS = 2000;
+const HOLD_MS = 1250;
 const FADE_MS = 450;
 
 type Props = {

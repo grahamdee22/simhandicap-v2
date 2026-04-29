@@ -122,7 +122,7 @@ export default function TabLayout() {
         options={{
           title: 'Log a round',
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Log',
+          tabBarLabel: 'Log a round',
           tabBarIcon: ({ color }) => <TabIcon name="add-circle" color={color} />,
         }}
       />
@@ -131,7 +131,7 @@ export default function TabLayout() {
         options={{
           title: 'Round analysis',
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Trends',
+          tabBarLabel: 'Rounds',
           tabBarIcon: ({ color }) => <TabIcon name="analytics" color={color} />,
         }}
       />
@@ -140,7 +140,7 @@ export default function TabLayout() {
         options={{
           title: 'Groups',
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Social',
+          tabBarLabel: 'Groups',
           tabBarIcon: ({ color }) => <TabIcon name="people" color={color} />,
         }}
       />

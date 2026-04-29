@@ -12,7 +12,7 @@ import {
 } from '../../src/components/SvgUiIcons';
 import { SimCapLogoHero, SIM_CAP_LOGO_ASPECT } from '../../src/components/SimCapLogoHero';
 import { colors } from '../../src/lib/constants';
-import { formatHandicapIndexDisplay, indexHistoryFromRounds } from '../../src/lib/handicap';
+import { formatDifferentialDisplay, formatHandicapIndexDisplay, indexHistoryFromRounds } from '../../src/lib/handicap';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
 import {
@@ -152,7 +152,7 @@ export default function HomeScreen() {
                       style={styles.roundDiff}
                       {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
                     >
-                      diff {r.adjustedDiff.toFixed(1)}
+                      diff {formatDifferentialDisplay(r.adjustedDiff)}
                     </Text>
                   </View>
                 </View>
@@ -264,7 +264,7 @@ export default function HomeScreen() {
                           day: 'numeric',
                           year: 'numeric',
                         })}{' '}
-                        · Gross {latest.grossScore} · Diff {latest.adjustedDiff.toFixed(1)}
+                        · Gross {latest.grossScore} · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
                         {latest.indexDelta != null
                           ? ` · Index ${latest.indexDelta.toFixed(1)}`
                           : ''}
@@ -297,7 +297,7 @@ export default function HomeScreen() {
                   <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
                     <Text style={styles.statLbl}>Best diff.</Text>
                     <Text style={[styles.statVal, isWide && styles.statValLg]}>
-                      {stats.bestDiff != null ? stats.bestDiff.toFixed(1) : '—'}
+                      {formatDifferentialDisplay(stats.bestDiff)}
                     </Text>
                     <Text style={[styles.statSub, { color: colors.subtle }]} numberOfLines={1}>
                       {stats.bestCourse || '—'}
@@ -344,7 +344,7 @@ export default function HomeScreen() {
                         day: 'numeric',
                         year: 'numeric',
                       })}{' '}
-                      · Gross {latest.grossScore} · Diff {latest.adjustedDiff.toFixed(1)}
+                      · Gross {latest.grossScore} · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
                       {latest.indexDelta != null
                         ? ` · Index ${latest.indexDelta.toFixed(1)}`
                         : ''}
@@ -378,7 +378,7 @@ export default function HomeScreen() {
               <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
                 <Text style={styles.statLbl}>Best diff.</Text>
                 <Text style={[styles.statVal, isWide && styles.statValLg]}>
-                  {stats.bestDiff != null ? stats.bestDiff.toFixed(1) : '—'}
+                  {formatDifferentialDisplay(stats.bestDiff)}
                 </Text>
                 <Text style={[styles.statSub, { color: colors.subtle }]} numberOfLines={1}>
                   {stats.bestCourse || '—'}

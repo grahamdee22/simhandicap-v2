@@ -19,6 +19,7 @@ import { colors } from '../../../src/lib/constants';
 import { mergeViewStyles } from '../../../src/lib/mergeStyles';
 import { useResponsive } from '../../../src/lib/responsive';
 import {
+  formatDifferentialDisplay,
   formatHandicapIndexDisplay,
   pinDifficultyMultiplier,
   puttingDifficultyMultiplier,
@@ -85,7 +86,7 @@ function modifierParts(r: SimRound) {
   return [
     {
       label: 'Raw differential',
-      display: r.rawDiff.toFixed(1),
+      display: formatDifferentialDisplay(r.rawDiff),
       width: Math.min(100, (Math.abs(r.rawDiff) / 15) * 100),
       color: colors.accent,
     },
@@ -223,7 +224,7 @@ export default function RoundDetailScreen() {
               </View>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
                 <Text style={styles.hstatLbl}>Differential</Text>
-                <Text style={styles.hstatVal}>{r.adjustedDiff.toFixed(1)}</Text>
+                <Text style={styles.hstatVal}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                 <Text style={styles.hstatSub}>{inTop ? 'Counts toward index' : 'Outside best 8 / 20'}</Text>
               </View>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
@@ -247,7 +248,7 @@ export default function RoundDetailScreen() {
                   <View style={styles.diffMainRow}>
                     <View>
                       <Text style={styles.diffBigLbl}>Adjusted differential</Text>
-                      <Text style={styles.diffBig}>{r.adjustedDiff.toFixed(1)}</Text>
+                      <Text style={styles.diffBig}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                     </View>
                     {inTop ? (
                       <View style={styles.pill}>
@@ -303,7 +304,7 @@ export default function RoundDetailScreen() {
                 <View style={styles.diffMainRow}>
                   <View>
                     <Text style={styles.diffBigLbl}>Adjusted differential</Text>
-                    <Text style={styles.diffBig}>{r.adjustedDiff.toFixed(1)}</Text>
+                    <Text style={styles.diffBig}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                   </View>
                   {inTop ? (
                     <View style={styles.pill}>

@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { SimCapMark } from './SimCapMark';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
 import type { NetPickerGolfer } from '../lib/netPickerGolfer';
@@ -22,7 +23,8 @@ type Props = {
   excludeIds?: string[];
   onClose: () => void;
   onSelect: (g: NetPickerGolfer) => void;
-  onEnterManually: () => void;
+  onEnterManually?: () => void;
+  allowManualEntry?: boolean;
 };
 
 function norm(s: string) {
@@ -37,6 +39,7 @@ export function GolferPickerModal({
   onClose,
   onSelect,
   onEnterManually,
+  allowManualEntry = true,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
@@ -85,7 +88,7 @@ export function GolferPickerModal({
                 }}
               >
                 <View style={styles.rowAvatar}>
-                  <Text style={styles.rowAvatarTxt}>{item.initials}</Text>
+                  <SimCapMark size={22} />
                 </View>
                 <View style={styles.rowMid}>
                   <Text style={styles.rowName} numberOfLines={1}>
@@ -103,20 +106,24 @@ export function GolferPickerModal({
             ListEmptyComponent={
               <Text style={styles.empty}>
                 {golfers.length === 0
-                  ? 'No one in this crew yet. Use Enter manually or invite friends in Social.'
+                  ? allowManualEntry
+                    ? 'No one in this crew yet. Use Enter manually or invite friends in Social.'
+                    : 'No one in this crew yet. Invite friends in Social.'
                   : `No golfers match “${query.trim()}”.`}
               </Text>
             }
           />
-          <Pressable
-            style={styles.manualBtn}
-            onPress={() => {
-              onEnterManually();
-              onClose();
-            }}
-          >
-            <Text style={styles.manualBtnTxt}>Enter manually</Text>
-          </Pressable>
+          {allowManualEntry ? (
+            <Pressable
+              style={styles.manualBtn}
+              onPress={() => {
+                onEnterManually?.();
+                onClose();
+              }}
+            >
+              <Text style={styles.manualBtnTxt}>Enter manually</Text>
+            </Pressable>
+          ) : null}
         </View>
       </View>
     </Modal>
@@ -159,11 +166,10 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: colors.header,
+    backgroundColor: '#1a3a2a',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  rowAvatarTxt: { fontSize: 14, fontWeight: '700', color: '#fff' },
   rowMid: { flex: 1, minWidth: 0 },
   rowName: { fontSize: 15, fontWeight: '600', color: colors.ink },
   rowPlat: { fontSize: 12, color: colors.muted, marginTop: 2 },
