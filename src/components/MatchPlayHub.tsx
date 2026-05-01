@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -92,7 +92,11 @@ function partitionHubData(my: DbMatchRow[], uid: string) {
 
   const activeOrWaiting = my.filter((m) => m.status === 'active' || m.status === 'waiting');
 
-  const section1 = uniqById([...incomingDirect, ...outgoingPending, ...activeOrWaiting]);
+  const myOpenPosted = my.filter(
+    (m) => m.is_open && m.status === 'open' && m.player_1_id === uid
+  );
+
+  const section1 = uniqById([...incomingDirect, ...outgoingPending, ...activeOrWaiting, ...myOpenPosted]);
 
   const completed = my
     .filter((m) => m.status === 'complete' || m.status === 'abandoned')
@@ -244,9 +248,14 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
 
   const { section1, completed } = partitionHubData(myMatches, userId);
 
+  const openFeedForOthers = useMemo(
+    () => openFeed.filter((m) => m.player_1_id !== userId),
+    [openFeed, userId]
+  );
+
   const nameFor = (id: string | null) => (id ? names[id] ?? 'Golfer' : '—');
 
-  const renderCard = (m: DbMatchRow, uid: string, listKind: 'hub' | 'openFeed' = 'hub') => {
+  const renderCard = (m: DbMatchRow, uid: string, listKind: 'hub' | 'openFeed' | 'recentHistory' = 'hub') => {
     const p1 = nameFor(m.player_1_id);
     const p2 = nameFor(m.player_2_id);
     const peopleLine =
@@ -287,6 +296,21 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
         >
           {cardInner}
           <Text style={styles.cardTapHint}>Tap for details</Text>
+        </Pressable>
+      );
+    }
+
+    if (listKind === 'recentHistory') {
+      return (
+        <Pressable
+          key={m.id}
+          style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+          onPress={() => router.push(`/(tabs)/match-results/${m.id}` as never)}
+          accessibilityRole="button"
+          accessibilityLabel={`Results for ${m.course_name}`}
+        >
+          {cardInner}
+          <Text style={styles.cardTapHint}>Tap for results</Text>
         </Pressable>
       );
     }
@@ -373,18 +397,18 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
 
       <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Open challenge feed</Text>
       <Text style={styles.sectionSub}>Anyone on SimCap can accept these.</Text>
-      {openFeed.length === 0 ? (
+      {openFeedForOthers.length === 0 ? (
         <Text style={styles.empty}>No open challenges right now.</Text>
       ) : (
-        openFeed.map((m) => renderCard(m, userId, 'openFeed'))
+        openFeedForOthers.map((m) => renderCard(m, userId, 'openFeed'))
       )}
 
       <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Recent matches</Text>
       <Text style={styles.sectionSub}>Finished or abandoned stroke-play matches.</Text>
       {completed.length === 0 ? (
-        <Text style={styles.empty}>No completed matches yet.</Text>
+        <Text style={styles.empty}>No finished or abandoned matches yet.</Text>
       ) : (
-        completed.map((m) => renderCard(m, userId))
+        completed.map((m) => renderCard(m, userId, 'recentHistory'))
       )}
     </View>
   );

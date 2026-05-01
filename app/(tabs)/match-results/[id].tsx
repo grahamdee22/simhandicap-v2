@@ -103,16 +103,85 @@ export default function MatchResultsScreen() {
   }
 
   if (match.status !== 'complete') {
+    const backSocial = () => router.replace('/(tabs)/groups' as never);
+    if (match.status === 'abandoned') {
+      return (
+        <ContentWidth bg={colors.surface}>
+          <View style={[styles.centered, { padding: gutter }]}>
+            <Text style={styles.title}>Match was abandoned</Text>
+            <Pressable style={styles.primaryBtn} onPress={backSocial}>
+              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+            </Pressable>
+          </View>
+        </ContentWidth>
+      );
+    }
+    if (match.status === 'declined') {
+      return (
+        <ContentWidth bg={colors.surface}>
+          <View style={[styles.centered, { padding: gutter }]}>
+            <Text style={styles.title}>Challenge declined</Text>
+            <Text style={styles.muted}>This match was declined and will not be played.</Text>
+            <Pressable style={styles.primaryBtn} onPress={backSocial}>
+              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+            </Pressable>
+          </View>
+        </ContentWidth>
+      );
+    }
+    if (match.status === 'pending') {
+      return (
+        <ContentWidth bg={colors.surface}>
+          <View style={[styles.centered, { padding: gutter }]}>
+            <Text style={styles.title}>Challenge pending</Text>
+            <Text style={styles.muted}>
+              This direct challenge is waiting on the other player to respond on the Social tab.
+            </Text>
+            <Pressable style={styles.primaryBtn} onPress={backSocial}>
+              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+            </Pressable>
+          </View>
+        </ContentWidth>
+      );
+    }
+    if (match.status === 'open') {
+      return (
+        <ContentWidth bg={colors.surface}>
+          <View style={[styles.centered, { padding: gutter }]}>
+            <Text style={styles.title}>Open challenge</Text>
+            <Text style={styles.muted}>
+              This challenge is still posted to the open feed and waiting for a SimCap player to accept.
+            </Text>
+            <Pressable style={styles.primaryBtn} onPress={backSocial}>
+              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+            </Pressable>
+          </View>
+        </ContentWidth>
+      );
+    }
+    if (match.status === 'active' || match.status === 'waiting') {
+      return (
+        <ContentWidth bg={colors.surface}>
+          <View style={[styles.centered, { padding: gutter }]}>
+            <Text style={styles.title}>Match still in progress</Text>
+            <Text style={styles.muted}>Final results appear here when both players finish every hole.</Text>
+            <Pressable style={styles.primaryBtn} onPress={() => router.replace(`/(tabs)/match-score/${matchId}` as never)}>
+              <Text style={styles.primaryBtnTxt}>Continue scoring</Text>
+            </Pressable>
+            <Pressable style={styles.secondaryBtn} onPress={backSocial}>
+              <Text style={styles.secondaryBtnTxt}>Social</Text>
+            </Pressable>
+          </View>
+        </ContentWidth>
+      );
+    }
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.title}>Match still in progress</Text>
-          <Text style={styles.muted}>Final results appear here when both players finish every hole.</Text>
-          <Pressable style={styles.primaryBtn} onPress={() => router.replace(`/(tabs)/match-score/${matchId}` as never)}>
-            <Text style={styles.primaryBtnTxt}>Continue scoring</Text>
-          </Pressable>
-          <Pressable style={styles.secondaryBtn} onPress={() => router.replace('/(tabs)/groups' as never)}>
-            <Text style={styles.secondaryBtnTxt}>Social</Text>
+          <Text style={styles.title}>Match unavailable</Text>
+          <Text style={styles.muted}>This match is not in a results-ready state.</Text>
+          <Pressable style={styles.primaryBtn} onPress={backSocial}>
+            <Text style={styles.primaryBtnTxt}>Back to Social</Text>
           </Pressable>
         </View>
       </ContentWidth>
