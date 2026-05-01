@@ -103,7 +103,7 @@ function giftPhrase(
 
 type PickerTarget = 1 | 2 | null;
 
-export default function NetCalculatorScreen() {
+export default function CrewMatchCalculatorScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter, isWide } = useResponsive();

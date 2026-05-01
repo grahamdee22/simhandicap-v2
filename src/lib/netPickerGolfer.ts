@@ -1,6 +1,6 @@
 import type { PlatformId } from './constants';
 
-/** Roster row for Net calculator / GolferPickerModal (`id` is Supabase `auth.users` id). */
+/** Roster row for Crew Match Calculator / GolferPickerModal (`id` is Supabase `auth.users` id). */
 export type NetPickerGolfer = {
   id: string;
   displayName: string;

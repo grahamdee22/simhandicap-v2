@@ -1235,6 +1235,20 @@ export function getCourseById(id: string): CourseSeed | undefined {
   return COURSE_SEEDS.find((c) => c.id === id);
 }
 
+/** Resolve a catalog `courseId` from the display name stored on matches / rounds. */
+export function findCourseSeedIdByCourseName(courseName: string): string | null {
+  const needle = courseName.trim().toLowerCase();
+  if (!needle) return null;
+  for (const c of COURSE_SEEDS) {
+    if (c.name.trim().toLowerCase() === needle) return c.id;
+  }
+  for (const c of COURSE_SEEDS) {
+    const n = c.name.trim().toLowerCase();
+    if (n.includes(needle) || needle.includes(n)) return c.id;
+  }
+  return null;
+}
+
 /** Baseline rating/slope from `byPlatform` only (ignores `tees` table). */
 export function ratingForCourseFromPlatform(course: CourseSeed, platform: PlatformId): { rating: number; slope: number } {
   const direct = course.byPlatform[platform];
@@ -1279,7 +1293,7 @@ export function middleCourseTee(course: CourseSeed, platform: PlatformId): Cours
   return tees[Math.floor(tees.length / 2)];
 }
 
-/** Rating/slope for the course’s default tee (used by net calculator, previews, etc.). */
+/** Rating/slope for the course’s default tee (used by Crew Match Calculator, previews, etc.). */
 export function ratingForCourse(course: CourseSeed, platform: PlatformId) {
   const tees = getCourseTees(course, platform);
   if (course.confident === false && tees.length > 0) {

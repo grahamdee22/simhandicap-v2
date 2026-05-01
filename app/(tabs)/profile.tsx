@@ -261,16 +261,28 @@ export default function ProfileScreen() {
         ) : null}
 
         {signedIn && matchPlayRecord ? (
-          <View style={styles.card}>
+          <Pressable
+            style={({ pressed }) => [styles.card, pressed && styles.matchRecordCardPressed]}
+            onPress={() => router.push('/(tabs)/match-history' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="View full match history"
+          >
             <Text style={styles.lbl}>Match play record</Text>
-            <Text style={styles.statBig}>
-              {matchPlayRecord.wins}–{matchPlayRecord.losses}–{matchPlayRecord.draws}
-            </Text>
-            <Text style={styles.statLbl}>W–L–D · stroke matches on SimCap</Text>
-            <Text style={styles.matchForfeitMeta}>
-              Forfeits (matches you abandoned): {matchPlayRecord.forfeits}
-            </Text>
-          </View>
+            <View style={styles.matchRecordRow}>
+              <View style={styles.matchRecordTextCol}>
+                <Text style={styles.statBig}>
+                  {matchPlayRecord.wins}–{matchPlayRecord.losses}–{matchPlayRecord.draws}
+                </Text>
+                <Text style={styles.statLbl}>W–L–D · stroke matches on SimCap</Text>
+                <Text style={styles.matchForfeitMeta}>
+                  Forfeits (matches you abandoned): {matchPlayRecord.forfeits}
+                </Text>
+              </View>
+              <View style={styles.matchRecordChevron}>
+                <IconChevronForward size={20} color={colors.subtle} />
+              </View>
+            </View>
+          </Pressable>
         ) : null}
 
         <View style={styles.card}>
@@ -530,8 +542,17 @@ const styles = StyleSheet.create({
   contactFeedbackRowPressed: { opacity: 0.92 },
   contactFeedbackChevron: { flexShrink: 0 },
   statBig: { fontSize: 32, fontWeight: '600', color: colors.ink, marginTop: 4 },
-  statLbl: { fontSize: 12, color: colors.muted, marginBottom: 12 },
-  matchForfeitMeta: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  statLbl: { fontSize: 12, color: colors.muted, marginBottom: 0 },
+  matchRecordRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 4,
+  },
+  matchRecordTextCol: { flex: 1, minWidth: 0 },
+  matchRecordChevron: { flexShrink: 0 },
+  matchRecordCardPressed: { opacity: 0.92 },
+  matchForfeitMeta: { fontSize: 13, color: colors.muted, marginTop: 8 },
   lastRound: {
     flexDirection: 'row',
     alignItems: 'center',

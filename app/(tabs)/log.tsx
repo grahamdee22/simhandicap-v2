@@ -32,13 +32,6 @@ import {
 import { targetGrossToImprove } from '../../src/lib/preRoundPrediction';
 import { currentIndexFromRounds, useAppStore, type SimRound } from '../../src/store/useAppStore';
 
-type H2hOpponentPick = {
-  groupId: string;
-  groupName: string;
-  memberId: string;
-  memberName: string;
-};
-
 type DiffInfoKind = 'adjusted' | 'expected' | null;
 
 const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
@@ -79,7 +72,6 @@ export default function LogRoundScreen() {
   const addRound = useAppStore((s) => s.addRound);
   const updateRound = useAppStore((s) => s.updateRound);
   const rounds = useAppStore((s) => s.rounds);
-  const groups = useAppStore((s) => s.groups);
   const pendingH2hMatchup = useAppStore((s) => s.pendingH2hMatchup);
   const setPendingH2hMatchup = useAppStore((s) => s.setPendingH2hMatchup);
   const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
@@ -95,8 +87,6 @@ export default function LogRoundScreen() {
   const [teePickKey, setTeePickKey] = useState('White');
   const [customRating, setCustomRating] = useState('');
   const [customSlope, setCustomSlope] = useState('');
-  const [h2hOpponentPick, setH2hOpponentPick] = useState<H2hOpponentPick | null>(null);
-  const [h2hModalOpen, setH2hModalOpen] = useState(false);
   const [platOpen, setPlatOpen] = useState(false);
   const [courseOpen, setCourseOpen] = useState(false);
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
@@ -114,31 +104,19 @@ export default function LogRoundScreen() {
     mulligans: Mulligans;
     course: ReturnType<typeof getCourseById>;
     existing: SimRound | undefined;
-    h2hOpponentPick: H2hOpponentPick | null;
     teePickKey: string;
     customRating: string;
     customSlope: string;
   } | null>(null);
-
-  const closeH2hModal = useCallback(() => {
-    setH2hModalOpen(false);
-    Keyboard.dismiss();
-  }, []);
-
-  const openH2hModal = useCallback(() => {
-    Keyboard.dismiss();
-    setH2hModalOpen(true);
-  }, []);
 
   useFocusEffect(
     useCallback(() => {
       return () => {
         setPlatOpen(false);
         setCourseOpen(false);
-        closeH2hModal();
         setDiffInfoOpen(null);
       };
-    }, [closeH2hModal])
+    }, [])
   );
 
   const resetLogForm = useCallback(() => {
@@ -149,7 +127,6 @@ export default function LogRoundScreen() {
     setPin('thu');
     setWind('off');
     setMulligans('off');
-    setH2hOpponentPick(null);
     setPlayedDate(todayLocalYmd());
     const c0 = getCourseById('pebble');
     if (c0) {
@@ -185,16 +162,8 @@ export default function LogRoundScreen() {
     setPin(p.pin);
     setWind(p.wind);
     setMulligans(p.mulligans);
-    if (p.h2hGroupId && p.h2hOpponentMemberId) {
-      setH2hOpponentPick({
-        groupId: p.h2hGroupId,
-        groupName: groups.find((g) => g.id === p.h2hGroupId)?.name ?? 'Crew',
-        memberId: p.h2hOpponentMemberId,
-        memberName: p.h2hOpponentDisplayName ?? 'Friend',
-      });
-    }
     setPendingH2hMatchup(null);
-  }, [editId, pendingH2hMatchup, groups, setPendingH2hMatchup]);
+  }, [editId, pendingH2hMatchup, setPendingH2hMatchup]);
 
   useEffect(() => {
     if (!existing) return;
@@ -205,17 +174,6 @@ export default function LogRoundScreen() {
     setPin(existing.pin);
     setWind(existing.wind);
     setMulligans(existing.mulligans);
-    setH2hOpponentPick(
-      existing.h2hGroupId && existing.h2hOpponentMemberId
-        ? {
-            groupId: existing.h2hGroupId,
-            groupName:
-              groups.find((g) => g.id === existing.h2hGroupId)?.name ?? 'Crew',
-            memberId: existing.h2hOpponentMemberId,
-            memberName: existing.h2hOpponentDisplayName ?? 'Friend',
-          }
-        : null
-    );
     setPlayedDate(isoToLocalYmd(existing.playedAt));
     const ec = getCourseById(existing.courseId);
     if (ec) {
@@ -241,7 +199,7 @@ export default function LogRoundScreen() {
       }
     }
     setGrossScore(Math.min(120, Math.max(55, existing.grossScore)));
-  }, [existing, groups]);
+  }, [existing]);
 
   useEffect(() => {
     if (courseOpen) setCourseSearchQuery('');
@@ -307,10 +265,6 @@ export default function LogRoundScreen() {
       ),
     [courseSearchQuery]
   );
-  const hasH2hEligibleGroups = useMemo(
-    () => groups.some((gr) => gr.members.some((m) => !m.isYou)),
-    [groups]
-  );
   const { rating, slope } = course
     ? { rating: resolvedTeeRating.rating, slope: resolvedTeeRating.slope }
     : { rating: 72, slope: 130 };
@@ -349,7 +303,6 @@ export default function LogRoundScreen() {
     mulligans,
     course,
     existing,
-    h2hOpponentPick,
     teePickKey,
     customRating,
     customSlope,
@@ -435,19 +388,15 @@ export default function LogRoundScreen() {
         teeName: teeNameSave,
         courseRating: courseRatingSave,
         slope: slopeSave,
-        ...(snap.h2hOpponentPick
+        ...(snap.existing?.h2hGroupId &&
+        snap.existing.h2hOpponentMemberId &&
+        snap.existing.h2hOpponentDisplayName
           ? {
-              h2hGroupId: snap.h2hOpponentPick.groupId,
-              h2hOpponentMemberId: snap.h2hOpponentPick.memberId,
-              h2hOpponentDisplayName: snap.h2hOpponentPick.memberName,
+              h2hGroupId: snap.existing.h2hGroupId,
+              h2hOpponentMemberId: snap.existing.h2hOpponentMemberId,
+              h2hOpponentDisplayName: snap.existing.h2hOpponentDisplayName,
             }
-          : snap.existing
-            ? {
-                h2hGroupId: undefined,
-                h2hOpponentMemberId: undefined,
-                h2hOpponentDisplayName: undefined,
-              }
-            : {}),
+          : {}),
       };
       try {
         if (snap.existing) {
@@ -636,27 +585,6 @@ export default function LogRoundScreen() {
           ))}
         </View>
 
-        {hasH2hEligibleGroups ? (
-          <>
-            <Text style={styles.sectionLabel}>Head-to-head (optional)</Text>
-            <Text style={styles.h2hHint}>
-              Was this round a match against someone in your crew? Pick them to show it under Recent head-to-head on
-              Social. Leave as solo if you played alone.
-            </Text>
-            <Pressable
-              style={[styles.pill, h2hModalOpen && styles.pillActive]}
-              onPress={openH2hModal}
-            >
-              <Text style={styles.pillVal} numberOfLines={2}>
-                {h2hOpponentPick
-                  ? `vs ${h2hOpponentPick.memberName} · ${h2hOpponentPick.groupName}`
-                  : 'Solo round — not vs a crewmate'}
-              </Text>
-              <Text style={styles.chev}>▾</Text>
-            </Pressable>
-          </>
-        ) : null}
-
         <View style={styles.diffWrap}>
           <View style={styles.diffTop}>
             <Text style={styles.diffLbl}>Difficulty modifier</Text>
@@ -781,67 +709,6 @@ export default function LogRoundScreen() {
                 {platform === p ? <IconCheckmark size={18} color={colors.accent} /> : null}
               </Pressable>
             ))}
-          </View>
-        </View>
-      </Modal>
-
-      <Modal
-        visible={h2hModalOpen}
-        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
-        transparent
-        onRequestClose={closeH2hModal}
-      >
-        <View style={styles.modalRoot}>
-          <Pressable style={styles.modalBackdropPress} onPress={closeH2hModal} />
-          <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.modalTitle}>Head-to-head</Text>
-            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-              <Pressable
-                style={styles.modalRow}
-                onPress={() => {
-                  setH2hOpponentPick(null);
-                  closeH2hModal();
-                }}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.modalRowTxt}>Solo round</Text>
-                  <Text style={styles.modalRowSub}>Not playing vs a crewmate</Text>
-                </View>
-                {!h2hOpponentPick ? <IconCheckmark size={18} color={colors.accent} /> : null}
-              </Pressable>
-              {groups.map((gr) => {
-                const others = gr.members.filter((m) => !m.isYou);
-                if (others.length === 0) return null;
-                return (
-                  <View key={gr.id}>
-                    <Text style={styles.modalGroupHdr}>{gr.name}</Text>
-                    {others.map((m) => {
-                      const label = m.displayName.replace(/\s*\(you\)\s*$/i, '').trim();
-                      const selected =
-                        h2hOpponentPick?.groupId === gr.id && h2hOpponentPick?.memberId === m.id;
-                      return (
-                        <Pressable
-                          key={m.id}
-                          style={styles.modalRow}
-                          onPress={() => {
-                            setH2hOpponentPick({
-                              groupId: gr.id,
-                              groupName: gr.name,
-                              memberId: m.id,
-                              memberName: label,
-                            });
-                            closeH2hModal();
-                          }}
-                        >
-                          <Text style={styles.modalRowTxt}>{label}</Text>
-                          {selected ? <IconCheckmark size={18} color={colors.accent} /> : null}
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                );
-              })}
-            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1120,16 +987,4 @@ const styles = StyleSheet.create({
   },
   modalRowTxt: { fontSize: 15, color: colors.ink },
   modalRowSub: { fontSize: 12, color: colors.subtle, marginTop: 2 },
-  modalGroupHdr: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.subtle,
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    paddingHorizontal: 4,
-    paddingTop: 12,
-    paddingBottom: 4,
-  },
-  h2hHint: { fontSize: 11, color: colors.muted, lineHeight: 15, marginBottom: 6 },
-  h2hHintMuted: { fontSize: 10, color: colors.subtle, marginTop: 6, lineHeight: 14 },
 });

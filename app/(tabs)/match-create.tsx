@@ -1,7 +1,7 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
-import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
@@ -39,7 +39,7 @@ import {
   type Wind,
 } from '../../src/lib/handicap';
 import { showAppAlert } from '../../src/lib/alertCompat';
-import { insertMatch, updateMatchById } from '../../src/lib/matchPlay';
+import { insertMatch, listMyMatches, updateMatchById } from '../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../src/lib/matchPlayStorage';
 import { useResponsive } from '../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
@@ -49,6 +49,8 @@ type ChallengeKind = 'direct' | 'open';
 
 /** Release builds require a settings screenshot; dev/simulator can skip. */
 const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
+
+const MAX_OPEN_CHALLENGES_POSTED = 3;
 
 const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
   { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
@@ -132,6 +134,8 @@ function resolvePlayer1Tee(args: {
 export default function MatchCreateScreen() {
   const router = useRouter();
   const navigation = useNavigation();
+  const { fresh: freshRaw } = useLocalSearchParams<{ fresh?: string | string[] }>();
+  const freshParam = Array.isArray(freshRaw) ? freshRaw[0] : freshRaw;
   const insets = useSafeAreaInsets();
   const { gutter, isWide } = useResponsive();
   const { user } = useAuth();
@@ -159,6 +163,38 @@ export default function MatchCreateScreen() {
   const [submitBusy, setSubmitBusy] = useState(false);
   const [libraryPermissionBlocked, setLibraryPermissionBlocked] = useState(false);
   const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
+
+  const resetWizardToInitial = useCallback(() => {
+    const plat = useAppStore.getState().preferredLogPlatform;
+    setChallengeKind('direct');
+    setStepIdx(0);
+    setOpponent(null);
+    setPlatform(plat);
+    setCourseId('pebble');
+    setTeePickKey('White');
+    setCustomRating('');
+    setCustomSlope('');
+    setPutting('auto_2putt');
+    setPin('thu');
+    setWind('off');
+    setMulligans('off');
+    setHolesChoice('18');
+    setSettingsImage(null);
+    setPlatOpen(false);
+    setCourseOpen(false);
+    setCourseSearchQuery('');
+    setSubmitBusy(false);
+    setLibraryPermissionBlocked(false);
+    setDevSkipSettingsPhoto(false);
+  }, []);
+
+  const lastFreshAppliedRef = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    if (freshParam == null || freshParam === '') return;
+    if (lastFreshAppliedRef.current === freshParam) return;
+    lastFreshAppliedRef.current = freshParam;
+    resetWizardToInitial();
+  }, [freshParam, resetWizardToInitial]);
 
   const opponents = useMemo(
     () => (user?.id ? collectOpponents(groups, user.id) : []),
@@ -320,6 +356,34 @@ export default function MatchCreateScreen() {
     devSkipSettingsPhoto,
   ]);
 
+  const selectChallengeKind = useCallback(
+    async (key: ChallengeKind) => {
+      if (key === 'direct') {
+        setChallengeKind('direct');
+        return;
+      }
+      const uid = user?.id;
+      if (!uid) return;
+      const myRes = await listMyMatches();
+      if (myRes.error || myRes.data == null) {
+        showAppAlert('Could not verify open challenges', myRes.error ?? 'Something went wrong.');
+        return;
+      }
+      const openPostedCount = myRes.data.filter(
+        (row) => row.is_open && row.status === 'open' && row.player_1_id === uid
+      ).length;
+      if (openPostedCount >= MAX_OPEN_CHALLENGES_POSTED) {
+        showAppAlert(
+          'Open challenge limit',
+          `You already have ${MAX_OPEN_CHALLENGES_POSTED} open challenges. Cancel one from the Match Play section on Social before posting another.`
+        );
+        return;
+      }
+      setChallengeKind('open');
+    },
+    [user?.id]
+  );
+
   const goNext = useCallback(() => {
     if (!canContinue) return;
     if (stepIdx < totalSteps - 1) setStepIdx((s) => s + 1);
@@ -344,6 +408,7 @@ export default function MatchCreateScreen() {
       customSlope,
       courseTees,
     });
+
     setSubmitBusy(true);
     const ins = await insertMatch({
       player_2_id: challengeKind === 'open' ? null : opponent!.userId,
@@ -493,7 +558,7 @@ export default function MatchCreateScreen() {
                   <Pressable
                     key={opt.key}
                     style={[styles.holeCard, on && styles.holeCardOn]}
-                    onPress={() => setChallengeKind(opt.key)}
+                    onPress={() => void selectChallengeKind(opt.key)}
                   >
                     <View style={{ flex: 1 }}>
                       <Text style={styles.holeTitle}>{opt.title}</Text>

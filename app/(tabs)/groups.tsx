@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Linking,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,27 +21,40 @@ import { MatchPlayHub } from '../../src/components/MatchPlayHub';
 import { IconPlus } from '../../src/components/SvgUiIcons';
 import { confirmDestructive, showAppAlert } from '../../src/lib/alertCompat';
 import { colors } from '../../src/lib/constants';
+import { socialPageSectionTitleStyles } from '../../src/lib/socialPageSectionTitle';
 import { formatHandicapIndexDisplay } from '../../src/lib/handicap';
-import { headToHeadFromLoggedRound } from '../../src/lib/h2hFromRound';
 import { useResponsive } from '../../src/lib/responsive';
 import {
   cancelOutboundGroupInvite,
   createSocialGroup,
   deleteSocialGroupAsCreator,
-  fetchGroupMatchesFromSupabase,
   fetchInboundGroupInvitesIntoStore,
   fetchMySocialGroupsIntoStore,
   respondToGroupInvite,
   sendGroupInvite,
 } from '../../src/lib/socialGroups';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
-import {
-  useAppStore,
-  type GroupMember,
-  type HeadToHead,
-} from '../../src/store/useAppStore';
+import { useAppStore, type GroupMember } from '../../src/store/useAppStore';
 
 const APP_INVITE_URL = 'https://simhandicap-v2.vercel.app';
+
+const SOCIAL_SECTION_INFO_COPY: Record<'match' | 'groups' | 'net', { title: string; body: string }> = {
+  match: {
+    title: 'Match Play',
+    body:
+      'Challenge any SimCap golfer to a head-to-head stroke play match from any simulator, anywhere. Net scores are calculated from your SimCap index and your tee.',
+  },
+  groups: {
+    title: 'My Groups',
+    body:
+      'Groups let you track handicaps and compete with your regular sim crew. Invite friends to see how your indexes compare.',
+  },
+  net: {
+    title: 'Crew Match Calculator',
+    body:
+      "Playing an in-person sim match with your crew? Calculate who gets strokes based on each player's SimCap index, course, and sim settings.",
+  },
+};
 
 function openMailtoSimCapInvite(email: string, inviterName: string) {
   const who = inviterName.trim() || 'A friend';
@@ -77,13 +91,12 @@ export default function GroupsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
   const { user } = useAuth();
-  const { gutter, isVeryWide } = useResponsive();
+  const { gutter } = useResponsive();
   const insets = useSafeAreaInsets();
   const supabaseOn = isSupabaseConfigured();
 
   const groups = useAppStore((s) => s.groups);
   const inboundGroupInvites = useAppStore((s) => s.inboundGroupInvites);
-  const rounds = useAppStore((s) => s.rounds);
   const displayName = useAppStore((s) => s.displayName);
   const addGroup = useAppStore((s) => s.addGroup);
   const removeGroupById = useAppStore((s) => s.removeGroupById);
@@ -101,28 +114,26 @@ export default function GroupsScreen() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inboundBusy, setInboundBusy] = useState(false);
   const [deleteGroupBusy, setDeleteGroupBusy] = useState(false);
-  const [matches, setMatches] = useState<HeadToHead[]>([]);
-  const [matchesLoading, setMatchesLoading] = useState(false);
-  /** Bumped when the Social screen gains focus so head-to-head refetches after tab blur. */
-  const [h2hFocusEpoch, setH2hFocusEpoch] = useState(0);
+  const [socialSectionInfo, setSocialSectionInfo] = useState<'match' | 'groups' | 'net' | null>(null);
 
   /** Bumps on blur so in-flight fetches don’t leave `listRefreshing` stuck true (e.g. switch tabs mid-request). */
   const groupsRefreshSessionRef = useRef(0);
-  /** Invalidates in-flight head-to-head fetches (blur, crew change, or stale completion). */
-  const h2hFetchGenRef = useRef(0);
-  /** Tracks which crew `matches` belongs to — avoids a blocking spinner on tab refocus (stale-while-revalidate). */
-  const h2hMatchesGroupIdRef = useRef<string | undefined>(undefined);
 
   const [incomingMatchTabBadge, setIncomingMatchTabBadge] = useState(0);
+  const [outgoingAcceptedTabBadge, setOutgoingAcceptedTabBadge] = useState(0);
   const onIncomingDirectMatchCount = useCallback((n: number) => {
     setIncomingMatchTabBadge(n);
   }, []);
+  const onOutgoingAcceptedUnseenCount = useCallback((n: number) => {
+    setOutgoingAcceptedTabBadge(n);
+  }, []);
 
   useLayoutEffect(() => {
+    const sum = incomingMatchTabBadge + outgoingAcceptedTabBadge;
     navigation.setOptions({
-      tabBarBadge: incomingMatchTabBadge > 0 ? incomingMatchTabBadge : undefined,
+      tabBarBadge: sum > 0 ? sum : undefined,
     });
-  }, [navigation, incomingMatchTabBadge]);
+  }, [navigation, incomingMatchTabBadge, outgoingAcceptedTabBadge]);
 
   const g = groups[tab] ?? groups[0];
 
@@ -161,63 +172,6 @@ export default function GroupsScreen() {
     if (tab >= groups.length) setTab(groups.length - 1);
   }, [groups.length, tab]);
 
-  useFocusEffect(
-    useCallback(() => {
-      if (supabaseOn) {
-        setH2hFocusEpoch((n) => n + 1);
-      }
-      return () => {
-        h2hFetchGenRef.current += 1;
-        setMatchesLoading(false);
-      };
-    }, [supabaseOn])
-  );
-
-  useEffect(() => {
-    if (!g?.id || !supabaseOn) {
-      h2hFetchGenRef.current += 1;
-      h2hMatchesGroupIdRef.current = undefined;
-      setMatches([]);
-      setMatchesLoading(false);
-      return;
-    }
-    const switchedCrew = h2hMatchesGroupIdRef.current !== g.id;
-    if (switchedCrew) {
-      h2hMatchesGroupIdRef.current = g.id;
-      setMatches([]);
-      setMatchesLoading(true);
-    }
-
-    const gen = ++h2hFetchGenRef.current;
-
-    const safetyMs = 25000;
-    const safetyTimer = setTimeout(() => {
-      if (h2hFetchGenRef.current !== gen) return;
-      setMatches([]);
-      setMatchesLoading(false);
-    }, safetyMs);
-
-    void fetchGroupMatchesFromSupabase(g.id)
-      .then((rows) => {
-        clearTimeout(safetyTimer);
-        if (h2hFetchGenRef.current !== gen) return;
-        setMatches(Array.isArray(rows) ? rows : []);
-        setMatchesLoading(false);
-      })
-      .catch(() => {
-        clearTimeout(safetyTimer);
-        if (h2hFetchGenRef.current !== gen) return;
-        setMatches([]);
-        setMatchesLoading(false);
-      });
-
-    return () => {
-      clearTimeout(safetyTimer);
-      h2hFetchGenRef.current += 1;
-      setMatchesLoading(false);
-    };
-  }, [g?.id, supabaseOn, h2hFocusEpoch]);
-
   const ranked = useMemo(() => {
     if (!g) return [];
     return [...g.members].sort((a, b) => indexSortKey(a) - indexSortKey(b));
@@ -227,22 +181,6 @@ export default function GroupsScreen() {
   const pendingEmailRows = g?.pendingEmail ?? [];
   const hasMemberOrPending =
     ranked.length > 0 || pendingInAppRows.length > 0 || pendingEmailRows.length > 0;
-
-  const mergedHeadToHead = useMemo((): HeadToHead[] => {
-    if (!g) return [];
-    if (supabaseOn) {
-      return matches;
-    }
-    const fromRounds = rounds
-      .filter((r) => r.h2hGroupId === g.id && r.h2hOpponentMemberId)
-      .map((r) => headToHeadFromLoggedRound(r, displayName))
-      .filter((h): h is HeadToHead => h != null);
-    return fromRounds.sort((a, b) => {
-      const dt = new Date(b.playedAt).getTime() - new Date(a.playedAt).getTime();
-      if (dt !== 0) return dt;
-      return b.id.localeCompare(a.id);
-    });
-  }, [g, rounds, displayName, supabaseOn, matches]);
 
   const onCreate = () => {
     setNewName('');
@@ -498,7 +436,7 @@ export default function GroupsScreen() {
             contentContainerStyle={{
               paddingHorizontal: gutter,
               paddingBottom: insets.bottom + 32,
-              paddingTop: 24,
+              paddingTop: 28,
             }}
             showsVerticalScrollIndicator={false}
           >
@@ -506,15 +444,34 @@ export default function GroupsScreen() {
             {inboundInviteCards.length > 0 ? (
               <View style={{ gap: 10, marginBottom: 18 }}>{inboundInviteCards}</View>
             ) : null}
-            <MatchPlayHub
-              gutter={0}
-              userId={user?.id}
-              supabaseOn={supabaseOn}
-              onIncomingDirectCount={onIncomingDirectMatchCount}
-            />
+            <View style={styles.socialMatchPlaySection}>
+              <MatchPlayHub
+                gutter={0}
+                userId={user?.id}
+                supabaseOn={supabaseOn}
+                onIncomingDirectCount={onIncomingDirectMatchCount}
+                onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
+                onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
+              />
+            </View>
+            <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
+                  My Groups
+                </Text>
+                <Pressable
+                  style={styles.infoBtn}
+                  onPress={() => setSocialSectionInfo('groups')}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="About My Groups"
+                >
+                  <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                </Pressable>
+              </View>
+            </View>
             <Text style={styles.emptyLead}>
-              Crews you create or join show up here. Each tab is a group — with a live leaderboard, recent head-to-head,
-              and invites.
+              Crews you create or join show up here. Each tab is a group — with a live leaderboard and invites.
             </Text>
             <Text style={styles.emptyMuted}>
               You don’t have any groups yet. Create one to get started, then invite friends from the Social tab once
@@ -564,43 +521,87 @@ export default function GroupsScreen() {
             </Pressable>
           </Pressable>
         </Modal>
+
+        <Modal
+          visible={socialSectionInfo != null}
+          animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+          transparent
+          onRequestClose={() => setSocialSectionInfo(null)}
+        >
+          <View style={styles.infoExplainRoot}>
+            <Pressable style={styles.infoExplainBackdrop} onPress={() => setSocialSectionInfo(null)} />
+            <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
+              {socialSectionInfo != null ? (
+                <>
+                  <Text style={styles.infoExplainTitle}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].title}</Text>
+                  <Text style={styles.infoExplainBody}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].body}</Text>
+                </>
+              ) : null}
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
 
   return (
     <View style={styles.page}>
-      <View style={[styles.tabs, { paddingHorizontal: gutter }]}>
-        {groups.map((gr, i) => (
-          <Pressable
-            key={gr.id}
-            style={[styles.groupTab, tab === i && styles.groupTabOn]}
-            onPress={() => setTab(i)}
-          >
-            <Text style={[styles.groupTabTxt, tab === i && styles.groupTabTxtOn]} numberOfLines={1}>
-              {gr.name}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
       <ContentWidth bg={colors.surface} style={styles.contentWidthOuter} contentStyle={styles.contentWidthInner}>
         <View style={styles.root}>
           <ScrollView
             style={styles.scroll}
-            contentContainerStyle={{ paddingBottom: insets.bottom + 16 }}
+            contentContainerStyle={{ paddingTop: 22, paddingBottom: insets.bottom + 16 }}
             showsVerticalScrollIndicator={false}
           >
             {inboundInviteCards.length > 0 ? (
-              <View style={{ marginHorizontal: gutter, marginTop: 12, gap: 10 }}>{inboundInviteCards}</View>
+              <View style={{ marginHorizontal: gutter, marginTop: 0, gap: 10 }}>{inboundInviteCards}</View>
             ) : null}
 
-            <MatchPlayHub
-              gutter={gutter}
-              userId={user?.id}
-              supabaseOn={supabaseOn}
-              onIncomingDirectCount={onIncomingDirectMatchCount}
-            />
+            <View style={styles.socialMatchPlaySection}>
+              <MatchPlayHub
+                gutter={gutter}
+                userId={user?.id}
+                supabaseOn={supabaseOn}
+                onIncomingDirectCount={onIncomingDirectMatchCount}
+                onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
+                onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
+              />
+            </View>
+
+            <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
+                  My Groups
+                </Text>
+                <Pressable
+                  style={styles.infoBtn}
+                  onPress={() => setSocialSectionInfo('groups')}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="About My Groups"
+                >
+                  <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                </Pressable>
+              </View>
+            </View>
+            <View style={[styles.tabsBarBleed, { marginHorizontal: -gutter, paddingHorizontal: gutter }]}>
+              {groups.map((gr, i) => (
+                <Pressable
+                  key={gr.id}
+                  style={[styles.groupTab, tab === i && styles.groupTabOn]}
+                  onPress={() => setTab(i)}
+                >
+                  <Text style={[styles.groupTabTxt, tab === i && styles.groupTabTxtOn]} numberOfLines={1}>
+                    {gr.name}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Pressable style={[styles.newGrp, { marginHorizontal: gutter }]} onPress={onCreate}>
+              <IconPlus size={16} color={colors.subtle} />
+              <Text style={styles.newGrpTxt}>Create a new group</Text>
+            </Pressable>
 
             <View style={[styles.card, { marginHorizontal: gutter }]}>
               <View style={styles.cardHdr}>
@@ -737,120 +738,39 @@ export default function GroupsScreen() {
               )}
             </View>
 
+            <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter, marginTop: 16 }]}>
+              <View style={styles.sectionHeaderRow}>
+                <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
+                  Crew Match Calculator
+                </Text>
+                <Pressable
+                  style={styles.infoBtn}
+                  onPress={() => setSocialSectionInfo('net')}
+                  hitSlop={6}
+                  accessibilityRole="button"
+                  accessibilityLabel="About Crew Match Calculator"
+                >
+                  <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                </Pressable>
+              </View>
+            </View>
             <Pressable
-              style={[styles.toolCard, { marginHorizontal: gutter }]}
+              style={[styles.netCalcCard, { marginHorizontal: gutter }]}
               onPress={() => router.push('/(tabs)/net-calculator')}
               accessibilityRole="button"
-              accessibilityLabel="Open net score calculator"
+              accessibilityLabel="Open Crew Match Calculator"
             >
-              <View style={styles.toolCardInner}>
-                <View style={styles.toolTextCol}>
-                  <Text style={styles.toolTitle}>Net score calculator</Text>
-                  <Text style={styles.toolSub}>
-                    Match strokes from indexes, course, and sim settings — then start logging vs your opponent.
+              <View style={styles.netCalcCardInner}>
+                <View style={styles.netCalcCardTextCol}>
+                  <Text style={styles.netCalcCardDesc}>
+                    Playing an in-person sim match with your crew? Calculate who gets strokes from each player&apos;s
+                    SimCap index, course, and sim settings.
                   </Text>
                 </View>
-                <Text style={styles.toolChev} accessible={false}>
+                <Text style={styles.netCalcChev} accessible={false}>
                   ›
                 </Text>
               </View>
-            </Pressable>
-
-            <View style={[styles.sectionHead, { paddingHorizontal: gutter }]}>
-              <Text style={styles.sectionTitle}>Recent head-to-head</Text>
-            </View>
-            {matchesLoading && supabaseOn ? (
-              <View style={[styles.h2hLoading, { paddingHorizontal: gutter }]}>
-                <ActivityIndicator color={colors.subtle} />
-              </View>
-            ) : mergedHeadToHead.length === 0 ? (
-              <Text style={[styles.h2hEmpty, { paddingHorizontal: gutter }]}>
-                No head-to-head results yet. Log a round from the Log tab and tag an opponent from this crew — it will
-                show up here for everyone in the group.
-              </Text>
-            ) : isVeryWide ? (
-              <View style={[styles.h2hGrid, { paddingHorizontal: gutter }]}>
-                {mergedHeadToHead.map((h) => (
-                  <View key={h.id} style={[styles.matchCard, styles.matchCardGrid]}>
-                    <Text style={styles.matchCourse}>
-                      {h.courseName} ·{' '}
-                      {new Date(h.playedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                    </Text>
-                    <View style={styles.matchRow}>
-                      <View style={styles.matchSide}>
-                        <Text style={styles.matchNm}>{h.left.name}</Text>
-                        <Text style={[styles.matchGross, h.left.won && styles.matchWin]}>{h.left.gross}</Text>
-                        {h.left.net != null ? (
-                          <Text style={styles.matchNet}>net {h.left.net.toFixed(1)}</Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.vs}>vs</Text>
-                      <View style={[styles.matchSide, { alignItems: 'flex-end' }]}>
-                        <Text style={styles.matchNm}>{h.right.name}</Text>
-                        <Text
-                          style={[
-                            styles.matchGross,
-                            h.right.won && styles.matchWin,
-                            h.right.gross == null && styles.matchPending,
-                          ]}
-                        >
-                          {h.right.gross != null ? h.right.gross : '—'}
-                        </Text>
-                        {h.right.net != null ? (
-                          <Text style={styles.matchNet}>net {h.right.net.toFixed(1)}</Text>
-                        ) : h.right.gross == null ? (
-                          <Text style={styles.matchPendingLbl}>Their score not logged</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                    <Text style={styles.matchCond}>{h.conditionsLine}</Text>
-                  </View>
-                ))}
-              </View>
-            ) : (
-              <>
-                {mergedHeadToHead.map((h) => (
-                  <View key={h.id} style={[styles.matchCard, { marginHorizontal: gutter }]}>
-                    <Text style={styles.matchCourse}>
-                      {h.courseName} ·{' '}
-                      {new Date(h.playedAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
-                    </Text>
-                    <View style={styles.matchRow}>
-                      <View style={styles.matchSide}>
-                        <Text style={styles.matchNm}>{h.left.name}</Text>
-                        <Text style={[styles.matchGross, h.left.won && styles.matchWin]}>{h.left.gross}</Text>
-                        {h.left.net != null ? (
-                          <Text style={styles.matchNet}>net {h.left.net.toFixed(1)}</Text>
-                        ) : null}
-                      </View>
-                      <Text style={styles.vs}>vs</Text>
-                      <View style={[styles.matchSide, { alignItems: 'flex-end' }]}>
-                        <Text style={styles.matchNm}>{h.right.name}</Text>
-                        <Text
-                          style={[
-                            styles.matchGross,
-                            h.right.won && styles.matchWin,
-                            h.right.gross == null && styles.matchPending,
-                          ]}
-                        >
-                          {h.right.gross != null ? h.right.gross : '—'}
-                        </Text>
-                        {h.right.net != null ? (
-                          <Text style={styles.matchNet}>net {h.right.net.toFixed(1)}</Text>
-                        ) : h.right.gross == null ? (
-                          <Text style={styles.matchPendingLbl}>Their score not logged</Text>
-                        ) : null}
-                      </View>
-                    </View>
-                    <Text style={styles.matchCond}>{h.conditionsLine}</Text>
-                  </View>
-                ))}
-              </>
-            )}
-
-            <Pressable style={[styles.newGrp, { marginHorizontal: gutter }]} onPress={onCreate}>
-              <IconPlus size={16} color={colors.subtle} />
-              <Text style={styles.newGrpTxt}>Create a new group</Text>
             </Pressable>
           </ScrollView>
 
@@ -952,6 +872,25 @@ export default function GroupsScreen() {
               </Pressable>
             </Pressable>
           </Modal>
+
+          <Modal
+            visible={socialSectionInfo != null}
+            animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+            transparent
+            onRequestClose={() => setSocialSectionInfo(null)}
+          >
+            <View style={styles.infoExplainRoot}>
+              <Pressable style={styles.infoExplainBackdrop} onPress={() => setSocialSectionInfo(null)} />
+              <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
+                {socialSectionInfo != null ? (
+                  <>
+                    <Text style={styles.infoExplainTitle}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].title}</Text>
+                    <Text style={styles.infoExplainBody}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].body}</Text>
+                  </>
+                ) : null}
+              </View>
+            </View>
+          </Modal>
         </View>
       </ContentWidth>
     </View>
@@ -964,20 +903,7 @@ const styles = StyleSheet.create({
   contentWidthInner: { flex: 1, minHeight: 0, width: '100%' },
   root: { flex: 1, minHeight: 0, backgroundColor: colors.surface, width: '100%' },
   scroll: { flex: 1, minHeight: 0, width: '100%' },
-  h2hGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 10,
-    justifyContent: 'space-between',
-  },
-  matchCardGrid: {
-    width: '48%',
-    flexGrow: 1,
-    minWidth: 280,
-    maxWidth: 520,
-    marginBottom: 4,
-  },
-  emptyTitle: { fontSize: 24, fontWeight: '700', color: colors.ink, marginBottom: 10 },
+  emptyTitle: { fontSize: 24, fontWeight: '700', color: colors.ink, marginBottom: 22 },
   emptyLead: { fontSize: 15, color: colors.muted, lineHeight: 22, marginBottom: 12 },
   emptyMuted: { fontSize: 13, color: colors.subtle, lineHeight: 19, marginBottom: 24 },
   emptyCta: {
@@ -992,14 +918,55 @@ const styles = StyleSheet.create({
   emptyCtaTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
   inlineLoader: { alignItems: 'center', marginBottom: 16 },
   membersEmpty: { fontSize: 13, color: colors.muted, lineHeight: 19 },
-  h2hLoading: { paddingVertical: 16, alignItems: 'flex-start' },
   modalBtnDisabled: { opacity: 0.7 },
-  tabs: {
+  socialMatchPlaySection: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingBottom: 18,
+    marginBottom: 12,
+  },
+  myGroupsHeader: {
+    paddingTop: 4,
+    paddingBottom: 10,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  infoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#7aa390',
+    backgroundColor: '#e8f2ed',
+  },
+  infoBtnTxt: { fontSize: 11, fontWeight: '700', color: '#1a3d2b', lineHeight: 12 },
+  infoExplainRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  infoExplainBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  infoExplainSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  infoExplainTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  infoExplainBody: { fontSize: 14, lineHeight: 21, color: colors.ink },
+  tabsBarBleed: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 5,
     paddingVertical: 12,
-    backgroundColor: colors.header,
+    backgroundColor: colors.surface,
     alignItems: 'center',
   },
   groupTab: {
@@ -1007,11 +974,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     borderRadius: 99,
     borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.15)',
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.accentSoft,
     maxWidth: 160,
   },
   groupTabOn: { backgroundColor: colors.accent, borderColor: colors.accent },
-  groupTabTxt: { fontSize: 12, fontWeight: '600', color: 'rgba(255,255,255,0.45)' },
+  groupTabTxt: { fontSize: 12, fontWeight: '600', color: colors.muted },
   groupTabTxtOn: { color: '#fff' },
   card: {
     marginTop: 12,
@@ -1074,47 +1042,25 @@ const styles = StyleSheet.create({
   trendUp: { fontSize: 10, color: colors.accent },
   trendDn: { fontSize: 10, color: colors.danger },
   trendFl: { fontSize: 10, color: colors.subtle },
-  toolCard: {
-    marginTop: 12,
-    borderWidth: 0.5,
+  netCalcCard: {
+    marginTop: 4,
+    borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     borderRadius: 12,
     backgroundColor: colors.bg,
   },
-  toolCardInner: {
+  netCalcCardInner: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingVertical: 14,
     paddingHorizontal: 14,
     gap: 10,
   },
-  toolTextCol: { flex: 1, minWidth: 0 },
-  toolTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
-  toolSub: { fontSize: 11, color: colors.muted, marginTop: 4, lineHeight: 15 },
-  toolChev: { fontSize: 22, color: colors.subtle, fontWeight: '300' },
-  sectionHead: { paddingTop: 14, paddingBottom: 6 },
-  sectionTitle: { fontSize: 12, fontWeight: '600', color: colors.ink },
-  h2hEmpty: { fontSize: 12, color: colors.muted, lineHeight: 18 },
-  matchCard: {
-    marginBottom: 8,
-    borderWidth: 0.5,
-    borderColor: colors.border,
-    borderRadius: 10,
-    padding: 12,
-  },
-  matchCourse: { fontSize: 12, fontWeight: '600', color: colors.ink, marginBottom: 7 },
-  matchRow: { flexDirection: 'row', alignItems: 'center' },
-  matchSide: { flex: 1 },
-  matchNm: { fontSize: 11, color: colors.muted },
-  matchGross: { fontSize: 17, fontWeight: '600', color: colors.ink, marginTop: 2 },
-  matchWin: { color: colors.accent },
-  matchPending: { color: colors.subtle },
-  matchNet: { fontSize: 10, color: colors.subtle, marginTop: 2 },
-  matchPendingLbl: { fontSize: 9, color: colors.subtle, marginTop: 2, fontStyle: 'italic' },
-  vs: { fontSize: 10, color: colors.subtle, paddingHorizontal: 6 },
-  matchCond: { fontSize: 10, color: colors.subtle, marginTop: 5 },
+  netCalcCardTextCol: { flex: 1, minWidth: 0 },
+  netCalcCardDesc: { fontSize: 13, color: colors.muted, lineHeight: 19 },
+  netCalcChev: { fontSize: 22, color: colors.subtle, fontWeight: '300' },
   newGrp: {
-    marginTop: 10,
+    marginTop: 8,
     borderWidth: 0.5,
     borderStyle: 'dashed',
     borderColor: colors.pillBorder,

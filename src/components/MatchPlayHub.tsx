@@ -1,6 +1,8 @@
-import { useFocusEffect } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -10,14 +12,16 @@ import {
 } from 'react-native';
 import { confirmDestructive, showAppAlert } from '../lib/alertCompat';
 import { colors } from '../lib/constants';
+import { socialPageSectionTitleStyles } from '../lib/socialPageSectionTitle';
 import {
+  deleteMatchById,
+  fetchMatchPlayerDisplayNames,
   listMyMatches,
   listOpenFeedMatches,
   updateMatchById,
   type DbMatchRow,
 } from '../lib/matchPlay';
 import { supabase } from '../lib/supabase';
-import { IconPlus } from './SvgUiIcons';
 
 type Props = {
   gutter: number;
@@ -25,7 +29,45 @@ type Props = {
   supabaseOn: boolean;
   /** Incoming direct challenges only (for tab badge). */
   onIncomingDirectCount: (n: number) => void;
+  /** Your posted challenges now active / waiting — unseen since last Social visit (tab badge). */
+  onOutgoingAcceptedUnseenCount?: (n: number) => void;
+  /** Optional ⓘ next to section title (Social tab explains Match Play). */
+  onMatchPlayInfoPress?: () => void;
 };
+
+function storageKeyP1AcceptedSeen(userId: string): string {
+  return `@simcap/social_p1_accepted_seen_match_ids/${userId}`;
+}
+
+/** You created the match (player 1), an opponent joined, and play is underway. */
+function isP1AcceptedLiveChallenge(m: DbMatchRow, uid: string): boolean {
+  if (m.player_1_id !== uid) return false;
+  if (m.player_2_id == null) return false;
+  if (m.status !== 'active' && m.status !== 'waiting') return false;
+  return true;
+}
+
+async function loadSeenP1AcceptedMatchIds(userId: string): Promise<Set<string>> {
+  try {
+    const raw = await AsyncStorage.getItem(storageKeyP1AcceptedSeen(userId));
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw) as unknown;
+    if (!Array.isArray(arr)) return new Set();
+    return new Set(arr.filter((x): x is string => typeof x === 'string'));
+  } catch {
+    return new Set();
+  }
+}
+
+async function mergeSeenP1AcceptedMatchIds(userId: string, ids: string[]): Promise<Set<string>> {
+  const prev = await loadSeenP1AcceptedMatchIds(userId);
+  for (const id of ids) prev.add(id);
+  await AsyncStorage.setItem(storageKeyP1AcceptedSeen(userId), JSON.stringify([...prev]));
+  return prev;
+}
+
+/** After Social focus + fresh fetch, wait this long before persisting "seen" so the tab badge can render. */
+const SOCIAL_SEEN_MERGE_DELAY_MS = 2200;
 
 function uniqById<T extends { id: string }>(items: T[]): T[] {
   const seen = new Set<string>();
@@ -57,24 +99,24 @@ function statusLabel(m: DbMatchRow, uid: string): string {
   return m.status;
 }
 
-async function loadDisplayNames(rows: DbMatchRow[]): Promise<Record<string, string>> {
-  if (!supabase) return {};
-  const ids = new Set<string>();
-  for (const m of rows) {
-    ids.add(m.player_1_id);
-    if (m.player_2_id) ids.add(m.player_2_id);
+/** Status chip for Incoming & active cards only (not open-feed / history). */
+function incomingActiveBadge(
+  m: DbMatchRow,
+  uid: string
+): { text: string; tone: 'incoming' | 'muted' | 'yours' } | null {
+  if (!m.is_open && m.status === 'pending' && m.player_2_id === uid) {
+    return { text: 'Awaiting your response', tone: 'incoming' };
   }
-  if (ids.size === 0) return {};
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, display_name')
-    .in('id', [...ids]);
-  if (error || !data) return {};
-  const map: Record<string, string> = {};
-  for (const row of data as { id: string; display_name: string }[]) {
-    map[row.id] = row.display_name?.trim() || 'Golfer';
+  if (!m.is_open && m.status === 'pending' && m.player_1_id === uid && m.player_2_id != null) {
+    return { text: 'Awaiting opponent', tone: 'muted' };
   }
-  return map;
+  if (m.status === 'active' || m.status === 'waiting') {
+    return { text: 'In Progress', tone: 'muted' };
+  }
+  if (m.is_open && m.status === 'open' && m.player_1_id === uid) {
+    return { text: 'Your open challenge', tone: 'yours' };
+  }
+  return null;
 }
 
 function partitionHubData(my: DbMatchRow[], uid: string) {
@@ -90,7 +132,11 @@ function partitionHubData(my: DbMatchRow[], uid: string) {
       m.player_2_id != null
   );
 
-  const activeOrWaiting = my.filter((m) => m.status === 'active' || m.status === 'waiting');
+  const activeOrWaiting = my.filter(
+    (m) =>
+      (m.status === 'active' || m.status === 'waiting') &&
+      (m.player_1_id === uid || m.player_2_id === uid)
+  );
 
   const myOpenPosted = my.filter(
     (m) => m.is_open && m.status === 'open' && m.player_1_id === uid
@@ -101,12 +147,19 @@ function partitionHubData(my: DbMatchRow[], uid: string) {
   const completed = my
     .filter((m) => m.status === 'complete' || m.status === 'abandoned')
     .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-    .slice(0, 20);
+    .slice(0, 3);
 
   return { incomingDirect, section1, completed };
 }
 
-export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount }: Props) {
+export function MatchPlayHub({
+  gutter,
+  userId,
+  supabaseOn,
+  onIncomingDirectCount,
+  onOutgoingAcceptedUnseenCount,
+  onMatchPlayInfoPress,
+}: Props) {
   const router = useRouter();
   const [myMatches, setMyMatches] = useState<DbMatchRow[]>([]);
   const [openFeed, setOpenFeed] = useState<DbMatchRow[]>([]);
@@ -114,18 +167,73 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
   const [loading, setLoading] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [declineBusyId, setDeclineBusyId] = useState<string | null>(null);
+  const [cancelOpenBusyId, setCancelOpenBusyId] = useState<string | null>(null);
+  const [seenP1AcceptedIds, setSeenP1AcceptedIds] = useState<Set<string>>(() => new Set());
+  const [seenP1Hydrated, setSeenP1Hydrated] = useState(false);
+  const refetchMatchesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const myMatchesRef = useRef<DbMatchRow[]>([]);
+  const activeHubUserIdRef = useRef<string | undefined>(undefined);
+  const mergeSeenDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    myMatchesRef.current = myMatches;
+  }, [myMatches]);
+
+  useEffect(() => {
+    if (!supabaseOn || !userId) {
+      setSeenP1Hydrated(true);
+      return;
+    }
+    let alive = true;
+    void loadSeenP1AcceptedMatchIds(userId).then((s) => {
+      if (alive) {
+        setSeenP1AcceptedIds(s);
+        setSeenP1Hydrated(true);
+      }
+    });
+    return () => {
+      alive = false;
+    };
+  }, [supabaseOn, userId]);
+
+  useEffect(() => {
+    if (!onOutgoingAcceptedUnseenCount) return;
+    if (!supabaseOn || !userId) {
+      onOutgoingAcceptedUnseenCount(0);
+      return;
+    }
+    if (!seenP1Hydrated) return;
+    const n = myMatches
+      .filter((m) => isP1AcceptedLiveChallenge(m, userId))
+      .filter((m) => !seenP1AcceptedIds.has(m.id)).length;
+    onOutgoingAcceptedUnseenCount(n);
+  }, [
+    myMatches,
+    seenP1AcceptedIds,
+    seenP1Hydrated,
+    supabaseOn,
+    userId,
+    onOutgoingAcceptedUnseenCount,
+  ]);
 
   useFocusEffect(
     useCallback(() => {
       if (!supabaseOn || !userId) {
+        activeHubUserIdRef.current = undefined;
+        if (mergeSeenDelayTimerRef.current) {
+          clearTimeout(mergeSeenDelayTimerRef.current);
+          mergeSeenDelayTimerRef.current = null;
+        }
         setMyMatches([]);
         setOpenFeed([]);
         setFetchError(false);
         setLoading(false);
         onIncomingDirectCount(0);
+        onOutgoingAcceptedUnseenCount?.(0);
         return;
       }
 
+      activeHubUserIdRef.current = userId;
       let cancelled = false;
       setLoading(true);
       setFetchError(false);
@@ -135,16 +243,23 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
         if (cancelled) return;
 
         if (myRes.error || openRes.error) {
+          if (mergeSeenDelayTimerRef.current) {
+            clearTimeout(mergeSeenDelayTimerRef.current);
+            mergeSeenDelayTimerRef.current = null;
+          }
           setFetchError(true);
           setMyMatches([]);
           setOpenFeed([]);
+          myMatchesRef.current = [];
           onIncomingDirectCount(0);
+          onOutgoingAcceptedUnseenCount?.(0);
           setLoading(false);
           return;
         }
 
         const my = myRes.data ?? [];
         const open = openRes.data ?? [];
+        myMatchesRef.current = my;
         setMyMatches(my);
         setOpenFeed(open);
 
@@ -152,23 +267,50 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
         onIncomingDirectCount(incomingDirect.length);
 
         const nameRows = uniqById([...my, ...open]);
-        const nm = await loadDisplayNames(nameRows);
+        const nm = await fetchMatchPlayerDisplayNames(nameRows);
         if (!cancelled) setNames(nm);
         setLoading(false);
       })();
 
       return () => {
         cancelled = true;
+        if (mergeSeenDelayTimerRef.current) {
+          clearTimeout(mergeSeenDelayTimerRef.current);
+          mergeSeenDelayTimerRef.current = null;
+        }
+        const uid = activeHubUserIdRef.current;
+        const rows = myMatchesRef.current;
+        if (uid && supabaseOn) {
+          const markIds = rows.filter((m) => isP1AcceptedLiveChallenge(m, uid)).map((m) => m.id);
+          if (markIds.length > 0) {
+            void mergeSeenP1AcceptedMatchIds(uid, markIds).then(setSeenP1AcceptedIds);
+          }
+        }
       };
-    }, [supabaseOn, userId, onIncomingDirectCount])
+    }, [supabaseOn, userId, onIncomingDirectCount, onOutgoingAcceptedUnseenCount])
   );
 
   useEffect(() => {
     const client = supabase;
     if (!supabaseOn || !userId || !client) return;
 
+    const scheduleRefetch = () => {
+      if (refetchMatchesTimerRef.current) clearTimeout(refetchMatchesTimerRef.current);
+      refetchMatchesTimerRef.current = setTimeout(() => {
+        refetchMatchesTimerRef.current = null;
+        void Promise.all([listMyMatches(), listOpenFeedMatches()]).then(([myRes, openRes]) => {
+          if (!myRes.error && myRes.data) {
+            setMyMatches(myRes.data);
+            const { incomingDirect } = partitionHubData(myRes.data, userId);
+            onIncomingDirectCount(incomingDirect.length);
+          }
+          if (!openRes.error && openRes.data) setOpenFeed(openRes.data);
+        });
+      }, 160);
+    };
+
     const channel = client
-      .channel(`match-play-open-feed:${userId}`)
+      .channel(`match-play-hub:${userId}`)
       .on(
         'postgres_changes',
         {
@@ -177,27 +319,71 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
           table: 'matches',
           filter: 'is_open=eq.true',
         },
-        () => {
-          void Promise.all([listMyMatches(), listOpenFeedMatches()]).then(([myRes, openRes]) => {
-            if (!myRes.error && myRes.data) {
-              setMyMatches(myRes.data);
-              const { incomingDirect } = partitionHubData(myRes.data, userId);
-              onIncomingDirectCount(incomingDirect.length);
-            }
-            if (!openRes.error && openRes.data) setOpenFeed(openRes.data);
-          });
-        }
+        scheduleRefetch
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'matches',
+          filter: `player_1_id=eq.${userId}`,
+        },
+        scheduleRefetch
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'matches',
+          filter: `player_2_id=eq.${userId}`,
+        },
+        scheduleRefetch
       )
       .subscribe();
 
     return () => {
+      if (refetchMatchesTimerRef.current) {
+        clearTimeout(refetchMatchesTimerRef.current);
+        refetchMatchesTimerRef.current = null;
+      }
       void client.removeChannel(channel);
     };
   }, [supabaseOn, userId, onIncomingDirectCount]);
 
+  const isFocused = useIsFocused();
+
+  /**
+   * After fresh data while Social is focused, debounce persisting "seen" so the tab badge can paint first.
+   * Reschedules when `myMatches` changes (e.g. realtime accept) so late accepts still clear after a quiet window.
+   */
+  useEffect(() => {
+    if (!isFocused || !supabaseOn || !userId) return;
+    if (mergeSeenDelayTimerRef.current) {
+      clearTimeout(mergeSeenDelayTimerRef.current);
+      mergeSeenDelayTimerRef.current = null;
+    }
+    mergeSeenDelayTimerRef.current = setTimeout(() => {
+      mergeSeenDelayTimerRef.current = null;
+      const uid = activeHubUserIdRef.current;
+      if (!uid) return;
+      const rows = myMatchesRef.current;
+      const markIds = rows.filter((m) => isP1AcceptedLiveChallenge(m, uid)).map((m) => m.id);
+      if (markIds.length === 0) return;
+      void mergeSeenP1AcceptedMatchIds(uid, markIds).then(setSeenP1AcceptedIds);
+    }, SOCIAL_SEEN_MERGE_DELAY_MS);
+    return () => {
+      if (mergeSeenDelayTimerRef.current) {
+        clearTimeout(mergeSeenDelayTimerRef.current);
+        mergeSeenDelayTimerRef.current = null;
+      }
+    };
+  }, [isFocused, myMatches, supabaseOn, userId]);
+
   const onCreateMatch = useCallback(() => {
-    // Path matches `app/(tabs)/match-create.tsx`; assert until typed routes refresh.
-    router.push('/(tabs)/match-create' as never);
+    // `fresh` forces match-create to reset when opened from here (same screen instance may stay mounted).
+    router.push(`/(tabs)/match-create?fresh=${Date.now()}` as never);
   }, [router]);
 
   const onAcceptDirect = useCallback(
@@ -237,10 +423,43 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
     [names]
   );
 
+  const onCancelOpenPosted = useCallback(async (m: DbMatchRow) => {
+    const ok = await confirmDestructive(
+      'Cancel this open challenge?',
+      'It will be removed from the feed for everyone. This cannot be undone.',
+      'Cancel challenge'
+    );
+    if (!ok) return;
+    setCancelOpenBusyId(m.id);
+    const res = await deleteMatchById(m.id);
+    setCancelOpenBusyId(null);
+    if (!res.ok) {
+      showAppAlert('Could not cancel', res.error ?? 'Unknown error');
+      return;
+    }
+    setMyMatches((prev) => prev.filter((row) => row.id !== m.id));
+    setOpenFeed((prev) => prev.filter((row) => row.id !== m.id));
+  }, []);
+
   if (!supabaseOn || !userId) {
     return (
       <View style={[styles.wrap, { marginHorizontal: gutter }]}>
-        <Text style={styles.sectionEyebrow}>Match Play</Text>
+        <View style={styles.matchPlayTitleRow}>
+          <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
+            Match Play
+          </Text>
+          {onMatchPlayInfoPress ? (
+            <Pressable
+              style={styles.infoBtn}
+              onPress={onMatchPlayInfoPress}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="About Match Play"
+            >
+              <Text style={styles.infoBtnTxt}>ⓘ</Text>
+            </Pressable>
+          ) : null}
+        </View>
         <Text style={styles.offlineHint}>Sign in with Supabase configured to see matches.</Text>
       </View>
     );
@@ -265,20 +484,54 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
           ? `${p1} vs ${p2}`
           : `Challenger ${p1}`;
     const incomingDirect = !m.is_open && m.status === 'pending' && m.player_2_id === uid;
+    const isMyOpenPostedCancelable =
+      listKind === 'hub' &&
+      m.is_open &&
+      m.status === 'open' &&
+      m.player_1_id === uid &&
+      m.player_2_id == null;
     const declineBusy = declineBusyId === m.id;
     const isLiveScoring =
       (m.status === 'active' || m.status === 'waiting') &&
       m.player_2_id != null &&
       (m.player_1_id === uid || m.player_2_id === uid);
 
+    const hubBadge = listKind === 'hub' ? incomingActiveBadge(m, uid) : null;
+    const metaLine =
+      listKind === 'hub'
+        ? `${formatHoles(m)} · Stroke play`
+        : `${statusLabel(m, uid)} · ${formatHoles(m)} · Stroke play`;
+
     const cardInner = (
       <>
+        {hubBadge ? (
+          <View
+            style={[
+              styles.cardStatusBadge,
+              hubBadge.tone === 'incoming'
+                ? styles.cardStatusBadgeIncoming
+                : hubBadge.tone === 'yours'
+                  ? styles.cardStatusBadgeYours
+                  : styles.cardStatusBadgeMuted,
+            ]}
+          >
+            <Text
+              style={
+                hubBadge.tone === 'incoming'
+                  ? styles.cardStatusBadgeTxtIncoming
+                  : hubBadge.tone === 'yours'
+                    ? styles.cardStatusBadgeTxtYours
+                    : styles.cardStatusBadgeTxtMuted
+              }
+            >
+              {hubBadge.text}
+            </Text>
+          </View>
+        ) : null}
         <Text style={styles.cardTitle} numberOfLines={1}>
           {m.course_name}
         </Text>
-        <Text style={styles.cardMeta}>
-          {statusLabel(m, uid)} · {formatHoles(m)} · Stroke play
-        </Text>
+        <Text style={styles.cardMeta}>{metaLine}</Text>
         <Text style={styles.cardPeople} numberOfLines={2}>
           {peopleLine}
         </Text>
@@ -332,7 +585,27 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
 
     return (
       <View key={m.id} style={styles.card}>
-        {cardInner}
+        {isMyOpenPostedCancelable ? (
+          <View style={styles.cardTopRow}>
+            <View style={styles.cardBodyFlex}>{cardInner}</View>
+            <Pressable
+              onPress={() => void onCancelOpenPosted(m)}
+              disabled={cancelOpenBusyId === m.id}
+              style={({ pressed }) => [styles.groupDeleteBtn, pressed && styles.groupDeleteBtnPressed]}
+              hitSlop={10}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel open challenge"
+            >
+              {cancelOpenBusyId === m.id ? (
+                <ActivityIndicator size="small" color={colors.subtle} />
+              ) : (
+                <Ionicons name="trash-outline" size={22} color={colors.subtle} />
+              )}
+            </Pressable>
+          </View>
+        ) : (
+          cardInner
+        )}
         {incomingDirect ? (
           <View style={styles.cardActions}>
             <Pressable
@@ -365,7 +638,22 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
 
   return (
     <View style={[styles.wrap, { marginHorizontal: gutter }]}>
-      <Text style={styles.sectionEyebrow}>Match Play</Text>
+      <View style={styles.matchPlayTitleRow}>
+        <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
+          Match Play
+        </Text>
+        {onMatchPlayInfoPress ? (
+          <Pressable
+            style={styles.infoBtn}
+            onPress={onMatchPlayInfoPress}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="About Match Play"
+          >
+            <Text style={styles.infoBtnTxt}>ⓘ</Text>
+          </Pressable>
+        ) : null}
+      </View>
 
       <Pressable
         onPress={onCreateMatch}
@@ -373,8 +661,7 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
         accessibilityRole="button"
         accessibilityLabel="Create match"
       >
-        <IconPlus size={18} color="#fff" />
-        <Text style={styles.createBtnTxt}>+ Create Match</Text>
+        <Text style={styles.createBtnTxt}>Create Match</Text>
       </Pressable>
 
       {loading ? (
@@ -415,23 +702,30 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
 }
 
 const styles = StyleSheet.create({
-  wrap: { marginTop: 4, marginBottom: 8 },
-  sectionEyebrow: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: colors.sage,
-    letterSpacing: 0.8,
-    textTransform: 'uppercase',
-    marginBottom: 8,
+  wrap: { marginTop: 0, marginBottom: 4 },
+  matchPlayTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 14,
   },
+  infoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#7aa390',
+    backgroundColor: '#e8f2ed',
+  },
+  infoBtnTxt: { fontSize: 11, fontWeight: '700', color: '#1a3d2b', lineHeight: 12 },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.ink, marginTop: 4 },
   sectionSub: { fontSize: 11, color: colors.muted, marginTop: 3, marginBottom: 8, lineHeight: 16 },
   sectionSpaced: { marginTop: 18 },
   createBtn: {
-    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
     backgroundColor: colors.header,
     paddingVertical: 12,
     borderRadius: 12,
@@ -457,9 +751,49 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: colors.surface,
   },
+  cardStatusBadge: {
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginBottom: 8,
+  },
+  cardStatusBadgeIncoming: {
+    backgroundColor: colors.accentSoft,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.sage,
+  },
+  cardStatusBadgeMuted: {
+    backgroundColor: colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+  },
+  cardStatusBadgeYours: {
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.header,
+  },
+  cardStatusBadgeTxtIncoming: { fontSize: 11, fontWeight: '700', color: colors.accentDark },
+  cardStatusBadgeTxtMuted: { fontSize: 11, fontWeight: '600', color: colors.muted },
+  cardStatusBadgeTxtYours: { fontSize: 11, fontWeight: '700', color: colors.header },
   cardTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   cardMeta: { fontSize: 11, color: colors.muted, marginTop: 4, lineHeight: 16 },
   cardPeople: { fontSize: 11, color: colors.subtle, marginTop: 6, lineHeight: 15 },
+  cardTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  cardBodyFlex: { flex: 1, minWidth: 0 },
+  groupDeleteBtn: {
+    minWidth: 36,
+    minHeight: 36,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 4,
+  },
+  groupDeleteBtnPressed: { opacity: 0.7 },
   cardPressed: { opacity: 0.92 },
   cardTapHint: {
     fontSize: 11,

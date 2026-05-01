@@ -168,6 +168,27 @@ export async function listMyMatches(): Promise<MatchListResult> {
   return { data: mapMatchRows(data as unknown[]), error: null };
 }
 
+/** Display names for all players referenced in the given match rows (for UI lists). */
+export async function fetchMatchPlayerDisplayNames(rows: DbMatchRow[]): Promise<Record<string, string>> {
+  if (!supabase) return {};
+  const ids = new Set<string>();
+  for (const m of rows) {
+    ids.add(m.player_1_id);
+    if (m.player_2_id) ids.add(m.player_2_id);
+  }
+  if (ids.size === 0) return {};
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, display_name')
+    .in('id', [...ids]);
+  if (error || !data) return {};
+  const map: Record<string, string> = {};
+  for (const row of data as { id: string; display_name?: string }[]) {
+    map[row.id] = row.display_name?.trim() || 'Golfer';
+  }
+  return map;
+}
+
 /**
  * Open challenge feed: public listings waiting for an acceptor.
  * Newest first (brief: chronological, newest at top).
@@ -366,6 +387,22 @@ export async function updateMatchById(
     return { data: null, error: error.message };
   }
   return { data: asMatchRow(data), error: null };
+}
+
+/** Remove a match row (RLS: e.g. poster deleting an unclaimed open challenge). */
+export async function deleteMatchById(matchId: string): Promise<{ ok: boolean; error: string | null }> {
+  if (!supabase) return { ok: false, error: 'Supabase is not configured' };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in' };
+
+  const { error } = await supabase.from('matches').delete().eq('id', matchId);
+  if (error) {
+    console.warn('[matchPlay] deleteMatchById', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true, error: null };
 }
 
 export type AbandonMatchResult = { ok: boolean; error: string | null };

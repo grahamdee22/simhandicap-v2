@@ -190,6 +190,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="match-history"
+        options={{
+          href: null,
+          title: 'Match history',
+          headerRight: HeaderInstagramAndSimCap,
+          tabBarLabel: 'History',
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',
@@ -210,9 +219,9 @@ export default function TabLayout() {
         name="net-calculator"
         options={{
           href: null,
-          title: 'Net calculator',
+          title: 'Crew Match Calculator',
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Net',
+          tabBarLabel: 'Crew match',
         }}
       />
       <Tabs.Screen

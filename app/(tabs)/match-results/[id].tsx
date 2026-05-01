@@ -1,10 +1,18 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
+import { localYmdToIso, todayLocalYmd } from '../../../src/lib/dates';
+import {
+  buildNewRoundInputFromCompletedMatch,
+  matchIndexRoundStorageKey,
+} from '../../../src/lib/matchPlayIndexRound';
 import {
   getMatchById,
   listMatchHoles,
@@ -13,6 +21,9 @@ import {
 } from '../../../src/lib/matchPlay';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
+import { useAppStore } from '../../../src/store/useAppStore';
+
+type IndexRoundUi = 'off' | 'loading' | 'prompt' | 'saving' | 'saved' | 'skipped';
 
 export default function MatchResultsScreen() {
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
@@ -20,12 +31,17 @@ export default function MatchResultsScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
+  const { user } = useAuth();
+  const userId = user?.id;
+  const addRound = useAppStore((s) => s.addRound);
+  const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
 
   const [match, setMatch] = useState<DbMatchRow | null>(null);
   const [names, setNames] = useState<{ p1: string; p2: string }>({ p1: 'Player 1', p2: 'Player 2' });
   const [holesRows, setHolesRows] = useState<DbMatchHoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [indexRoundUi, setIndexRoundUi] = useState<IndexRoundUi>('off');
 
   const supabaseOn = isSupabaseConfigured();
 
@@ -68,6 +84,61 @@ export default function MatchResultsScreen() {
       void load();
     }, [load])
   );
+
+  useEffect(() => {
+    if (loading) return;
+    if (!match || match.status !== 'complete' || !userId || !matchId) {
+      setIndexRoundUi('off');
+      return;
+    }
+    if (userId !== match.player_1_id && userId !== match.player_2_id) {
+      setIndexRoundUi('off');
+      return;
+    }
+    setIndexRoundUi('loading');
+    let cancelled = false;
+    void (async () => {
+      const v = await AsyncStorage.getItem(matchIndexRoundStorageKey(matchId, userId));
+      if (cancelled) return;
+      if (v === 'saved') setIndexRoundUi('saved');
+      else if (v === 'skipped') setIndexRoundUi('skipped');
+      else setIndexRoundUi('prompt');
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, match, matchId, userId]);
+
+  const onSkipSaveToIndex = useCallback(async () => {
+    if (!userId || !matchId) return;
+    await AsyncStorage.setItem(matchIndexRoundStorageKey(matchId, userId), 'skipped');
+    setIndexRoundUi('skipped');
+  }, [matchId, userId]);
+
+  const onSaveToIndex = useCallback(async () => {
+    if (!match || !userId || !matchId) return;
+    const playedAt = localYmdToIso(todayLocalYmd());
+    const built = buildNewRoundInputFromCompletedMatch({
+      match,
+      holesRows,
+      playerId: userId,
+      playedAtIso: playedAt,
+      platform: preferredLogPlatform,
+    });
+    if (!built.ok) {
+      showAppAlert('Could not prepare round', built.error);
+      return;
+    }
+    setIndexRoundUi('saving');
+    try {
+      await addRound(built.input);
+      await AsyncStorage.setItem(matchIndexRoundStorageKey(matchId, userId), 'saved');
+      setIndexRoundUi('saved');
+    } catch (e) {
+      setIndexRoundUi('prompt');
+      showAppAlert('Could not save', String(e));
+    }
+  }, [addRound, holesRows, match, matchId, preferredLogPlatform, userId]);
 
   if (!supabaseOn) {
     return (
@@ -240,12 +311,50 @@ export default function MatchResultsScreen() {
           </View>
         </View>
 
+        {indexRoundUi === 'prompt' || indexRoundUi === 'saving' ? (
+          <View style={styles.indexPromptCard}>
+            <Text style={styles.indexPromptTitle}>Save this round to your SimCap index?</Text>
+            <Text style={styles.indexPromptBody}>
+              This will count toward your handicap calculation like a regular logged round.
+            </Text>
+            <View style={styles.indexBtnRow}>
+              <Pressable
+                style={[styles.secondaryBtn, styles.indexBtnFlex]}
+                disabled={indexRoundUi === 'saving'}
+                onPress={() => void onSkipSaveToIndex()}
+                accessibilityRole="button"
+                accessibilityLabel="Skip saving to index"
+              >
+                <Text style={styles.secondaryBtnTxt}>Skip</Text>
+              </Pressable>
+              <Pressable
+                style={[styles.primaryBtn, styles.indexBtnFlex, indexRoundUi === 'saving' && styles.btnBusy]}
+                disabled={indexRoundUi === 'saving'}
+                onPress={() => void onSaveToIndex()}
+                accessibilityRole="button"
+                accessibilityLabel="Save to index"
+              >
+                {indexRoundUi === 'saving' ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.primaryBtnTxt}>Save to index</Text>
+                )}
+              </Pressable>
+            </View>
+          </View>
+        ) : indexRoundUi === 'saved' ? (
+          <Text style={styles.indexSavedNote}>This match is saved to your SimCap index.</Text>
+        ) : null}
+
         <Text style={styles.note}>
           Lower net wins. Course handicaps use each player&apos;s SimCap index and their tee (rating / slope) vs course par,
           with strokes given on the hardest holes by stroke index — no round-logging difficulty modifier.
         </Text>
 
-        <Pressable style={styles.primaryBtn} onPress={() => router.replace('/(tabs)/groups' as never)}>
+        <Pressable
+          style={[styles.primaryBtn, styles.primaryBtnSpaced]}
+          onPress={() => router.replace('/(tabs)/groups' as never)}
+        >
           <Text style={styles.primaryBtnTxt}>Back to Social</Text>
         </Pressable>
       </ScrollView>
@@ -283,15 +392,37 @@ const styles = StyleSheet.create({
   },
   scoreName: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.ink, paddingRight: 12 },
   scoreVal: { fontSize: 16, fontWeight: '800', color: colors.ink },
+  indexPromptCard: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginBottom: 16,
+  },
+  indexPromptTitle: { fontSize: 16, fontWeight: '700', color: colors.ink, marginBottom: 8, lineHeight: 22 },
+  indexPromptBody: { fontSize: 13, color: colors.muted, lineHeight: 19, marginBottom: 14 },
+  indexBtnRow: { flexDirection: 'row', gap: 10 },
+  indexBtnFlex: { flex: 1, minWidth: 0 },
+  indexSavedNote: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.accentDark,
+    marginBottom: 16,
+    lineHeight: 19,
+  },
   note: { fontSize: 12, color: colors.subtle, lineHeight: 18, marginBottom: 22 },
   primaryBtn: {
     backgroundColor: colors.header,
     borderRadius: 10,
     paddingVertical: 14,
     alignItems: 'center',
-    marginBottom: 12,
+    justifyContent: 'center',
+    minHeight: 48,
   },
+  primaryBtnSpaced: { marginBottom: 12 },
   primaryBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  btnBusy: { opacity: 0.88 },
   secondaryBtn: {
     paddingVertical: 12,
     borderRadius: 10,

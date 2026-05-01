@@ -217,7 +217,7 @@ export function initialsFrom(name: string): string {
   return (p[0][0] + p[p.length - 1][0]).toUpperCase();
 }
 
-/** Pre-filled head-to-head from Net calculator → Log round (not persisted). */
+/** Pre-filled head-to-head from Crew Match Calculator → Log round (not persisted). */
 export type PendingH2hMatchup = {
   player1Name: string;
   player2Name: string;
