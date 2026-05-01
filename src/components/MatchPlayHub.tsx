@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -159,6 +159,38 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
     }, [supabaseOn, userId, onIncomingDirectCount])
   );
 
+  useEffect(() => {
+    const client = supabase;
+    if (!supabaseOn || !userId || !client) return;
+
+    const channel = client
+      .channel(`match-play-open-feed:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'matches',
+          filter: 'is_open=eq.true',
+        },
+        () => {
+          void Promise.all([listMyMatches(), listOpenFeedMatches()]).then(([myRes, openRes]) => {
+            if (!myRes.error && myRes.data) {
+              setMyMatches(myRes.data);
+              const { incomingDirect } = partitionHubData(myRes.data, userId);
+              onIncomingDirectCount(incomingDirect.length);
+            }
+            if (!openRes.error && openRes.data) setOpenFeed(openRes.data);
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [supabaseOn, userId, onIncomingDirectCount]);
+
   const onCreateMatch = useCallback(() => {
     // Path matches `app/(tabs)/match-create.tsx`; assert until typed routes refresh.
     router.push('/(tabs)/match-create' as never);
@@ -214,7 +246,7 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
 
   const nameFor = (id: string | null) => (id ? names[id] ?? 'Golfer' : '—');
 
-  const renderCard = (m: DbMatchRow, uid: string) => {
+  const renderCard = (m: DbMatchRow, uid: string, listKind: 'hub' | 'openFeed' = 'hub') => {
     const p1 = nameFor(m.player_1_id);
     const p2 = nameFor(m.player_2_id);
     const peopleLine =
@@ -243,6 +275,21 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
         </Text>
       </>
     );
+
+    if (listKind === 'openFeed') {
+      return (
+        <Pressable
+          key={m.id}
+          style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+          onPress={() => router.push(`/(tabs)/match-open-accept/${m.id}` as never)}
+          accessibilityRole="button"
+          accessibilityLabel={`Open challenge on ${m.course_name}`}
+        >
+          {cardInner}
+          <Text style={styles.cardTapHint}>Tap for details</Text>
+        </Pressable>
+      );
+    }
 
     if (isLiveScoring) {
       return (
@@ -329,7 +376,7 @@ export function MatchPlayHub({ gutter, userId, supabaseOn, onIncomingDirectCount
       {openFeed.length === 0 ? (
         <Text style={styles.empty}>No open challenges right now.</Text>
       ) : (
-        openFeed.map((m) => renderCard(m, userId))
+        openFeed.map((m) => renderCard(m, userId, 'openFeed'))
       )}
 
       <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Recent matches</Text>

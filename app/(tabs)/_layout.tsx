@@ -163,6 +163,15 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="match-open-accept/[id]"
+        options={{
+          href: null,
+          title: 'Open challenge',
+          headerRight: HeaderInstagramAndSimCap,
+          tabBarLabel: 'Open challenge',
+        }}
+      />
+      <Tabs.Screen
         name="match-score/[id]"
         options={{
           href: null,

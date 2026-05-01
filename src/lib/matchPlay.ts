@@ -392,3 +392,37 @@ export async function abandonMatch(matchId: string): Promise<AbandonMatchResult>
   }
   return { ok: true, error: null };
 }
+
+export type AcceptOpenChallengeResult = { ok: boolean; error: string | null };
+
+/** Atomically claims an open challenge (RPC); concurrent acceptors get `Challenge already taken`. */
+export async function acceptOpenChallenge(params: {
+  matchId: string;
+  player2Tee: string;
+  player2CourseRating: number;
+  player2CourseSlope: number;
+  player2SettingsPhotoUrl: string | null;
+}): Promise<AcceptOpenChallengeResult> {
+  if (!supabase) return { ok: false, error: 'Supabase is not configured' };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in' };
+
+  const { data, error } = await supabase.rpc('accept_open_challenge', {
+    p_match_id: params.matchId,
+    p_player_2_tee: params.player2Tee,
+    p_player_2_course_rating: params.player2CourseRating,
+    p_player_2_course_slope: params.player2CourseSlope,
+    p_player_2_settings_photo_url: params.player2SettingsPhotoUrl ?? '',
+  });
+  if (error) {
+    console.warn('[matchPlay] acceptOpenChallenge', error.message);
+    return { ok: false, error: error.message };
+  }
+  const payload = data as { ok?: boolean; error?: string } | null;
+  if (!payload?.ok) {
+    return { ok: false, error: payload?.error ?? 'Could not accept challenge' };
+  }
+  return { ok: true, error: null };
+}

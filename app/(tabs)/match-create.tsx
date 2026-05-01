@@ -45,7 +45,7 @@ import { useResponsive } from '../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useAppStore, type FriendGroup } from '../../src/store/useAppStore';
 
-const STEPS = 8;
+type ChallengeKind = 'direct' | 'open';
 
 /** Release builds require a settings screenshot; dev/simulator can skip. */
 const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
@@ -139,7 +139,8 @@ export default function MatchCreateScreen() {
   const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
   const supabaseOn = isSupabaseConfigured();
 
-  const [step, setStep] = useState(0);
+  const [challengeKind, setChallengeKind] = useState<ChallengeKind>('direct');
+  const [stepIdx, setStepIdx] = useState(0);
   const [opponent, setOpponent] = useState<OpponentPick | null>(null);
   const [platform, setPlatform] = useState<PlatformId>(preferredLogPlatform);
   const [courseId, setCourseId] = useState('pebble');
@@ -163,6 +164,13 @@ export default function MatchCreateScreen() {
     () => (user?.id ? collectOpponents(groups, user.id) : []),
     [groups, user?.id]
   );
+
+  const stepSequence = useMemo(
+    () => (challengeKind === 'direct' ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 2, 3, 4, 5, 6, 7]),
+    [challengeKind]
+  );
+  const totalSteps = stepSequence.length;
+  const screenStep = stepSequence[Math.min(stepIdx, Math.max(0, stepSequence.length - 1))] ?? 0;
 
   const indexByUserId = useMemo(() => {
     const m = new Map<string, number | null>();
@@ -208,12 +216,12 @@ export default function MatchCreateScreen() {
   }, [courseOpen]);
 
   useEffect(() => {
-    if (step !== 6) setLibraryPermissionBlocked(false);
-    if (step < 6) setDevSkipSettingsPhoto(false);
-  }, [step]);
+    if (screenStep !== 6) setLibraryPermissionBlocked(false);
+    if (screenStep < 6) setDevSkipSettingsPhoto(false);
+  }, [screenStep]);
 
   useEffect(() => {
-    if (step !== 6 || !libraryPermissionBlocked) return;
+    if (screenStep !== 6 || !libraryPermissionBlocked) return;
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
       void ImagePicker.getMediaLibraryPermissionsAsync().then((p) => {
@@ -221,7 +229,7 @@ export default function MatchCreateScreen() {
       });
     });
     return () => sub.remove();
-  }, [step, libraryPermissionBlocked]);
+  }, [screenStep, libraryPermissionBlocked]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -267,7 +275,7 @@ export default function MatchCreateScreen() {
 
   const canContinue = useMemo(() => {
     if (!supabaseOn || !user) return false;
-    switch (step) {
+    switch (screenStep) {
       case 0:
         return true;
       case 1:
@@ -298,7 +306,7 @@ export default function MatchCreateScreen() {
         return false;
     }
   }, [
-    step,
+    screenStep,
     supabaseOn,
     user,
     opponent,
@@ -314,15 +322,16 @@ export default function MatchCreateScreen() {
 
   const goNext = useCallback(() => {
     if (!canContinue) return;
-    if (step < STEPS - 1) setStep((s) => s + 1);
-  }, [canContinue, step]);
+    if (stepIdx < totalSteps - 1) setStepIdx((s) => s + 1);
+  }, [canContinue, stepIdx, totalSteps]);
 
   const goBackStep = useCallback(() => {
-    if (step > 0) setStep((s) => s - 1);
-  }, [step]);
+    if (stepIdx > 0) setStepIdx((s) => s - 1);
+  }, [stepIdx]);
 
   const onSendChallenge = useCallback(async () => {
-    if (!user || !opponent || !course) return;
+    if (!user || !course) return;
+    if (challengeKind === 'direct' && !opponent) return;
     const photoUri = settingsImage?.uri;
     const skipPhotoDev =
       ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto && photoUri == null;
@@ -337,8 +346,8 @@ export default function MatchCreateScreen() {
     });
     setSubmitBusy(true);
     const ins = await insertMatch({
-      player_2_id: opponent.userId,
-      is_open: false,
+      player_2_id: challengeKind === 'open' ? null : opponent!.userId,
+      is_open: challengeKind === 'open',
       course_name: course.name,
       player_1_course_rating: tee.rating,
       player_1_course_slope: tee.slope,
@@ -349,7 +358,7 @@ export default function MatchCreateScreen() {
       mulligans,
       holes: holesChoice === '18' ? 18 : 9,
       nine_selection: holesChoice === '18' ? null : holesChoice === 'front' ? 'front' : 'back',
-      status: 'pending',
+      status: challengeKind === 'open' ? 'open' : 'pending',
       player_1_settings_photo_url: null,
     });
     if (ins.error || !ins.data) {
@@ -369,7 +378,11 @@ export default function MatchCreateScreen() {
         setSubmitBusy(false);
         showAppAlert(
           'Upload failed',
-          `${up.error}\n\nYour challenge was created. Share your sim settings screenshot with ${opponent.displayName} another way for now.`
+          `${up.error}\n\nYour challenge was created.${
+            challengeKind === 'direct' && opponent
+              ? ` Share your sim settings screenshot with ${opponent.displayName} another way for now.`
+              : ''
+          }`
         );
         router.replace('/(tabs)/groups' as never);
         return;
@@ -383,6 +396,7 @@ export default function MatchCreateScreen() {
     router.replace('/(tabs)/groups' as never);
   }, [
     user,
+    challengeKind,
     opponent,
     course,
     platform,
@@ -453,24 +467,46 @@ export default function MatchCreateScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.stepProg}>
-            Step {step + 1} of {STEPS}
+            Step {stepIdx + 1} of {totalSteps}
           </Text>
-          <Text style={styles.stepHead}>{stepTitle(step)}</Text>
+          <Text style={styles.stepHead}>{stepTitle(screenStep)}</Text>
 
-          {step === 0 ? (
+          {screenStep === 0 ? (
             <>
-              <Text style={styles.body}>
-                You&apos;re creating a <Text style={styles.bodyStrong}>direct challenge</Text>. Pick a crewmate who shares
-                a group with you on SimCap. They&apos;ll accept on the Social tab, choose their own tee, and upload their
-                settings screenshot before the match goes live.
-              </Text>
-              <Text style={styles.bodyMuted}>
-                Open challenges (post to everyone) will be available in a later update.
-              </Text>
+              <Text style={styles.body}>Choose who can join this match.</Text>
+              {(
+                [
+                  {
+                    key: 'direct' as const,
+                    title: 'Direct challenge',
+                    sub: 'Pick a crewmate from your groups. They accept privately on Social.',
+                  },
+                  {
+                    key: 'open' as const,
+                    title: 'Open challenge',
+                    sub: 'Post to the SimCap feed. Any signed-in player can review details and accept.',
+                  },
+                ] as const
+              ).map((opt) => {
+                const on = challengeKind === opt.key;
+                return (
+                  <Pressable
+                    key={opt.key}
+                    style={[styles.holeCard, on && styles.holeCardOn]}
+                    onPress={() => setChallengeKind(opt.key)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.holeTitle}>{opt.title}</Text>
+                      <Text style={styles.holeSub}>{opt.sub}</Text>
+                    </View>
+                    {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                  </Pressable>
+                );
+              })}
             </>
           ) : null}
 
-          {step === 1 ? (
+          {screenStep === 1 ? (
             <>
               {opponents.length === 0 ? (
                 <Text style={styles.body}>
@@ -500,7 +536,7 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {step === 2 ? (
+          {screenStep === 2 ? (
             <>
               <Text style={styles.sectionLabel}>Sim platform</Text>
               <Pressable style={[styles.pill, platOpen && styles.pillActive]} onPress={() => setPlatOpen(true)}>
@@ -515,7 +551,7 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {step === 3 && course ? (
+          {screenStep === 3 && course ? (
             <>
               {!showTeeSelector ? (
                 <Text style={styles.body}>
@@ -582,7 +618,7 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {step === 4 ? (
+          {screenStep === 4 ? (
             <>
               <Text style={styles.sectionLabel}>Putting mode</Text>
               <View style={styles.dayRow}>
@@ -639,7 +675,7 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {step === 5 ? (
+          {screenStep === 5 ? (
             <>
               <Text style={styles.body}>Choose how many holes you&apos;re playing on this course.</Text>
               {(
@@ -667,7 +703,7 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {step === 6 ? (
+          {screenStep === 6 ? (
             <>
               <Text style={styles.body}>
                 Screenshot your sim&apos;s settings screen so your opponent can confirm putting mode, pins, wind, and
@@ -710,13 +746,21 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {step === 7 && opponent && course ? (
+          {screenStep === 7 && course && (challengeKind === 'open' || opponent) ? (
             <>
               <View style={styles.summaryBlock}>
-                <Text style={styles.summaryLine}>
-                  <Text style={styles.summaryLbl}>Opponent · </Text>
-                  {opponent.displayName}
-                </Text>
+                {challengeKind === 'direct' && opponent ? (
+                  <Text style={styles.summaryLine}>
+                    <Text style={styles.summaryLbl}>Opponent · </Text>
+                    {opponent.displayName}
+                  </Text>
+                ) : null}
+                {challengeKind === 'open' ? (
+                  <Text style={styles.summaryLine}>
+                    <Text style={styles.summaryLbl}>Visibility · </Text>
+                    Open challenge — Social feed
+                  </Text>
+                ) : null}
                 <Text style={styles.summaryLine}>
                   <Text style={styles.summaryLbl}>Course · </Text>
                   {course.name}
@@ -756,21 +800,23 @@ export default function MatchCreateScreen() {
                 {submitBusy ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.sendBtnTxt}>Send challenge</Text>
+                  <Text style={styles.sendBtnTxt}>
+                    {challengeKind === 'open' ? 'Post open challenge' : 'Send challenge'}
+                  </Text>
                 )}
               </Pressable>
             </>
           ) : null}
 
           <View style={[styles.navRow, isWide && styles.navRowWide]}>
-            {step > 0 ? (
+            {stepIdx > 0 ? (
               <Pressable style={styles.secondaryBtn} onPress={goBackStep}>
                 <Text style={styles.secondaryBtnTxt}>Back</Text>
               </Pressable>
             ) : (
               <View style={styles.navSpacer} />
             )}
-            {step < STEPS - 1 ? (
+            {stepIdx < totalSteps - 1 ? (
               <Pressable
                 style={[styles.primaryBtn, !canContinue && styles.primaryBtnDisabled]}
                 onPress={goNext}
@@ -878,7 +924,6 @@ const styles = StyleSheet.create({
   stepProg: { fontSize: 11, fontWeight: '600', color: colors.sage, marginBottom: 4 },
   stepHead: { fontSize: 20, fontWeight: '700', color: colors.ink, marginBottom: 14 },
   body: { fontSize: 14, color: colors.muted, lineHeight: 21, marginBottom: 10 },
-  bodyStrong: { fontWeight: '700', color: colors.ink },
   bodyMuted: { fontSize: 12, color: colors.subtle, lineHeight: 18, marginTop: 8 },
   sectionLabel: {
     fontSize: 10,
