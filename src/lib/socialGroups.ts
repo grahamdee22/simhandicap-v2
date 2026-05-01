@@ -17,6 +17,22 @@ function isPlatformId(v: string | null | undefined): v is PlatformId {
   return v != null && (PLATFORMS as readonly string[]).includes(v);
 }
 
+/**
+ * Crew H2H table (`social_group_matches`) is optional until migrations ship / PostgREST cache refreshes.
+ * After PostgREST reports it missing, skip further selects/inserts (no console spam, fewer dead requests).
+ */
+let socialGroupMatchesKnownUnavailable = false;
+
+function isSocialGroupMatchesSchemaError(error: { message?: string; code?: string } | null | undefined): boolean {
+  if (!error) return false;
+  if (error.code === 'PGRST205') return true;
+  const m = error.message ?? '';
+  return (
+    m.includes('social_group_matches') &&
+    (m.includes('schema cache') || m.includes('Could not find the table'))
+  );
+}
+
 function mapProfileToMember(
   row: {
     id: string;
@@ -320,7 +336,7 @@ export async function fetchInboundGroupInvitesIntoStore(): Promise<void> {
 }
 
 export async function fetchGroupMatchesFromSupabase(groupId: string): Promise<HeadToHead[]> {
-  if (!supabase) return [];
+  if (!supabase || socialGroupMatchesKnownUnavailable) return [];
   const { data, error } = await supabase
     .from('social_group_matches')
     .select(
@@ -331,6 +347,10 @@ export async function fetchGroupMatchesFromSupabase(groupId: string): Promise<He
     .limit(50);
 
   if (error) {
+    if (isSocialGroupMatchesSchemaError(error)) {
+      socialGroupMatchesKnownUnavailable = true;
+      return [];
+    }
     console.warn('[socialGroups] matches', error.message);
     return [];
   }
@@ -363,7 +383,7 @@ export async function fetchGroupMatchesFromSupabase(groupId: string): Promise<He
 }
 
 export async function insertSocialMatchFromRound(round: SimRound, displayName: string): Promise<void> {
-  if (!supabase || !round.h2hGroupId) return;
+  if (!supabase || !round.h2hGroupId || socialGroupMatchesKnownUnavailable) return;
   const h = headToHeadFromLoggedRound(round, displayName);
   if (!h) return;
 
@@ -388,7 +408,13 @@ export async function insertSocialMatchFromRound(round: SimRound, displayName: s
     conditions_line: h.conditionsLine,
   });
 
-  if (error) console.warn('[socialGroups] insert match', error.message);
+  if (error) {
+    if (isSocialGroupMatchesSchemaError(error)) {
+      socialGroupMatchesKnownUnavailable = true;
+      return;
+    }
+    console.warn('[socialGroups] insert match', error.message);
+  }
 }
 
 /**
