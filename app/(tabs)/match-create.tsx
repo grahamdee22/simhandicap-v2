@@ -1,0 +1,1103 @@
+import { useNavigation } from '@react-navigation/native';
+import * as ImagePicker from 'expo-image-picker';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import {
+  ActivityIndicator,
+  AppState,
+  Image,
+  Linking,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAuth } from '../../src/auth/AuthContext';
+import { ContentWidth } from '../../src/components/ContentWidth';
+import { IconCheckmark } from '../../src/components/SvgUiIcons';
+import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
+import {
+  COURSE_SEEDS,
+  courseMatchesSearch,
+  CUSTOM_TEE_ID,
+  getCourseById,
+  getCourseTees,
+  middleCourseTee,
+  ratingForCourse,
+} from '../../src/lib/courses';
+import {
+  formatHandicapIndexDisplay,
+  round1,
+  type Mulligans,
+  type PinDay,
+  type PuttingMode,
+  type Wind,
+} from '../../src/lib/handicap';
+import { showAppAlert } from '../../src/lib/alertCompat';
+import { insertMatch, updateMatchById } from '../../src/lib/matchPlay';
+import { uploadMatchSettingsScreenshot } from '../../src/lib/matchPlayStorage';
+import { useResponsive } from '../../src/lib/responsive';
+import { isSupabaseConfigured } from '../../src/lib/supabase';
+import { useAppStore, type FriendGroup } from '../../src/store/useAppStore';
+
+const STEPS = 8;
+
+/** Release builds require a settings screenshot; dev/simulator can skip. */
+const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
+
+const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
+  { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
+  { key: 'gimme_5', dn: 'Gimme', ds: '<5ft' },
+  { key: 'putt_all', dn: 'Putt', ds: 'Everything' },
+];
+
+const WIND_OPTS: { key: Wind; dn: string; ds: string }[] = [
+  { key: 'off', dn: 'Off', ds: 'Calm' },
+  { key: 'light', dn: 'Light', ds: 'Breeze' },
+  { key: 'strong', dn: 'Strong', ds: 'Heavy' },
+];
+
+const MULL_OPTS: { key: Mulligans; dn: string; ds: string }[] = [
+  { key: 'off', dn: 'Off', ds: 'None' },
+  { key: 'on', dn: 'On', ds: 'Allowed' },
+];
+
+const PIN_OPTS: { key: PinDay; dn: string; ds: string }[] = [
+  { key: 'thu', dn: 'Thu', ds: 'Round 1' },
+  { key: 'fri', dn: 'Fri', ds: 'Round 2' },
+  { key: 'sat', dn: 'Sat', ds: 'Round 3' },
+  { key: 'sun', dn: 'Sun', ds: 'Round 4' },
+];
+
+type OpponentPick = {
+  userId: string;
+  displayName: string;
+  groupLine: string;
+};
+
+type HolesChoice = '18' | 'front' | 'back';
+
+function collectOpponents(groups: FriendGroup[], selfId: string): OpponentPick[] {
+  const map = new Map<string, OpponentPick>();
+  for (const g of groups) {
+    for (const m of g.members) {
+      if (m.isYou || m.userId === selfId) continue;
+      const name = m.displayName.replace(/\s*\(you\)\s*$/i, '').trim();
+      const ex = map.get(m.userId);
+      if (ex) {
+        if (!ex.groupLine.includes(g.name)) ex.groupLine = `${ex.groupLine}, ${g.name}`;
+      } else {
+        map.set(m.userId, { userId: m.userId, displayName: name, groupLine: g.name });
+      }
+    }
+  }
+  return [...map.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
+}
+
+function resolvePlayer1Tee(args: {
+  course: NonNullable<ReturnType<typeof getCourseById>>;
+  platform: PlatformId;
+  teePickKey: string;
+  customRating: string;
+  customSlope: string;
+  courseTees: ReturnType<typeof getCourseTees>;
+}): { rating: number; slope: number; teeName: string } {
+  const { course, platform, teePickKey, customRating, customSlope, courseTees } = args;
+  if (course.confident === false) {
+    const mid = middleCourseTee(course, platform);
+    if (mid) return { rating: mid.rating, slope: mid.slope, teeName: mid.name };
+    const fb = ratingForCourse(course, platform);
+    return { rating: fb.rating, slope: fb.slope, teeName: course.defaultTee ?? 'Default' };
+  }
+  if (teePickKey === CUSTOM_TEE_ID) {
+    const r = parseFloat(customRating);
+    const s = parseInt(customSlope, 10);
+    if (Number.isFinite(r) && Number.isFinite(s)) {
+      return { rating: round1(r), slope: Math.round(s), teeName: 'Custom' };
+    }
+    const fb = ratingForCourse(course, platform);
+    return { rating: fb.rating, slope: fb.slope, teeName: 'Custom' };
+  }
+  const row = courseTees.find((t) => t.name === teePickKey);
+  if (row) return { rating: row.rating, slope: row.slope, teeName: row.name };
+  const fb = ratingForCourse(course, platform);
+  return { rating: fb.rating, slope: fb.slope, teeName: course.defaultTee ?? 'Default' };
+}
+
+export default function MatchCreateScreen() {
+  const router = useRouter();
+  const navigation = useNavigation();
+  const insets = useSafeAreaInsets();
+  const { gutter, isWide } = useResponsive();
+  const { user } = useAuth();
+  const groups = useAppStore((s) => s.groups);
+  const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
+  const supabaseOn = isSupabaseConfigured();
+
+  const [step, setStep] = useState(0);
+  const [opponent, setOpponent] = useState<OpponentPick | null>(null);
+  const [platform, setPlatform] = useState<PlatformId>(preferredLogPlatform);
+  const [courseId, setCourseId] = useState('pebble');
+  const [teePickKey, setTeePickKey] = useState('White');
+  const [customRating, setCustomRating] = useState('');
+  const [customSlope, setCustomSlope] = useState('');
+  const [putting, setPutting] = useState<PuttingMode>('auto_2putt');
+  const [pin, setPin] = useState<PinDay>('thu');
+  const [wind, setWind] = useState<Wind>('off');
+  const [mulligans, setMulligans] = useState<Mulligans>('off');
+  const [holesChoice, setHolesChoice] = useState<HolesChoice>('18');
+  const [settingsImage, setSettingsImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
+  const [platOpen, setPlatOpen] = useState(false);
+  const [courseOpen, setCourseOpen] = useState(false);
+  const [courseSearchQuery, setCourseSearchQuery] = useState('');
+  const [submitBusy, setSubmitBusy] = useState(false);
+  const [libraryPermissionBlocked, setLibraryPermissionBlocked] = useState(false);
+  const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
+
+  const opponents = useMemo(
+    () => (user?.id ? collectOpponents(groups, user.id) : []),
+    [groups, user?.id]
+  );
+
+  const indexByUserId = useMemo(() => {
+    const m = new Map<string, number | null>();
+    for (const g of groups) {
+      for (const mem of g.members) {
+        if (!m.has(mem.userId)) m.set(mem.userId, mem.index);
+      }
+    }
+    return m;
+  }, [groups]);
+
+  const course = getCourseById(courseId);
+  const courseTees = useMemo(() => (course ? getCourseTees(course, platform) : []), [course, platform]);
+  const showTeeSelector = course?.confident !== false;
+
+  const coursesForPicker = useMemo(
+    () =>
+      COURSE_SEEDS.filter((c) => c.confident !== false && courseMatchesSearch(c, courseSearchQuery)).sort((a, b) =>
+        a.name.localeCompare(b.name)
+      ),
+    [courseSearchQuery]
+  );
+
+  useEffect(() => {
+    const c = getCourseById(courseId);
+    if (!c) return;
+    const tees = getCourseTees(c, platform);
+    if (tees.length === 0) return;
+    if (c.confident === false) {
+      setTeePickKey(tees[Math.floor(tees.length / 2)].name);
+    } else {
+      const def = c.defaultTee?.trim();
+      setTeePickKey(
+        tees.find((t) => t.name === def)?.name ?? tees[tees.length - 1]?.name ?? tees[0].name
+      );
+    }
+    setCustomRating('');
+    setCustomSlope('');
+  }, [courseId, platform]);
+
+  useEffect(() => {
+    if (courseOpen) setCourseSearchQuery('');
+  }, [courseOpen]);
+
+  useEffect(() => {
+    if (step !== 6) setLibraryPermissionBlocked(false);
+    if (step < 6) setDevSkipSettingsPhoto(false);
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 6 || !libraryPermissionBlocked) return;
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state !== 'active') return;
+      void ImagePicker.getMediaLibraryPermissionsAsync().then((p) => {
+        if (p.granted) setLibraryPermissionBlocked(false);
+      });
+    });
+    return () => sub.remove();
+  }, [step, libraryPermissionBlocked]);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerRight: () => (
+        <Pressable
+          onPress={() => router.back()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={styles.headerCancelPress}
+          accessibilityRole="button"
+          accessibilityLabel="Cancel create match"
+        >
+          <Text style={styles.headerCancelTxt}>Cancel</Text>
+        </Pressable>
+      ),
+    });
+  }, [navigation, router]);
+
+  const openPhotoSettings = useCallback(() => {
+    if (Platform.OS === 'web') {
+      return;
+    }
+    void Linking.openSettings();
+  }, []);
+
+  const onPickImage = useCallback(async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      setLibraryPermissionBlocked(true);
+      return;
+    }
+    setLibraryPermissionBlocked(false);
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+      allowsMultipleSelection: false,
+    });
+    if (!result.canceled && result.assets[0]) {
+      setSettingsImage(result.assets[0]);
+      setLibraryPermissionBlocked(false);
+      setDevSkipSettingsPhoto(false);
+    }
+  }, []);
+
+  const canContinue = useMemo(() => {
+    if (!supabaseOn || !user) return false;
+    switch (step) {
+      case 0:
+        return true;
+      case 1:
+        return opponent != null;
+      case 2:
+        return !!course;
+      case 3: {
+        if (!course) return false;
+        if (course.confident === false) return true;
+        if (teePickKey === CUSTOM_TEE_ID) {
+          const r = parseFloat(customRating);
+          const s = parseInt(customSlope, 10);
+          return Number.isFinite(r) && Number.isFinite(s);
+        }
+        return courseTees.some((t) => t.name === teePickKey);
+      }
+      case 4:
+        return true;
+      case 5:
+        return true;
+      case 6:
+        return (
+          settingsImage?.uri != null || (ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto)
+        );
+      case 7:
+        return true;
+      default:
+        return false;
+    }
+  }, [
+    step,
+    supabaseOn,
+    user,
+    opponent,
+    course,
+    course?.confident,
+    teePickKey,
+    customRating,
+    customSlope,
+    courseTees,
+    settingsImage,
+    devSkipSettingsPhoto,
+  ]);
+
+  const goNext = useCallback(() => {
+    if (!canContinue) return;
+    if (step < STEPS - 1) setStep((s) => s + 1);
+  }, [canContinue, step]);
+
+  const goBackStep = useCallback(() => {
+    if (step > 0) setStep((s) => s - 1);
+  }, [step]);
+
+  const onSendChallenge = useCallback(async () => {
+    if (!user || !opponent || !course) return;
+    const photoUri = settingsImage?.uri;
+    const skipPhotoDev =
+      ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto && photoUri == null;
+    if (photoUri == null && !skipPhotoDev) return;
+    const tee = resolvePlayer1Tee({
+      course,
+      platform,
+      teePickKey,
+      customRating,
+      customSlope,
+      courseTees,
+    });
+    setSubmitBusy(true);
+    const ins = await insertMatch({
+      player_2_id: opponent.userId,
+      is_open: false,
+      course_name: course.name,
+      player_1_course_rating: tee.rating,
+      player_1_course_slope: tee.slope,
+      player_1_tee: tee.teeName,
+      putting_mode: putting,
+      pin_placement: pin,
+      wind,
+      mulligans,
+      holes: holesChoice === '18' ? 18 : 9,
+      nine_selection: holesChoice === '18' ? null : holesChoice === 'front' ? 'front' : 'back',
+      status: 'pending',
+      player_1_settings_photo_url: null,
+    });
+    if (ins.error || !ins.data) {
+      setSubmitBusy(false);
+      showAppAlert('Could not create match', ins.error ?? 'Unknown error');
+      return;
+    }
+    const mid = ins.data.id;
+    if (photoUri != null) {
+      const up = await uploadMatchSettingsScreenshot({
+        matchId: mid,
+        userId: user.id,
+        localUri: photoUri,
+        mimeType: settingsImage?.mimeType ?? undefined,
+      });
+      if ('error' in up) {
+        setSubmitBusy(false);
+        showAppAlert(
+          'Upload failed',
+          `${up.error}\n\nYour challenge was created. Share your sim settings screenshot with ${opponent.displayName} another way for now.`
+        );
+        router.replace('/(tabs)/groups' as never);
+        return;
+      }
+      const upd = await updateMatchById(mid, { player_1_settings_photo_url: up.signedUrl });
+      if (upd.error) {
+        console.warn('[match-create] update photo url', upd.error);
+      }
+    }
+    setSubmitBusy(false);
+    router.replace('/(tabs)/groups' as never);
+  }, [
+    user,
+    opponent,
+    course,
+    platform,
+    teePickKey,
+    customRating,
+    customSlope,
+    courseTees,
+    putting,
+    pin,
+    wind,
+    mulligans,
+    holesChoice,
+    settingsImage,
+    devSkipSettingsPhoto,
+    router,
+  ]);
+
+  if (!supabaseOn || !user) {
+    return (
+      <ContentWidth bg={colors.surface}>
+        <View style={[styles.fallback, { padding: gutter }]}>
+          <Text style={styles.fallbackTxt}>Sign in with Supabase configured to create a match.</Text>
+          <Pressable style={styles.secondaryBtn} onPress={() => router.back()}>
+            <Text style={styles.secondaryBtnTxt}>Go back</Text>
+          </Pressable>
+        </View>
+      </ContentWidth>
+    );
+  }
+
+  const stepTitle = (n: number) => {
+    switch (n) {
+      case 0:
+        return 'Challenge type';
+      case 1:
+        return 'Opponent';
+      case 2:
+        return 'Course';
+      case 3:
+        return 'Your tee';
+      case 4:
+        return 'Sim settings';
+      case 5:
+        return 'Holes';
+      case 6:
+        return 'Settings screenshot';
+      case 7:
+        return 'Review & send';
+      default:
+        return '';
+    }
+  };
+
+  const holesLabel =
+    holesChoice === '18' ? '18 holes' : holesChoice === 'front' ? 'Front 9 (holes 1–9)' : 'Back 9 (holes 10–18)';
+
+  return (
+    <ContentWidth bg={colors.surface}>
+      <View style={styles.root}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={{
+            paddingHorizontal: gutter,
+            paddingTop: 14,
+            paddingBottom: insets.bottom + 24,
+          }}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          <Text style={styles.stepProg}>
+            Step {step + 1} of {STEPS}
+          </Text>
+          <Text style={styles.stepHead}>{stepTitle(step)}</Text>
+
+          {step === 0 ? (
+            <>
+              <Text style={styles.body}>
+                You&apos;re creating a <Text style={styles.bodyStrong}>direct challenge</Text>. Pick a crewmate who shares
+                a group with you on SimCap. They&apos;ll accept on the Social tab, choose their own tee, and upload their
+                settings screenshot before the match goes live.
+              </Text>
+              <Text style={styles.bodyMuted}>
+                Open challenges (post to everyone) will be available in a later update.
+              </Text>
+            </>
+          ) : null}
+
+          {step === 1 ? (
+            <>
+              {opponents.length === 0 ? (
+                <Text style={styles.body}>
+                  You need group members to send a direct challenge. Create or join a crew on the Social tab, or ask a
+                  friend to join SimCap — then try again.
+                </Text>
+              ) : (
+                opponents.map((o) => {
+                  const on = opponent?.userId === o.userId;
+                  return (
+                    <Pressable
+                      key={o.userId}
+                      style={[styles.oppRow, on && styles.oppRowOn]}
+                      onPress={() => setOpponent(o)}
+                    >
+                      <View style={styles.oppTextCol}>
+                        <Text style={styles.oppName}>{o.displayName}</Text>
+                        <Text style={styles.oppMeta}>
+                          Index {formatHandicapIndexDisplay(indexByUserId.get(o.userId) ?? null)} · {o.groupLine}
+                        </Text>
+                      </View>
+                      {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                    </Pressable>
+                  );
+                })
+              )}
+            </>
+          ) : null}
+
+          {step === 2 ? (
+            <>
+              <Text style={styles.sectionLabel}>Sim platform</Text>
+              <Pressable style={[styles.pill, platOpen && styles.pillActive]} onPress={() => setPlatOpen(true)}>
+                <Text style={styles.pillVal}>{platform}</Text>
+                <Text style={styles.chev}>▾</Text>
+              </Pressable>
+              <Text style={styles.sectionLabel}>Course</Text>
+              <Pressable style={[styles.pill, courseOpen && styles.pillActive]} onPress={() => setCourseOpen(true)}>
+                <Text style={styles.pillVal}>{course?.name ?? 'Select'}</Text>
+                <Text style={styles.chev}>▾</Text>
+              </Pressable>
+            </>
+          ) : null}
+
+          {step === 3 && course ? (
+            <>
+              {!showTeeSelector ? (
+                <Text style={styles.body}>
+                  This course uses a single rating/slope for your platform. We&apos;ll use it for your side of the match.
+                </Text>
+              ) : (
+                <>
+                  <Text style={styles.sectionLabel}>Tee</Text>
+                  <View style={styles.teeChipWrap}>
+                    {courseTees.map((t) => (
+                      <Pressable
+                        key={t.name}
+                        style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
+                        onPress={() => {
+                          setTeePickKey(t.name);
+                          setCustomRating('');
+                          setCustomSlope('');
+                        }}
+                      >
+                        <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
+                        <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
+                          {t.rating} / {t.slope}
+                        </Text>
+                      </Pressable>
+                    ))}
+                    <Pressable
+                      style={[styles.teeChip, teePickKey === CUSTOM_TEE_ID && styles.teeChipOn]}
+                      onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
+                    >
+                      <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>Custom</Text>
+                      <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
+                        Your rating / slope
+                      </Text>
+                    </Pressable>
+                  </View>
+                  {teePickKey === CUSTOM_TEE_ID ? (
+                    <View style={styles.teeCustomRow}>
+                      <View style={styles.teeCustomField}>
+                        <Text style={styles.teeCustomLbl}>Course rating</Text>
+                        <TextInput
+                          style={styles.teeNumInput}
+                          value={customRating}
+                          onChangeText={setCustomRating}
+                          placeholder="e.g. 72.1"
+                          placeholderTextColor={colors.subtle}
+                          keyboardType="decimal-pad"
+                        />
+                      </View>
+                      <View style={styles.teeCustomField}>
+                        <Text style={styles.teeCustomLbl}>Slope</Text>
+                        <TextInput
+                          style={styles.teeNumInput}
+                          value={customSlope}
+                          onChangeText={setCustomSlope}
+                          placeholder="e.g. 128"
+                          placeholderTextColor={colors.subtle}
+                          keyboardType="number-pad"
+                        />
+                      </View>
+                    </View>
+                  ) : null}
+                </>
+              )}
+            </>
+          ) : null}
+
+          {step === 4 ? (
+            <>
+              <Text style={styles.sectionLabel}>Putting mode</Text>
+              <View style={styles.dayRow}>
+                {PUTTING_OPTS.map((o) => (
+                  <Pressable
+                    key={o.key}
+                    style={[styles.dayBtn, putting === o.key && styles.dayBtnOn]}
+                    onPress={() => setPutting(o.key)}
+                  >
+                    <Text style={[styles.dayDn, putting === o.key && styles.dayDnOn]}>{o.dn}</Text>
+                    <Text style={[styles.dayDs, putting === o.key && styles.dayDsOn]}>{o.ds}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.sectionLabel}>Pin placement</Text>
+              <View style={styles.dayRow}>
+                {PIN_OPTS.map((d) => (
+                  <Pressable
+                    key={d.key}
+                    style={[styles.dayBtn, pin === d.key && styles.dayBtnOn]}
+                    onPress={() => setPin(d.key)}
+                  >
+                    <Text style={[styles.dayDn, pin === d.key && styles.dayDnOn]}>{d.dn}</Text>
+                    <Text style={[styles.dayDs, pin === d.key && styles.dayDsOn]}>{d.ds}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.sectionLabel}>Wind</Text>
+              <View style={styles.dayRow}>
+                {WIND_OPTS.map((w) => (
+                  <Pressable
+                    key={w.key}
+                    style={[styles.dayBtn, wind === w.key && styles.dayBtnOn]}
+                    onPress={() => setWind(w.key)}
+                  >
+                    <Text style={[styles.dayDn, wind === w.key && styles.dayDnOn]}>{w.dn}</Text>
+                    <Text style={[styles.dayDs, wind === w.key && styles.dayDsOn]}>{w.ds}</Text>
+                  </Pressable>
+                ))}
+              </View>
+              <Text style={styles.sectionLabel}>Mulligans</Text>
+              <View style={styles.dayRow}>
+                {MULL_OPTS.map((m) => (
+                  <Pressable
+                    key={m.key}
+                    style={[styles.dayBtn, mulligans === m.key && styles.dayBtnOn]}
+                    onPress={() => setMulligans(m.key)}
+                  >
+                    <Text style={[styles.dayDn, mulligans === m.key && styles.dayDnOn]}>{m.dn}</Text>
+                    <Text style={[styles.dayDs, mulligans === m.key && styles.dayDsOn]}>{m.ds}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : null}
+
+          {step === 5 ? (
+            <>
+              <Text style={styles.body}>Choose how many holes you&apos;re playing on this course.</Text>
+              {(
+                [
+                  { key: '18' as const, title: '18 holes', sub: 'Full round' },
+                  { key: 'front' as const, title: 'Front 9', sub: 'Holes 1–9' },
+                  { key: 'back' as const, title: 'Back 9', sub: 'Holes 10–18' },
+                ] as const
+              ).map((h) => {
+                const on = holesChoice === h.key;
+                return (
+                  <Pressable
+                    key={h.key}
+                    style={[styles.holeCard, on && styles.holeCardOn]}
+                    onPress={() => setHolesChoice(h.key)}
+                  >
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.holeTitle}>{h.title}</Text>
+                      <Text style={styles.holeSub}>{h.sub}</Text>
+                    </View>
+                    {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                  </Pressable>
+                );
+              })}
+            </>
+          ) : null}
+
+          {step === 6 ? (
+            <>
+              <Text style={styles.body}>
+                Screenshot your sim&apos;s settings screen so your opponent can confirm putting mode, pins, wind, and
+                mulligans match. Both players use the honor system for conditions.
+              </Text>
+              {libraryPermissionBlocked ? (
+                <View style={styles.photoPermCallout} accessibilityLiveRegion="polite">
+                  <Text style={styles.photoPermCalloutTxt}>
+                    Photo library access is off. To attach a screenshot, open Settings, allow Photos access for this app,
+                    then come back and tap Choose photo again.
+                  </Text>
+                  {Platform.OS !== 'web' ? (
+                    <Pressable
+                      style={styles.photoPermSettingsBtn}
+                      onPress={openPhotoSettings}
+                      accessibilityRole="button"
+                      accessibilityLabel="Open Settings to allow photo access"
+                    >
+                      <Text style={styles.photoPermSettingsBtnTxt}>Open Settings</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              ) : null}
+              <Pressable style={styles.pickPhotoBtn} onPress={() => void onPickImage()}>
+                <Text style={styles.pickPhotoBtnTxt}>{settingsImage ? 'Change photo' : 'Choose photo'}</Text>
+              </Pressable>
+              {ALLOW_SKIP_SETTINGS_SCREENSHOT && !settingsImage?.uri && !devSkipSettingsPhoto ? (
+                <Pressable
+                  style={styles.skipPhotoBtn}
+                  onPress={() => setDevSkipSettingsPhoto(true)}
+                  accessibilityRole="button"
+                  accessibilityLabel="Skip settings screenshot for now, development only"
+                >
+                  <Text style={styles.skipPhotoBtnTxt}>Skip for now</Text>
+                </Pressable>
+              ) : null}
+              {settingsImage?.uri ? (
+                <Image source={{ uri: settingsImage.uri }} style={styles.preview} resizeMode="contain" />
+              ) : null}
+            </>
+          ) : null}
+
+          {step === 7 && opponent && course ? (
+            <>
+              <View style={styles.summaryBlock}>
+                <Text style={styles.summaryLine}>
+                  <Text style={styles.summaryLbl}>Opponent · </Text>
+                  {opponent.displayName}
+                </Text>
+                <Text style={styles.summaryLine}>
+                  <Text style={styles.summaryLbl}>Course · </Text>
+                  {course.name}
+                </Text>
+                <Text style={styles.summaryLine}>
+                  <Text style={styles.summaryLbl}>Your tee · </Text>
+                  {resolvePlayer1Tee({
+                    course,
+                    platform,
+                    teePickKey,
+                    customRating,
+                    customSlope,
+                    courseTees,
+                  }).teeName}
+                </Text>
+                <Text style={styles.summaryLine}>
+                  <Text style={styles.summaryLbl}>Holes · </Text>
+                  {holesLabel}
+                </Text>
+                <Text style={styles.summaryLine}>
+                  <Text style={styles.summaryLbl}>Conditions · </Text>
+                  {PUTTING_OPTS.find((p) => p.key === putting)?.dn} putting ·{' '}
+                  {PIN_OPTS.find((p) => p.key === pin)?.dn} pins · {WIND_OPTS.find((p) => p.key === wind)?.dn} wind ·{' '}
+                  {MULL_OPTS.find((p) => p.key === mulligans)?.dn} mulligans
+                </Text>
+              </View>
+              {settingsImage?.uri ? (
+                <Image source={{ uri: settingsImage.uri }} style={styles.previewSmall} resizeMode="cover" />
+              ) : ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto ? (
+                <Text style={styles.devSkipPhotoNote}>Settings screenshot · Skipped (dev only)</Text>
+              ) : null}
+              <Pressable
+                style={({ pressed }) => [styles.sendBtn, pressed && styles.sendBtnPressed, submitBusy && styles.sendBtnDisabled]}
+                onPress={() => void onSendChallenge()}
+                disabled={submitBusy}
+              >
+                {submitBusy ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.sendBtnTxt}>Send challenge</Text>
+                )}
+              </Pressable>
+            </>
+          ) : null}
+
+          <View style={[styles.navRow, isWide && styles.navRowWide]}>
+            {step > 0 ? (
+              <Pressable style={styles.secondaryBtn} onPress={goBackStep}>
+                <Text style={styles.secondaryBtnTxt}>Back</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.navSpacer} />
+            )}
+            {step < STEPS - 1 ? (
+              <Pressable
+                style={[styles.primaryBtn, !canContinue && styles.primaryBtnDisabled]}
+                onPress={goNext}
+                disabled={!canContinue}
+              >
+                <Text style={styles.primaryBtnTxt}>Continue</Text>
+              </Pressable>
+            ) : (
+              <View style={styles.navSpacer} />
+            )}
+          </View>
+        </ScrollView>
+
+        <Modal
+          visible={platOpen}
+          animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+          transparent
+          onRequestClose={() => setPlatOpen(false)}
+        >
+          <View style={styles.modalRoot}>
+            <Pressable style={styles.modalBackdropPress} onPress={() => setPlatOpen(false)} />
+            <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+              <Text style={styles.modalTitle}>Platform</Text>
+              {PLATFORMS.map((p) => (
+                <Pressable
+                  key={p}
+                  style={styles.modalRow}
+                  onPress={() => {
+                    setPlatform(p);
+                    setPlatOpen(false);
+                  }}
+                >
+                  <Text style={styles.modalRowTxt}>{p}</Text>
+                  {platform === p ? <IconCheckmark size={18} color={colors.accent} /> : null}
+                </Pressable>
+              ))}
+            </View>
+          </View>
+        </Modal>
+
+        <Modal
+          visible={courseOpen}
+          animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+          transparent
+          onRequestClose={() => setCourseOpen(false)}
+        >
+          <View style={styles.modalRoot}>
+            <Pressable style={styles.modalBackdropPress} onPress={() => setCourseOpen(false)} />
+            <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
+              <Text style={styles.modalTitle}>Course</Text>
+              <TextInput
+                style={styles.courseSearchInput}
+                value={courseSearchQuery}
+                onChangeText={setCourseSearchQuery}
+                placeholder="Search by course name"
+                placeholderTextColor={colors.subtle}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+                {coursesForPicker.length === 0 ? (
+                  <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+                ) : (
+                  coursesForPicker.map((c) => (
+                    <Pressable
+                      key={c.id}
+                      style={styles.modalRow}
+                      onPress={() => {
+                        setCourseId(c.id);
+                        const teesPick = getCourseTees(c, platform);
+                        if (c.confident === false && teesPick.length > 0) {
+                          setTeePickKey(teesPick[Math.floor(teesPick.length / 2)].name);
+                        } else {
+                          const defPick = c.defaultTee?.trim();
+                          setTeePickKey(
+                            teesPick.find((t) => t.name === defPick)?.name ??
+                              teesPick[teesPick.length - 1]?.name ??
+                              teesPick[0].name
+                          );
+                        }
+                        setCustomRating('');
+                        setCustomSlope('');
+                        setCourseOpen(false);
+                      }}
+                    >
+                      <Text style={styles.modalRowTxt}>{c.name}</Text>
+                      {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
+                    </Pressable>
+                  ))
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    </ContentWidth>
+  );
+}
+
+const styles = StyleSheet.create({
+  root: { flex: 1, minHeight: 0, backgroundColor: colors.surface, width: '100%' },
+  scroll: { flex: 1, minHeight: 0, width: '100%' },
+  headerCancelPress: { paddingHorizontal: 8, paddingVertical: 4 },
+  headerCancelTxt: { color: '#fff', fontSize: 16, fontWeight: '600' },
+  stepProg: { fontSize: 11, fontWeight: '600', color: colors.sage, marginBottom: 4 },
+  stepHead: { fontSize: 20, fontWeight: '700', color: colors.ink, marginBottom: 14 },
+  body: { fontSize: 14, color: colors.muted, lineHeight: 21, marginBottom: 10 },
+  bodyStrong: { fontWeight: '700', color: colors.ink },
+  bodyMuted: { fontSize: 12, color: colors.subtle, lineHeight: 18, marginTop: 8 },
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: colors.subtle,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+    marginBottom: 5,
+    marginTop: 10,
+  },
+  pill: {
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 9,
+    paddingVertical: 8,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+  },
+  pillActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  pillVal: { fontSize: 12, fontWeight: '600', color: colors.ink },
+  chev: { fontSize: 9, color: colors.subtle },
+  teeChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
+  teeChip: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.surface,
+    minWidth: 72,
+  },
+  teeChipOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  teeChipTxt: { fontSize: 12, fontWeight: '700', color: colors.ink },
+  teeChipTxtOn: { color: colors.accentDark },
+  teeChipSub: { fontSize: 9, color: colors.subtle, marginTop: 2 },
+  teeChipSubOn: { color: colors.accent },
+  teeCustomRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  teeCustomField: { flex: 1, minWidth: 0 },
+  teeCustomLbl: { fontSize: 10, fontWeight: '600', color: colors.subtle, marginBottom: 4 },
+  teeNumInput: {
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.ink,
+  },
+  dayRow: { flexDirection: 'row', gap: 5 },
+  dayBtn: {
+    flex: 1,
+    paddingVertical: 7,
+    borderRadius: 8,
+    borderWidth: 0.5,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+  },
+  dayBtnOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  dayDn: { fontSize: 11, fontWeight: '600', color: colors.muted },
+  dayDnOn: { color: colors.accentDark },
+  dayDs: { fontSize: 9, color: colors.subtle, marginTop: 1 },
+  dayDsOn: { color: colors.accent },
+  oppRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    marginBottom: 8,
+    backgroundColor: colors.surface,
+  },
+  oppRowOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  oppTextCol: { flex: 1, minWidth: 0, paddingRight: 8 },
+  oppName: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  oppMeta: { fontSize: 11, color: colors.muted, marginTop: 3 },
+  holeCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    marginBottom: 8,
+    backgroundColor: colors.surface,
+  },
+  holeCardOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  holeTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  holeSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  photoPermCallout: {
+    marginTop: 10,
+    marginBottom: 4,
+    padding: 14,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  photoPermCalloutTxt: { fontSize: 14, color: colors.ink, lineHeight: 20 },
+  photoPermSettingsBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+    backgroundColor: colors.accentSoft,
+  },
+  photoPermSettingsBtnTxt: { fontSize: 14, fontWeight: '700', color: colors.accent },
+  pickPhotoBtn: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.header,
+    paddingVertical: 11,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 8,
+    marginBottom: 6,
+  },
+  pickPhotoBtnTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  skipPhotoBtn: {
+    alignSelf: 'flex-start',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    marginBottom: 10,
+  },
+  skipPhotoBtnTxt: { fontSize: 14, fontWeight: '600', color: colors.muted, textDecorationLine: 'underline' },
+  devSkipPhotoNote: {
+    fontSize: 13,
+    color: colors.muted,
+    fontStyle: 'italic',
+    marginTop: 8,
+    lineHeight: 18,
+  },
+  preview: { width: '100%', height: 220, borderRadius: 10, backgroundColor: colors.bg },
+  previewSmall: { width: '100%', height: 120, borderRadius: 10, marginTop: 8, backgroundColor: colors.bg },
+  summaryBlock: {
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    padding: 14,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  summaryLine: { fontSize: 14, color: colors.ink, marginBottom: 8, lineHeight: 20 },
+  summaryLbl: { fontWeight: '700', color: colors.subtle },
+  sendBtn: {
+    backgroundColor: colors.header,
+    borderRadius: 10,
+    paddingVertical: 14,
+    alignItems: 'center',
+    marginTop: 16,
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  sendBtnPressed: { opacity: 0.9 },
+  sendBtnDisabled: { opacity: 0.7 },
+  sendBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  navRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 22, gap: 12 },
+  navRowWide: { maxWidth: 480, alignSelf: 'center', width: '100%' },
+  navSpacer: { flex: 1 },
+  primaryBtn: {
+    flex: 1,
+    backgroundColor: colors.header,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  primaryBtnDisabled: { opacity: 0.45 },
+  primaryBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  secondaryBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+    backgroundColor: colors.accentSoft,
+  },
+  secondaryBtnTxt: { fontSize: 15, fontWeight: '700', color: colors.accent },
+  fallback: { flex: 1, justifyContent: 'center', minHeight: 200 },
+  fallbackTxt: { fontSize: 14, color: colors.muted, marginBottom: 16, lineHeight: 21 },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdropPress: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  modalSheetTall: { maxHeight: '70%' },
+  modalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  courseSearchInput: {
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.ink,
+    marginBottom: 8,
+  },
+  courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
+  modalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: colors.border,
+  },
+  modalRowTxt: { fontSize: 15, color: colors.ink },
+});

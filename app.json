@@ -62,7 +62,13 @@
     },
     "plugins": [
       "expo-router",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "SimCap needs photo access to upload a sim settings screenshot for Match Play."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true

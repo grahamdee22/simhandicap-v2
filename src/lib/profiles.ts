@@ -6,10 +6,20 @@ export type UserProfileRow = {
   display_name: string;
   preferred_platform: string | null;
   ghin_index: number | null;
+  match_wins: number;
+  match_losses: number;
+  match_draws: number;
+  match_forfeits: number;
 };
 
 function isPlatformId(v: string): v is PlatformId {
   return (PLATFORMS as readonly string[]).includes(v);
+}
+
+function parseNonNegInt(v: unknown): number {
+  const n = typeof v === 'number' ? v : Number(v);
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return Math.floor(n);
 }
 
 /** Fetches the signed-in user's profile row (RLS scopes to auth.uid()). */
@@ -23,7 +33,9 @@ export async function fetchMyProfile(): Promise<UserProfileRow | null> {
 
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, display_name, preferred_platform, ghin_index')
+    .select(
+      'id, display_name, preferred_platform, ghin_index, match_wins, match_losses, match_draws, match_forfeits'
+    )
     .eq('id', user.id)
     .maybeSingle();
 
@@ -37,6 +49,10 @@ export async function fetchMyProfile(): Promise<UserProfileRow | null> {
     display_name: string;
     preferred_platform: string | null;
     ghin_index: number | string | null;
+    match_wins?: number | string | null;
+    match_losses?: number | string | null;
+    match_draws?: number | string | null;
+    match_forfeits?: number | string | null;
   };
   const rawGhin = row.ghin_index;
   const ghin_index =
@@ -48,6 +64,10 @@ export async function fetchMyProfile(): Promise<UserProfileRow | null> {
     display_name: row.display_name,
     preferred_platform: row.preferred_platform,
     ghin_index: Number.isFinite(ghin_index) ? ghin_index : null,
+    match_wins: parseNonNegInt(row.match_wins),
+    match_losses: parseNonNegInt(row.match_losses),
+    match_draws: parseNonNegInt(row.match_draws),
+    match_forfeits: parseNonNegInt(row.match_forfeits),
   };
 }
 

@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Linking,
@@ -16,6 +16,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { MatchPlayHub } from '../../src/components/MatchPlayHub';
 import { IconPlus } from '../../src/components/SvgUiIcons';
 import { confirmDestructive, showAppAlert } from '../../src/lib/alertCompat';
 import { colors } from '../../src/lib/constants';
@@ -74,6 +75,7 @@ function indexSortKey(m: GroupMember): number {
 
 export default function GroupsScreen() {
   const router = useRouter();
+  const navigation = useNavigation();
   const { user } = useAuth();
   const { gutter, isVeryWide } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -110,6 +112,17 @@ export default function GroupsScreen() {
   const h2hFetchGenRef = useRef(0);
   /** Tracks which crew `matches` belongs to — avoids a blocking spinner on tab refocus (stale-while-revalidate). */
   const h2hMatchesGroupIdRef = useRef<string | undefined>(undefined);
+
+  const [incomingMatchTabBadge, setIncomingMatchTabBadge] = useState(0);
+  const onIncomingDirectMatchCount = useCallback((n: number) => {
+    setIncomingMatchTabBadge(n);
+  }, []);
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      tabBarBadge: incomingMatchTabBadge > 0 ? incomingMatchTabBadge : undefined,
+    });
+  }, [navigation, incomingMatchTabBadge]);
 
   const g = groups[tab] ?? groups[0];
 
@@ -493,6 +506,12 @@ export default function GroupsScreen() {
             {inboundInviteCards.length > 0 ? (
               <View style={{ gap: 10, marginBottom: 18 }}>{inboundInviteCards}</View>
             ) : null}
+            <MatchPlayHub
+              gutter={0}
+              userId={user?.id}
+              supabaseOn={supabaseOn}
+              onIncomingDirectCount={onIncomingDirectMatchCount}
+            />
             <Text style={styles.emptyLead}>
               Crews you create or join show up here. Each tab is a group — with a live leaderboard, recent head-to-head,
               and invites.
@@ -575,6 +594,13 @@ export default function GroupsScreen() {
             {inboundInviteCards.length > 0 ? (
               <View style={{ marginHorizontal: gutter, marginTop: 12, gap: 10 }}>{inboundInviteCards}</View>
             ) : null}
+
+            <MatchPlayHub
+              gutter={gutter}
+              userId={user?.id}
+              supabaseOn={supabaseOn}
+              onIncomingDirectCount={onIncomingDirectMatchCount}
+            />
 
             <View style={[styles.card, { marginHorizontal: gutter }]}>
               <View style={styles.cardHdr}>

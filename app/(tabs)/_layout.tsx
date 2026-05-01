@@ -145,6 +145,42 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="match-create"
+        options={{
+          href: null,
+          title: 'Create match',
+          headerRight: HeaderInstagramAndSimCap,
+          tabBarLabel: 'Match',
+        }}
+      />
+      <Tabs.Screen
+        name="match-accept/[id]"
+        options={{
+          href: null,
+          title: 'Accept challenge',
+          headerRight: HeaderInstagramAndSimCap,
+          tabBarLabel: 'Accept',
+        }}
+      />
+      <Tabs.Screen
+        name="match-score/[id]"
+        options={{
+          href: null,
+          title: 'Live scoring',
+          headerRight: HeaderInstagramAndSimCap,
+          tabBarLabel: 'Score',
+        }}
+      />
+      <Tabs.Screen
+        name="match-results/[id]"
+        options={{
+          href: null,
+          title: 'Results',
+          headerRight: HeaderInstagramAndSimCap,
+          tabBarLabel: 'Results',
+        }}
+      />
+      <Tabs.Screen
         name="profile"
         options={{
           title: 'Profile',

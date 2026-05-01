@@ -46,6 +46,12 @@ export default function ProfileScreen() {
   const [ghinDraft, setGhinDraft] = useState('');
   const [chartW, setChartW] = useState(0);
   const [savingField, setSavingField] = useState<'name' | 'ghin' | 'platform' | 'signout' | null>(null);
+  const [matchPlayRecord, setMatchPlayRecord] = useState<{
+    wins: number;
+    losses: number;
+    draws: number;
+    forfeits: number;
+  } | null>(null);
 
   const simIndex = useMemo(() => currentIndexFromRounds(rounds), [rounds]);
   const ghinLatest = useMemo(() => latestGhinIndex(ghinSnapshots), [ghinSnapshots]);
@@ -71,6 +77,14 @@ export default function ProfileScreen() {
             setPreferredLogPlatform,
             syncGhinFromProfileIfChanged: syncGhin,
           });
+          setMatchPlayRecord({
+            wins: p.match_wins,
+            losses: p.match_losses,
+            draws: p.match_draws,
+            forfeits: p.match_forfeits,
+          });
+        } else {
+          setMatchPlayRecord(null);
         }
         const snaps = useAppStore.getState().ghinSnapshots;
         const fromServer =
@@ -243,6 +257,19 @@ export default function ProfileScreen() {
                 <Text style={styles.signOutTxt}>Sign out</Text>
               )}
             </Pressable>
+          </View>
+        ) : null}
+
+        {signedIn && matchPlayRecord ? (
+          <View style={styles.card}>
+            <Text style={styles.lbl}>Match play record</Text>
+            <Text style={styles.statBig}>
+              {matchPlayRecord.wins}–{matchPlayRecord.losses}–{matchPlayRecord.draws}
+            </Text>
+            <Text style={styles.statLbl}>W–L–D · stroke matches on SimCap</Text>
+            <Text style={styles.matchForfeitMeta}>
+              Forfeits (matches you abandoned): {matchPlayRecord.forfeits}
+            </Text>
           </View>
         ) : null}
 
@@ -504,6 +531,7 @@ const styles = StyleSheet.create({
   contactFeedbackChevron: { flexShrink: 0 },
   statBig: { fontSize: 32, fontWeight: '600', color: colors.ink, marginTop: 4 },
   statLbl: { fontSize: 12, color: colors.muted, marginBottom: 12 },
+  matchForfeitMeta: { fontSize: 13, color: colors.muted, marginTop: 4 },
   lastRound: {
     flexDirection: 'row',
     alignItems: 'center',

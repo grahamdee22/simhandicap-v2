@@ -18,6 +18,21 @@ export function strokeIndexForCourse(course: CourseSeed): number[] {
 }
 
 /**
+ * Plain WHS-style course handicap (no sim difficulty modifier).
+ * Match Play uses this for stroke allocation — each player's SimCap index already reflects
+ * their sim conditions from logged rounds; `difficultyProduct` applies only when logging rounds / differentials.
+ */
+export function whsCourseHandicapFromIndex(
+  handicapIndex: number,
+  courseRating: number,
+  slope: number,
+  coursePar: number
+): number {
+  const base = handicapIndex * (slope / 113) + (courseRating - coursePar);
+  return Math.round(base);
+}
+
+/**
  * Playing handicap for this sim round: WHS-style course handicap from index,
  * scaled by the same difficulty product used for differentials.
  */
