@@ -39,6 +39,8 @@ type H2hOpponentPick = {
   memberName: string;
 };
 
+type DiffInfoKind = 'adjusted' | 'expected' | null;
+
 const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
   { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
   { key: 'gimme_5', dn: 'Gimme', ds: '<5ft' },
@@ -99,6 +101,7 @@ export default function LogRoundScreen() {
   const [courseOpen, setCourseOpen] = useState(false);
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [playedDate, setPlayedDate] = useState(todayLocalYmd);
+  const [diffInfoOpen, setDiffInfoOpen] = useState<DiffInfoKind>(null);
   /** Latest form fields for save (deferred save must not read stale render closures). */
   const latestSaveRef = useRef<{
     grossScore: number;
@@ -133,6 +136,7 @@ export default function LogRoundScreen() {
         setPlatOpen(false);
         setCourseOpen(false);
         closeH2hModal();
+        setDiffInfoOpen(null);
       };
     }, [closeH2hModal])
   );
@@ -665,16 +669,36 @@ export default function LogRoundScreen() {
 
         {course ? (
           <View style={styles.predCard}>
-            <Text style={styles.predAdjustedLine}>
-              <Text style={styles.predAdjustedLbl}>Adjusted differential: </Text>
-              <Text style={styles.predAdjustedNum}>{adjustedDisplay}</Text>
-            </Text>
+            <View style={styles.predStatRow}>
+              <Text style={styles.predStatLbl}>Adjusted differential:</Text>
+              <View style={styles.predStatRight}>
+                <Text style={styles.predAdjustedNum}>{adjustedDisplay}</Text>
+                <Pressable
+                  style={styles.infoBtn}
+                  onPress={() => setDiffInfoOpen('adjusted')}
+                  accessibilityRole="button"
+                  accessibilityLabel="About adjusted differential"
+                >
+                  <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                </Pressable>
+              </View>
+            </View>
             {expectedDiffPre != null ? (
               <>
-                <Text style={styles.predExpectedLine}>
-                  <Text style={styles.predExpectedLbl}>Expected differential: </Text>
-                  <Text style={styles.predExpectedNum}>{formatDifferentialDisplay(expectedDiffPre)}</Text>
-                </Text>
+                <View style={[styles.predStatRow, styles.predStatRowSpaced]}>
+                  <Text style={styles.predStatLbl}>Expected differential:</Text>
+                  <View style={styles.predStatRight}>
+                    <Text style={styles.predExpectedNum}>{formatDifferentialDisplay(expectedDiffPre)}</Text>
+                    <Pressable
+                      style={styles.infoBtn}
+                      onPress={() => setDiffInfoOpen('expected')}
+                      accessibilityRole="button"
+                      accessibilityLabel="About expected differential"
+                    >
+                      <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                    </Pressable>
+                  </View>
+                </View>
                 {targetGrossPre != null && targetGrossPre >= 55 && targetGrossPre <= 125 ? (
                   <Text style={styles.predTarget}>
                     Shoot {targetGrossPre} or better to improve your index
@@ -712,6 +736,27 @@ export default function LogRoundScreen() {
         </Text>
         </ScrollView>
       </View>
+
+      <Modal
+        visible={diffInfoOpen != null}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setDiffInfoOpen(null)}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdropPress} onPress={() => setDiffInfoOpen(null)} />
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.modalTitle}>
+              {diffInfoOpen === 'adjusted' ? 'Adjusted differential' : 'Expected differential'}
+            </Text>
+            <Text style={styles.diffInfoBody}>
+              {diffInfoOpen === 'adjusted'
+                ? 'Your raw score differential after applying a difficulty modifier based on your sim settings — putting mode, wind, pins, and mulligans. This is what gets used to calculate your SimCap index.'
+                : "The differential we'd expect from a golfer at your current index on this course. If your adjusted differential is lower than this, your index will improve."}
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={platOpen}
@@ -981,21 +1026,34 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: '#cfe8dc',
   },
-  predAdjustedLine: {
+  predStatRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     flexWrap: 'wrap',
-    alignItems: 'baseline',
+    columnGap: 10,
+    rowGap: 4,
     marginBottom: 10,
   },
-  predAdjustedLbl: { fontSize: 15, fontWeight: '600', color: '#1a3d2b' },
-  predAdjustedNum: { fontSize: 28, fontWeight: '700', color: '#1a3d2b' },
-  predExpectedLine: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'baseline',
-    marginTop: 2,
+  predStatRowSpaced: { marginTop: 4 },
+  predStatLbl: {
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1a3d2b',
   },
-  predExpectedLbl: { fontSize: 15, fontWeight: '600', color: '#1a3d2b' },
+  predStatRight: { flexDirection: 'row', alignItems: 'center', gap: 4, flexShrink: 0 },
+  infoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#7aa390',
+    backgroundColor: '#e8f2ed',
+  },
+  infoBtnTxt: { fontSize: 11, fontWeight: '700', color: '#1a3d2b', lineHeight: 12 },
+  predAdjustedNum: { fontSize: 28, fontWeight: '700', color: '#1a3d2b' },
   predExpectedNum: { fontSize: 26, fontWeight: '700', color: '#1a3d2b' },
   predTarget: {
     fontSize: 14,
@@ -1006,6 +1064,7 @@ const styles = StyleSheet.create({
   },
   predTargetSoft: { fontSize: 12, color: '#3d5a4f', marginTop: 10, lineHeight: 17 },
   predNoIndex: { fontSize: 13, color: '#3d5a4f', lineHeight: 19, marginBottom: 4 },
+  diffInfoBody: { fontSize: 14, lineHeight: 21, color: colors.ink },
   saveBtn: {
     backgroundColor: colors.header,
     borderRadius: 10,

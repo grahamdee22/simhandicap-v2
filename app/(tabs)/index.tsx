@@ -1,7 +1,7 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Link } from 'expo-router';
-import { Fragment, useMemo } from 'react';
-import { Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Fragment, useMemo, useState } from 'react';
+import { Modal, Platform, Pressable as RNPressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
@@ -61,6 +61,7 @@ export default function HomeScreen() {
   } = useResponsive();
   const rounds = useAppStore((s) => s.rounds);
   const displayName = useAppStore((s) => s.displayName);
+  const [indexInfoOpen, setIndexInfoOpen] = useState(false);
 
   const index = currentIndexFromRounds(rounds);
 
@@ -206,7 +207,18 @@ export default function HomeScreen() {
           <Text style={[styles.indexNum, isWide && styles.indexNumLg, isVeryWide && styles.indexNumXL]}>
             {formatHandicapIndexDisplay(index)}
           </Text>
-          <Text style={[styles.indexLbl, isWide && styles.indexLblLg]}>Sim handicap index</Text>
+          <View style={styles.indexLblCluster}>
+            <Text style={[styles.indexLbl, isWide && styles.indexLblLg]}>Sim handicap index</Text>
+            <RNPressable
+              style={styles.indexInfoBtn}
+              onPress={() => setIndexInfoOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel="About Sim handicap index"
+              hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
+            >
+              <Text style={styles.indexInfoBtnTxt}>ⓘ</Text>
+            </RNPressable>
+          </View>
         </View>
         {badge ? (
           <View style={styles.badge}>
@@ -224,6 +236,24 @@ export default function HomeScreen() {
           </Text>
         )}
       </View>
+
+      <Modal
+        visible={indexInfoOpen}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setIndexInfoOpen(false)}
+      >
+        <View style={styles.infoModalRoot}>
+          <RNPressable style={styles.infoModalBackdrop} onPress={() => setIndexInfoOpen(false)} />
+          <View style={[styles.infoModalSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.infoModalTitle}>Sim handicap index</Text>
+            <Text style={styles.infoModalBody}>
+              Your SimCap index is calculated from your logged rounds using a WHS-style formula, adjusted for your
+              simulator settings. The more rounds you log, the more accurate it gets.
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       <ContentWidth>
         <ScrollView
@@ -447,14 +477,37 @@ const styles = StyleSheet.create({
   indexNum: { fontSize: 44, fontWeight: '700', color: '#fff', lineHeight: 48 },
   indexNumLg: { fontSize: 52, lineHeight: 56 },
   indexNumXL: { fontSize: 58, lineHeight: 62 },
+  indexLblCluster: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 5,
+    flexShrink: 1,
+    minWidth: 0,
+  },
   indexLbl: {
     fontSize: 12,
     fontWeight: '500',
     color: 'rgba(255,255,255,0.7)',
-    marginBottom: 5,
     flexShrink: 1,
   },
   indexLblLg: { fontSize: 13 },
+  indexInfoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: 'rgba(255,255,255,0.45)',
+    backgroundColor: 'rgba(255,255,255,0.14)',
+    flexShrink: 0,
+    ...Platform.select({
+      web: { cursor: 'pointer' as const },
+      default: {},
+    }),
+  },
+  indexInfoBtnTxt: { fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.92)', lineHeight: 12 },
   indexFoot: {
     marginTop: 10,
     fontSize: 11,
@@ -464,6 +517,23 @@ const styles = StyleSheet.create({
   },
   indexFootLg: { fontSize: 12, lineHeight: 17 },
   indexFootMuted: { color: 'rgba(255,255,255,0.35)' },
+  /** Matches log round differential info sheets (bottom sheet + dim backdrop). */
+  infoModalRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  infoModalBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  infoModalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  infoModalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  infoModalBody: { fontSize: 14, lineHeight: 21, color: colors.ink },
   listCard: {
     backgroundColor: colors.surface,
     borderRadius: 12,

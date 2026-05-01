@@ -138,9 +138,9 @@ export default function TabLayout() {
       <Tabs.Screen
         name="groups"
         options={{
-          title: 'Groups',
+          title: 'Social',
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Groups',
+          tabBarLabel: 'Social',
           tabBarIcon: ({ color }) => <TabIcon name="people" color={color} />,
         }}
       />
