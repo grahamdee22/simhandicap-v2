@@ -295,9 +295,6 @@ export default function HomeScreen() {
                           year: 'numeric',
                         })}{' '}
                         · Gross {latest.grossScore} · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
-                        {latest.indexDelta != null
-                          ? ` · Index ${latest.indexDelta.toFixed(1)}`
-                          : ''}
                       </Text>
                     </View>
                     <View style={styles.latestChevron} pointerEvents="none">
@@ -375,9 +372,6 @@ export default function HomeScreen() {
                         year: 'numeric',
                       })}{' '}
                       · Gross {latest.grossScore} · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
-                      {latest.indexDelta != null
-                        ? ` · Index ${latest.indexDelta.toFixed(1)}`
-                        : ''}
                     </Text>
                   </View>
                   <View style={styles.latestChevron} pointerEvents="none">
