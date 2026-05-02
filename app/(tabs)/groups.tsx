@@ -598,9 +598,17 @@ export default function GroupsScreen() {
               ))}
             </View>
 
-            <Pressable style={[styles.newGrp, { marginHorizontal: gutter }]} onPress={onCreate}>
-              <IconPlus size={16} color={colors.subtle} />
-              <Text style={styles.newGrpTxt}>Create a new group</Text>
+            <Pressable
+              style={({ pressed }) => [
+                styles.createGroupBtn,
+                { marginHorizontal: gutter },
+                pressed && styles.createGroupBtnPressed,
+              ]}
+              onPress={onCreate}
+              accessibilityRole="button"
+              accessibilityLabel="Create a new group"
+            >
+              <Text style={styles.createGroupBtnTxt}>Create a New Group</Text>
             </Pressable>
 
             <View style={[styles.card, { marginHorizontal: gutter }]}>
@@ -1059,19 +1067,17 @@ const styles = StyleSheet.create({
   netCalcCardTextCol: { flex: 1, minWidth: 0 },
   netCalcCardDesc: { fontSize: 13, color: colors.muted, lineHeight: 19 },
   netCalcChev: { fontSize: 22, color: colors.subtle, fontWeight: '300' },
-  newGrp: {
+  createGroupBtn: {
     marginTop: 8,
-    borderWidth: 0.5,
-    borderStyle: 'dashed',
-    borderColor: colors.pillBorder,
-    borderRadius: 10,
-    paddingVertical: 11,
-    flexDirection: 'row',
+    marginBottom: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 5,
+    backgroundColor: colors.header,
+    paddingVertical: 12,
+    borderRadius: 12,
   },
-  newGrpTxt: { fontSize: 12, fontWeight: '600', color: colors.subtle },
+  createGroupBtnPressed: { opacity: 0.9 },
+  createGroupBtnTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
   modalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(0,0,0,0.45)',

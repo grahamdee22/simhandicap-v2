@@ -21,11 +21,7 @@ import { useResponsive } from '../../../src/lib/responsive';
 import {
   formatDifferentialDisplay,
   formatHandicapIndexDisplay,
-  pinDifficultyMultiplier,
-  puttingDifficultyMultiplier,
   scoreToParStyle,
-  SIM_BASELINE,
-  windDifficultyMultiplier,
 } from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
@@ -76,36 +72,6 @@ function top8Ids(all: SimRound[]): Set<string> {
   const ranked = window.map((r) => ({ id: r.id, d: r.adjustedDiff }));
   ranked.sort((a, b) => a.d - b.d);
   return new Set(ranked.slice(0, 8).map((x) => x.id));
-}
-
-function modifierParts(r: SimRound) {
-  const put = puttingDifficultyMultiplier(r.putting);
-  const pin = pinDifficultyMultiplier(r.pin);
-  const win = windDifficultyMultiplier(r.wind);
-  const mul = r.mulligans === 'on' ? 1.15 : 1.0;
-  return [
-    {
-      label: 'Raw differential',
-      display: formatDifferentialDisplay(r.rawDiff),
-      width: Math.min(100, (Math.abs(r.rawDiff) / 15) * 100),
-      color: colors.accent,
-    },
-    { label: 'Putting modifier', display: `×${put}`, width: put * 100, color: colors.warn },
-    {
-      label: `Pin (${r.pin === 'thu' ? 'Thu' : r.pin === 'fri' ? 'Fri' : r.pin === 'sat' ? 'Sat' : 'Sun'})`,
-      display: `×${pin}`,
-      width: pin * 100,
-      color: colors.warn,
-    },
-    { label: 'Wind', display: `×${win}`, width: win * 100, color: colors.accent },
-    { label: 'Mulligans', display: `×${mul}`, width: mul * 100, color: colors.accent },
-    {
-      label: 'Sim baseline',
-      display: `×${SIM_BASELINE}`,
-      width: SIM_BASELINE * 100,
-      color: colors.accentMuted,
-    },
-  ];
 }
 
 export default function RoundDetailScreen() {
@@ -159,8 +125,6 @@ export default function RoundDetailScreen() {
 
   const inTop = top8Ids(rounds).has(r.id);
   const filledCard = r.holeScores.length === 18 && r.holeScores.every((h) => h != null);
-
-  const parts = modifierParts(r);
 
   const onDelete = () => {
     confirmDestructive(
@@ -241,34 +205,11 @@ export default function RoundDetailScreen() {
           {isVeryWide ? (
             <View style={[styles.splitDetail, { paddingHorizontal: gutter, gap: gutter }]}>
               <View style={styles.splitCol}>
-                <View style={styles.sectionHead}>
-                  <Text style={styles.sectionTitle}>Differential breakdown</Text>
-                </View>
-                <View style={styles.diffCard}>
-                  <View style={styles.diffMainRow}>
-                    <View>
-                      <Text style={styles.diffBigLbl}>Adjusted differential</Text>
-                      <Text style={styles.diffBig}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
-                    </View>
-                    {inTop ? (
-                      <View style={styles.pill}>
-                        <Text style={styles.pillTxt}>Top 8 of 20</Text>
-                      </View>
-                    ) : (
-                      <View style={[styles.pill, styles.pillMuted]}>
-                        <Text style={styles.pillTxtMuted}>Not in top 8</Text>
-                      </View>
-                    )}
+                <View style={[styles.predCard, styles.predCardSplit]}>
+                  <View style={styles.predStatRow}>
+                    <Text style={styles.predStatLbl}>Adjusted differential:</Text>
+                    <Text style={styles.predAdjustedNum}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                   </View>
-                  {parts.map((p) => (
-                    <View key={p.label} style={styles.brow}>
-                      <Text style={styles.blbl}>{p.label}</Text>
-                      <View style={[styles.bbarTrack, styles.bbarTrackGrow]}>
-                        <View style={[styles.bbar, { width: `${Math.min(100, p.width)}%`, backgroundColor: p.color }]} />
-                      </View>
-                      <Text style={styles.bval}>{p.display}</Text>
-                    </View>
-                  ))}
                 </View>
               </View>
               <View style={styles.splitCol}>
@@ -297,34 +238,11 @@ export default function RoundDetailScreen() {
             </View>
           ) : (
             <>
-              <View style={[styles.sectionHead, { paddingHorizontal: gutter }]}>
-                <Text style={styles.sectionTitle}>Differential breakdown</Text>
-              </View>
-              <View style={[styles.diffCard, { marginHorizontal: gutter }]}>
-                <View style={styles.diffMainRow}>
-                  <View>
-                    <Text style={styles.diffBigLbl}>Adjusted differential</Text>
-                    <Text style={styles.diffBig}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
-                  </View>
-                  {inTop ? (
-                    <View style={styles.pill}>
-                      <Text style={styles.pillTxt}>Top 8 of 20</Text>
-                    </View>
-                  ) : (
-                    <View style={[styles.pill, styles.pillMuted]}>
-                      <Text style={styles.pillTxtMuted}>Not in top 8</Text>
-                    </View>
-                  )}
+              <View style={[styles.predCard, { marginHorizontal: gutter }]}>
+                <View style={styles.predStatRow}>
+                  <Text style={styles.predStatLbl}>Adjusted differential:</Text>
+                  <Text style={styles.predAdjustedNum}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                 </View>
-                {parts.map((p) => (
-                  <View key={p.label} style={styles.brow}>
-                    <Text style={styles.blbl}>{p.label}</Text>
-                    <View style={[styles.bbarTrack, styles.bbarTrackFixed]}>
-                      <View style={[styles.bbar, { width: `${Math.min(100, p.width)}%`, backgroundColor: p.color }]} />
-                    </View>
-                    <Text style={styles.bval}>{p.display}</Text>
-                  </View>
-                ))}
               </View>
 
               <View style={[styles.sectionHead, { paddingHorizontal: gutter }]}>
@@ -538,37 +456,34 @@ const styles = StyleSheet.create({
   hstatSub: { fontSize: 9, color: colors.accentMuted, marginTop: 1 },
   sectionHead: { paddingTop: 12, paddingBottom: 6 },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: colors.ink },
-  diffCard: {
-    backgroundColor: colors.accentSoft,
-    borderRadius: 10,
-    padding: 12,
+  /** Matches log round `predCard` / adjusted differential row. */
+  predCard: {
+    backgroundColor: '#f0f7f4',
+    borderRadius: 12,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    marginTop: 14,
+    marginBottom: 2,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#cfe8dc',
   },
-  diffMainRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 },
-  diffBigLbl: { fontSize: 10, fontWeight: '600', color: colors.subtle, marginBottom: 4 },
-  diffBig: { fontSize: 28, fontWeight: '700', color: colors.ink },
-  pill: {
-    backgroundColor: colors.accentSoft,
-    borderWidth: 1,
-    borderColor: colors.sage,
-    borderRadius: 99,
-    paddingVertical: 3,
-    paddingHorizontal: 9,
+  predCardSplit: { marginTop: 12 },
+  predStatRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    columnGap: 10,
+    rowGap: 4,
+    justifyContent: 'space-between',
+    marginBottom: 0,
   },
-  pillTxt: { fontSize: 11, color: colors.accentDark, fontWeight: '600' },
-  pillMuted: { backgroundColor: colors.bg, borderColor: colors.border },
-  pillTxtMuted: { fontSize: 11, color: colors.muted },
-  brow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 5 },
-  blbl: { fontSize: 11, color: colors.muted, flex: 1 },
-  bbarTrack: {
-    height: 4,
-    backgroundColor: colors.pillBorder,
-    borderRadius: 99,
-    overflow: 'hidden',
+  predStatLbl: {
+    flexShrink: 1,
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1a3d2b',
   },
-  bbarTrackFixed: { width: 70 },
-  bbarTrackGrow: { flex: 1, maxWidth: 220, minWidth: 72 },
-  bbar: { height: 4, borderRadius: 99 },
-  bval: { fontSize: 11, color: colors.subtle, width: 44, textAlign: 'right' },
+  predAdjustedNum: { fontSize: 28, fontWeight: '700', color: '#1a3d2b' },
   grid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
