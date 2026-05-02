@@ -743,9 +743,10 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   offlineHint: { fontSize: 12, color: colors.subtle, lineHeight: 18 },
+  /** Slightly stronger than `colors.border` so cards read clearly on the Social surface. */
   card: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
     borderRadius: 10,
     padding: 12,
     marginBottom: 8,
@@ -808,8 +809,8 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 12,
     paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
+    borderTopWidth: 0.5,
+    borderTopColor: colors.pillBorder,
   },
   cardActionPressed: { opacity: 0.88 },
   acceptBtn: {
