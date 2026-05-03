@@ -152,6 +152,7 @@ export default function MatchAcceptScreen() {
   const [libraryPermissionBlocked, setLibraryPermissionBlocked] = useState(false);
   const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
   const [submitBusy, setSubmitBusy] = useState(false);
+  const [p1SettingsImageError, setP1SettingsImageError] = useState(false);
 
   const course = useMemo(
     () => (match ? findCourseByMatchName(match.course_name) : undefined),
@@ -238,6 +239,10 @@ export default function MatchAcceptScreen() {
       cancelled = true;
     };
   }, [supabaseOn, user?.id, matchId]);
+
+  useEffect(() => {
+    setP1SettingsImageError(false);
+  }, [match?.player_1_settings_photo_url]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -446,10 +451,29 @@ export default function MatchAcceptScreen() {
                   <Text style={styles.summaryLbl}>Their tee · </Text>
                   {match.player_1_tee} ({match.player_1_course_rating} / {match.player_1_course_slope})
                 </Text>
-                <Text style={styles.summaryLine}>
+                <Text style={[styles.summaryLine, styles.summaryLineLast]}>
                   <Text style={styles.summaryLbl}>Conditions · </Text>
                   {conditionsSummary(match)}
                 </Text>
+              </View>
+
+              <Text style={styles.challengerShotTitle}>Challenger&apos;s sim settings</Text>
+              <View style={styles.challengerShotPanel}>
+                {match.player_1_settings_photo_url && !p1SettingsImageError ? (
+                  <Image
+                    source={{ uri: match.player_1_settings_photo_url }}
+                    style={styles.challengerShotImage}
+                    resizeMode="contain"
+                    accessibilityLabel={`${challengerName}'s simulator settings screenshot`}
+                    onError={() => setP1SettingsImageError(true)}
+                  />
+                ) : (
+                  <Text style={styles.challengerShotPlaceholder}>
+                    {match.player_1_settings_photo_url && p1SettingsImageError
+                      ? 'Could not load this image. Ask the challenger to re-post or share their settings another way.'
+                      : 'No settings screenshot was uploaded for this challenge.'}
+                  </Text>
+                )}
               </View>
             </>
           ) : null}
@@ -644,25 +668,21 @@ export default function MatchAcceptScreen() {
             </>
           ) : null}
 
-          <View style={[styles.navRow, isWide && styles.navRowWide]}>
+          <View style={[styles.navFooter, isWide && styles.navFooterWide]}>
             {step > 0 ? (
-              <Pressable style={styles.secondaryBtn} onPress={goBackStep}>
+              <Pressable style={styles.secondaryBtnNav} onPress={goBackStep}>
                 <Text style={styles.secondaryBtnTxt}>Back</Text>
               </Pressable>
-            ) : (
-              <View style={styles.navSpacer} />
-            )}
+            ) : null}
             {step < STEPS - 1 ? (
               <Pressable
-                style={[styles.primaryBtn, !canContinue && styles.primaryBtnDisabled]}
+                style={[styles.primaryBtnFull, !canContinue && styles.primaryBtnDisabled]}
                 onPress={goNext}
                 disabled={!canContinue}
               >
                 <Text style={styles.primaryBtnTxt}>Continue</Text>
               </Pressable>
-            ) : (
-              <View style={styles.navSpacer} />
-            )}
+            ) : null}
           </View>
         </ScrollView>
 
@@ -812,7 +832,41 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   summaryLine: { fontSize: 14, color: colors.ink, marginBottom: 8, lineHeight: 20 },
+  summaryLineLast: { marginBottom: 0 },
   summaryLbl: { fontWeight: '700', color: colors.subtle },
+  challengerShotTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.subtle,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  challengerShotPanel: {
+    width: '100%',
+    minHeight: 288,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.bg,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  challengerShotImage: {
+    width: '100%',
+    height: 280,
+    backgroundColor: colors.bg,
+  },
+  challengerShotPlaceholder: {
+    fontSize: 14,
+    color: colors.muted,
+    lineHeight: 21,
+    textAlign: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+  },
   sendBtn: {
     backgroundColor: colors.header,
     borderRadius: 10,
@@ -825,15 +879,25 @@ const styles = StyleSheet.create({
   sendBtnPressed: { opacity: 0.9 },
   sendBtnDisabled: { opacity: 0.7 },
   sendBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  navRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 22, gap: 12 },
-  navRowWide: { maxWidth: 480, alignSelf: 'center', width: '100%' },
-  navSpacer: { flex: 1 },
-  primaryBtn: {
-    flex: 1,
+  navFooter: { marginTop: 22, gap: 10, width: '100%', alignSelf: 'stretch' },
+  navFooterWide: { maxWidth: 480, alignSelf: 'center' },
+  primaryBtnFull: {
+    width: '100%',
     backgroundColor: colors.header,
+    paddingVertical: 14,
+    borderRadius: 10,
+    alignItems: 'center',
+    minHeight: 48,
+    justifyContent: 'center',
+  },
+  secondaryBtnNav: {
+    width: '100%',
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: 'center',
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+    backgroundColor: colors.accentSoft,
   },
   primaryBtnDisabled: { opacity: 0.45 },
   primaryBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },

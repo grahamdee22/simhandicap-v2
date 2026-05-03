@@ -37,7 +37,7 @@ import {
   type PuttingMode,
   type Wind,
 } from '../../../src/lib/handicap';
-import { acceptOpenChallenge, getMatchById, type DbMatchRow } from '../../../src/lib/matchPlay';
+import { acceptOpenChallenge, getMatchById, updateMatchById, type DbMatchRow } from '../../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../../src/lib/matchPlayStorage';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
@@ -156,6 +156,7 @@ export default function MatchOpenAcceptScreen() {
   const [libraryPermissionBlocked, setLibraryPermissionBlocked] = useState(false);
   const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
   const [submitBusy, setSubmitBusy] = useState(false);
+  const [p1SettingsImageError, setP1SettingsImageError] = useState(false);
 
   const course = useMemo(
     () => (match ? findCourseByMatchName(match.course_name) : undefined),
@@ -225,6 +226,8 @@ export default function MatchOpenAcceptScreen() {
         setLoadingMatch(false);
         return;
       }
+      // eslint-disable-next-line no-console -- debug: poster settings URL on open-challenge accept load
+      console.log('[match-open-accept] player_1_settings_photo_url', m.player_1_settings_photo_url);
       setMatch(m);
       setIsOwnChallenge(m.player_1_id === user.id);
       if (supabase) {
@@ -245,6 +248,10 @@ export default function MatchOpenAcceptScreen() {
       cancelled = true;
     };
   }, [supabaseOn, user?.id, matchId]);
+
+  useEffect(() => {
+    setP1SettingsImageError(false);
+  }, [match?.player_1_settings_photo_url]);
 
   useLayoutEffect(() => {
     const title =
@@ -357,7 +364,24 @@ export default function MatchOpenAcceptScreen() {
     if (photoUri == null && !skipPhotoDev) return;
 
     setSubmitBusy(true);
-    let photoUrl: string | null = null;
+
+    // Claim the open challenge first so this user is `player_2_id`, then upload (storage RLS
+    // requires a participant on `matches`), then persist the signed screenshot URL.
+    const rpc = await acceptOpenChallenge({
+      matchId,
+      player2Tee: teeResolved.teeName,
+      player2CourseRating: teeResolved.rating,
+      player2CourseSlope: teeResolved.slope,
+      player2SettingsPhotoUrl: null,
+    });
+    if (!rpc.ok) {
+      setSubmitBusy(false);
+      const msg = rpc.error ?? 'Unknown error';
+      showAppAlert('Could not accept', msg);
+      if (msg.toLowerCase().includes('already taken')) router.back();
+      return;
+    }
+
     if (photoUri != null) {
       const up = await uploadMatchSettingsScreenshot({
         matchId,
@@ -365,28 +389,23 @@ export default function MatchOpenAcceptScreen() {
         localUri: photoUri,
         mimeType: settingsImage?.mimeType ?? undefined,
       });
+      console.log('[match-open-accept] uploadMatchSettingsScreenshot result', up);
       if ('error' in up) {
         setSubmitBusy(false);
-        showAppAlert('Upload failed', up.error);
+        showAppAlert(
+          'Upload failed',
+          `${up.error}\n\nYou accepted this challenge. Share your sim settings screenshot with your opponent another way for now.`
+        );
+        router.replace('/(tabs)/groups' as never);
         return;
       }
-      photoUrl = up.signedUrl;
+      const upd = await updateMatchById(matchId, { player_2_settings_photo_url: up.signedUrl });
+      if (upd.error) {
+        console.warn('[match-open-accept] update photo url', upd.error);
+      }
     }
 
-    const rpc = await acceptOpenChallenge({
-      matchId,
-      player2Tee: teeResolved.teeName,
-      player2CourseRating: teeResolved.rating,
-      player2CourseSlope: teeResolved.slope,
-      player2SettingsPhotoUrl: photoUrl,
-    });
     setSubmitBusy(false);
-    if (!rpc.ok) {
-      const msg = rpc.error ?? 'Unknown error';
-      showAppAlert('Could not accept', msg);
-      if (msg.toLowerCase().includes('already taken')) router.back();
-      return;
-    }
     router.replace('/(tabs)/groups' as never);
   }, [user, match, teeResolved, matchId, settingsImage, devSkipSettingsPhoto, router]);
 
@@ -463,20 +482,30 @@ export default function MatchOpenAcceptScreen() {
               <Text style={styles.summaryLbl}>Their tee · </Text>
               {match.player_1_tee} ({match.player_1_course_rating} / {match.player_1_course_slope})
             </Text>
-            <Text style={styles.summaryLine}>
+            <Text style={[styles.summaryLine, styles.summaryLineLast]}>
               <Text style={styles.summaryLbl}>Conditions · </Text>
               {conditionsSummary(match)}
             </Text>
           </View>
-          {match.player_1_settings_photo_url ? (
-            <Image
-              source={{ uri: match.player_1_settings_photo_url }}
-              style={styles.preview}
-              resizeMode="contain"
-            />
-          ) : (
-            <Text style={styles.noShotTxt}>No settings screenshot from poster.</Text>
-          )}
+
+          <Text style={styles.challengerShotTitle}>Challenger&apos;s sim settings</Text>
+          <View style={styles.challengerShotPanel}>
+            {match.player_1_settings_photo_url && !p1SettingsImageError ? (
+              <Image
+                source={{ uri: match.player_1_settings_photo_url }}
+                style={styles.challengerShotImage}
+                resizeMode="contain"
+                accessibilityLabel={`${posterName}'s simulator settings screenshot`}
+                onError={() => setP1SettingsImageError(true)}
+              />
+            ) : (
+              <Text style={styles.challengerShotPlaceholder}>
+                {match.player_1_settings_photo_url && p1SettingsImageError
+                  ? 'Could not load this image. Ask the challenger to re-post or share their settings another way.'
+                  : 'No settings screenshot was uploaded for this challenge.'}
+              </Text>
+            )}
+          </View>
 
           {isOwnChallenge ? (
             <Text style={styles.ownHint}>
@@ -867,9 +896,43 @@ const styles = StyleSheet.create({
     marginTop: 8,
     lineHeight: 18,
   },
+  challengerShotTitle: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.subtle,
+    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    marginTop: 18,
+    marginBottom: 8,
+  },
+  challengerShotPanel: {
+    width: '100%',
+    minHeight: 288,
+    borderRadius: 12,
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.bg,
+    overflow: 'hidden',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  challengerShotImage: {
+    width: '100%',
+    height: 280,
+    backgroundColor: colors.bg,
+  },
+  challengerShotPlaceholder: {
+    fontSize: 14,
+    color: colors.muted,
+    lineHeight: 21,
+    textAlign: 'center',
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+  },
   preview: { width: '100%', height: 220, borderRadius: 10, backgroundColor: colors.bg, marginTop: 10 },
   previewSmall: { width: '100%', height: 120, borderRadius: 10, marginTop: 8, backgroundColor: colors.bg },
   noShotTxt: { fontSize: 13, color: colors.subtle, marginTop: 8, fontStyle: 'italic' },
+  summaryLineLast: { marginBottom: 0 },
   ownHint: {
     fontSize: 14,
     color: colors.muted,

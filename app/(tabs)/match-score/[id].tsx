@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -66,6 +67,10 @@ export default function MatchScoreScreen() {
   const [submitBusy, setSubmitBusy] = useState(false);
   const [abandonBusy, setAbandonBusy] = useState(false);
   const [holeGross, setHoleGross] = useState(4);
+  const [settingsThumbMineOpen, setSettingsThumbMineOpen] = useState(false);
+  const [settingsThumbOppOpen, setSettingsThumbOppOpen] = useState(false);
+  const [settingsMineImgErr, setSettingsMineImgErr] = useState(false);
+  const [settingsOppImgErr, setSettingsOppImgErr] = useState(false);
 
   const supabaseOn = isSupabaseConfigured();
   const mounted = useRef(true);
@@ -215,6 +220,11 @@ export default function MatchScoreScreen() {
     }
     return null;
   }, [match?.player_2_id, user?.id, maps, amPlayer1, holeNums]);
+
+  useEffect(() => {
+    setSettingsMineImgErr(false);
+    setSettingsOppImgErr(false);
+  }, [match?.player_1_settings_photo_url, match?.player_2_settings_photo_url, amPlayer1]);
 
   useEffect(() => {
     if (currentHole == null || !course) return;
@@ -425,6 +435,15 @@ export default function MatchScoreScreen() {
     rows.push({ h, myGross, oppGross, myNetDisp, oppNetDisp });
   }
 
+  const myDisplayName = amPlayer1 ? names.p1 : names.p2;
+  const oppDisplayName = amPlayer1 ? names.p2 : names.p1;
+  const mySettingsPhotoUrl = amPlayer1
+    ? match.player_1_settings_photo_url
+    : match.player_2_settings_photo_url;
+  const oppSettingsPhotoUrl = amPlayer1
+    ? match.player_2_settings_photo_url
+    : match.player_1_settings_photo_url;
+
   const parCur = currentHole != null ? course.pars[currentHole - 1] ?? 4 : null;
 
   const myDone = currentHole == null;
@@ -453,11 +472,73 @@ export default function MatchScoreScreen() {
             {names.p1} vs {names.p2}
           </Text>
 
+          <View style={styles.settingsPhotosRow}>
+            <View style={styles.colHole} />
+            <Pressable
+              style={styles.settingsPhotoCol}
+              onPress={() => setSettingsThumbMineOpen((o) => !o)}
+              accessibilityRole="button"
+              accessibilityLabel={`${myDisplayName} sim settings photo`}
+              accessibilityState={{ expanded: settingsThumbMineOpen }}
+            >
+              <Text style={styles.settingsPhotoLabel} numberOfLines={1}>
+                {myDisplayName}
+              </Text>
+              {mySettingsPhotoUrl && !settingsMineImgErr ? (
+                <Image
+                  source={{ uri: mySettingsPhotoUrl }}
+                  style={settingsThumbMineOpen ? styles.settingsPhotoExpanded : styles.settingsPhotoThumb}
+                  resizeMode="contain"
+                  onError={() => setSettingsMineImgErr(true)}
+                />
+              ) : settingsThumbMineOpen ? (
+                <Text style={styles.settingsPhotoMissingExpanded}>
+                  {settingsMineImgErr
+                    ? 'Could not load image.'
+                    : 'No sim settings photo for this player.'}
+                </Text>
+              ) : (
+                <View style={styles.settingsPhotoThumbPlaceholder}>
+                  <Text style={styles.settingsPhotoMissingCollapsed}>—</Text>
+                </View>
+              )}
+            </Pressable>
+            <Pressable
+              style={styles.settingsPhotoCol}
+              onPress={() => setSettingsThumbOppOpen((o) => !o)}
+              accessibilityRole="button"
+              accessibilityLabel={`${oppDisplayName} sim settings photo`}
+              accessibilityState={{ expanded: settingsThumbOppOpen }}
+            >
+              <Text style={styles.settingsPhotoLabel} numberOfLines={1}>
+                {oppDisplayName}
+              </Text>
+              {oppSettingsPhotoUrl && !settingsOppImgErr ? (
+                <Image
+                  source={{ uri: oppSettingsPhotoUrl }}
+                  style={settingsThumbOppOpen ? styles.settingsPhotoExpanded : styles.settingsPhotoThumb}
+                  resizeMode="contain"
+                  onError={() => setSettingsOppImgErr(true)}
+                />
+              ) : settingsThumbOppOpen ? (
+                <Text style={styles.settingsPhotoMissingExpanded}>
+                  {settingsOppImgErr
+                    ? 'Could not load image.'
+                    : 'No sim settings photo for this player.'}
+                </Text>
+              ) : (
+                <View style={styles.settingsPhotoThumbPlaceholder}>
+                  <Text style={styles.settingsPhotoMissingCollapsed}>—</Text>
+                </View>
+              )}
+            </Pressable>
+          </View>
+
           <View style={styles.tableHead}>
             <Text style={[styles.th, styles.colHole]}>Hole</Text>
-            <Text style={[styles.th, styles.colNum]}>Me</Text>
+            <Text style={[styles.th, styles.colNum]}>Gross</Text>
             <Text style={[styles.th, styles.colNum]}>Net</Text>
-            <Text style={[styles.th, styles.colNum]}>Opp</Text>
+            <Text style={[styles.th, styles.colNum]}>Gross</Text>
             <Text style={[styles.th, styles.colNum]}>Net</Text>
           </View>
 
@@ -484,7 +565,7 @@ export default function MatchScoreScreen() {
           </View>
         </ScrollView>
 
-        <View style={[styles.footer, { paddingBottom: insets.bottom + 12 }]}>
+        <View style={styles.footer}>
           {myDone ? (
             <Text style={styles.footerTitle}>You&apos;ve entered all holes. Totals lock when both players finish.</Text>
           ) : (
@@ -539,6 +620,7 @@ export default function MatchScoreScreen() {
             onPress={() => void onAbandonMatch()}
             accessibilityRole="button"
             accessibilityLabel="Abandon match"
+            hitSlop={{ top: 6, bottom: 10, left: 12, right: 12 }}
           >
             {abandonBusy ? (
               <ActivityIndicator color={colors.danger} />
@@ -569,6 +651,59 @@ const styles = StyleSheet.create({
   },
   bannerTxt: { fontSize: 13, color: colors.ink, lineHeight: 18, fontWeight: '600' },
   vsLine: { fontSize: 13, fontWeight: '700', color: colors.subtle, marginBottom: 10 },
+  settingsPhotosRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+    paddingTop: 2,
+  },
+  settingsPhotoCol: { flex: 2, alignItems: 'center', paddingHorizontal: 2 },
+  settingsPhotoLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.subtle,
+    marginBottom: 6,
+    textAlign: 'center',
+    width: '100%',
+  },
+  settingsPhotoThumb: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+  },
+  settingsPhotoExpanded: {
+    width: '100%',
+    maxWidth: 200,
+    height: 200,
+    marginTop: 2,
+    borderRadius: 10,
+    backgroundColor: colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+  },
+  settingsPhotoThumbPlaceholder: {
+    width: 48,
+    height: 48,
+    borderRadius: 8,
+    backgroundColor: colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  settingsPhotoMissingCollapsed: { fontSize: 14, color: colors.muted, fontWeight: '600' },
+  settingsPhotoMissingExpanded: {
+    fontSize: 13,
+    color: colors.muted,
+    lineHeight: 19,
+    textAlign: 'center',
+    marginTop: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 12,
+  },
   tableHead: {
     flexDirection: 'row',
     borderBottomWidth: StyleSheet.hairlineWidth,
@@ -598,6 +733,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     paddingHorizontal: 16,
     paddingTop: 12,
+    paddingBottom: 16,
   },
   footerTitle: { fontSize: 15, fontWeight: '700', color: colors.ink, marginBottom: 8 },
   sectionLabel: {
@@ -654,8 +790,10 @@ const styles = StyleSheet.create({
   submitBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
   abandonBtn: {
     alignItems: 'center',
-    paddingVertical: 12,
-    marginTop: 10,
+    paddingTop: 10,
+    paddingBottom: 0,
+    marginTop: 8,
+    marginBottom: 0,
   },
   abandonBtnTxt: { fontSize: 14, fontWeight: '700', color: colors.danger },
   secondaryBtn: {

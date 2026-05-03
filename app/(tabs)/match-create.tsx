@@ -39,7 +39,7 @@ import {
   type Wind,
 } from '../../src/lib/handicap';
 import { showAppAlert } from '../../src/lib/alertCompat';
-import { insertMatch, listMyMatches, updateMatchById } from '../../src/lib/matchPlay';
+import { insertMatch, listMyMatches, updateMatchById, type DbMatchRow } from '../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../src/lib/matchPlayStorage';
 import { useResponsive } from '../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
@@ -51,6 +51,32 @@ type ChallengeKind = 'direct' | 'open';
 const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
 
 const MAX_OPEN_CHALLENGES_POSTED = 3;
+const MAX_ACTIVE_DIRECT_CHALLENGES = 3;
+
+const DIRECT_CONFLICT_STATUSES = new Set<DbMatchRow['status']>(['pending', 'active', 'waiting']);
+
+/** Non-open matches in pending/active/waiting where `selfId` is a participant (counts toward direct cap). */
+function countActiveDirectMatchesForUser(rows: DbMatchRow[], selfId: string): number {
+  let n = 0;
+  for (const m of rows) {
+    if (m.is_open || m.player_2_id == null) continue;
+    if (!DIRECT_CONFLICT_STATUSES.has(m.status)) continue;
+    if (m.player_1_id === selfId || m.player_2_id === selfId) n += 1;
+  }
+  return n;
+}
+
+/** True if `selfId` already has a non-open match vs `opponentId` in a state that blocks a new direct challenge. */
+function hasBlockingDirectMatchWithOpponent(rows: DbMatchRow[], selfId: string, opponentId: string): boolean {
+  for (const m of rows) {
+    if (m.is_open || m.player_2_id == null) continue;
+    if (!DIRECT_CONFLICT_STATUSES.has(m.status)) continue;
+    const p1 = m.player_1_id;
+    const p2 = m.player_2_id;
+    if ((p1 === selfId && p2 === opponentId) || (p1 === opponentId && p2 === selfId)) return true;
+  }
+  return false;
+}
 
 const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
   { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
@@ -202,7 +228,7 @@ export default function MatchCreateScreen() {
   );
 
   const stepSequence = useMemo(
-    () => (challengeKind === 'direct' ? [0, 1, 2, 3, 4, 5, 6, 7] : [0, 2, 3, 4, 5, 6, 7]),
+    () => (challengeKind === 'direct' ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5, 6]),
     [challengeKind]
   );
   const totalSteps = stepSequence.length;
@@ -252,15 +278,15 @@ export default function MatchCreateScreen() {
   }, [courseOpen]);
 
   useEffect(() => {
-    if (screenStep !== 6) setLibraryPermissionBlocked(false);
-    if (screenStep < 6) setDevSkipSettingsPhoto(false);
+    if (screenStep !== 5) setLibraryPermissionBlocked(false);
+    if (screenStep < 5) setDevSkipSettingsPhoto(false);
   }, [screenStep]);
 
   useEffect(() => {
-    if (screenStep !== 6 || !libraryPermissionBlocked) return;
+    if (screenStep !== 5 || !libraryPermissionBlocked) return;
     const sub = AppState.addEventListener('change', (state) => {
       if (state !== 'active') return;
-      void ImagePicker.getMediaLibraryPermissionsAsync().then((p) => {
+      void ImagePicker.getMediaLibraryPermissionsAsync(false).then((p) => {
         if (p.granted) setLibraryPermissionBlocked(false);
       });
     });
@@ -291,17 +317,35 @@ export default function MatchCreateScreen() {
   }, []);
 
   const onPickImage = useCallback(async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const pickerOptions: ImagePicker.ImagePickerOptions = {
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.85,
+      allowsMultipleSelection: false,
+    };
+
+    // Web: `requestMediaLibraryPermissionsAsync` is a no-op; keep the chain short so
+    // `launchImageLibraryAsync` stays tied to the button press (user activation).
+    if (Platform.OS === 'web') {
+      const result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
+      if (!result.canceled && result.assets[0]) {
+        setSettingsImage(result.assets[0]);
+        setLibraryPermissionBlocked(false);
+        setDevSkipSettingsPhoto(false);
+      }
+      return;
+    }
+
+    let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
+    if (!perm.granted) {
+      perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
+    }
     if (!perm.granted) {
       setLibraryPermissionBlocked(true);
       return;
     }
     setLibraryPermissionBlocked(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsMultipleSelection: false,
-    });
+
+    const result = await ImagePicker.launchImageLibraryAsync(pickerOptions);
     if (!result.canceled && result.assets[0]) {
       setSettingsImage(result.assets[0]);
       setLibraryPermissionBlocked(false);
@@ -316,9 +360,7 @@ export default function MatchCreateScreen() {
         return true;
       case 1:
         return opponent != null;
-      case 2:
-        return !!course;
-      case 3: {
+      case 2: {
         if (!course) return false;
         if (course.confident === false) return true;
         if (teePickKey === CUSTOM_TEE_ID) {
@@ -328,15 +370,15 @@ export default function MatchCreateScreen() {
         }
         return courseTees.some((t) => t.name === teePickKey);
       }
+      case 3:
+        return true;
       case 4:
         return true;
       case 5:
-        return true;
-      case 6:
         return (
           settingsImage?.uri != null || (ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto)
         );
-      case 7:
+      case 6:
         return true;
       default:
         return false;
@@ -384,10 +426,31 @@ export default function MatchCreateScreen() {
     [user?.id]
   );
 
-  const goNext = useCallback(() => {
+  const goNext = useCallback(async () => {
     if (!canContinue) return;
+    if (challengeKind === 'direct' && opponent && screenStep === 1 && user?.id) {
+      const res = await listMyMatches();
+      if (res.error || res.data == null) {
+        showAppAlert('Could not verify your matches', res.error ?? 'Something went wrong.');
+        return;
+      }
+      if (countActiveDirectMatchesForUser(res.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
+        showAppAlert(
+          'Challenge limit',
+          `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a new one.`
+        );
+        return;
+      }
+      if (hasBlockingDirectMatchWithOpponent(res.data, user.id, opponent.userId)) {
+        showAppAlert(
+          'Match already in progress',
+          `You already have a match with ${opponent.displayName} that is pending, active, or waiting. Finish or resolve that match before sending a new challenge.`
+        );
+        return;
+      }
+    }
     if (stepIdx < totalSteps - 1) setStepIdx((s) => s + 1);
-  }, [canContinue, stepIdx, totalSteps]);
+  }, [canContinue, stepIdx, totalSteps, challengeKind, opponent, screenStep, user?.id]);
 
   const goBackStep = useCallback(() => {
     if (stepIdx > 0) setStepIdx((s) => s - 1);
@@ -409,7 +472,32 @@ export default function MatchCreateScreen() {
       courseTees,
     });
 
+    if (challengeKind === 'direct' && opponent) {
+      const res = await listMyMatches();
+      if (res.error || res.data == null) {
+        showAppAlert('Could not verify your matches', res.error ?? 'Something went wrong.');
+        return;
+      }
+      if (countActiveDirectMatchesForUser(res.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
+        showAppAlert(
+          'Challenge limit',
+          `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a new one.`
+        );
+        return;
+      }
+      if (hasBlockingDirectMatchWithOpponent(res.data, user.id, opponent.userId)) {
+        showAppAlert(
+          'Match already in progress',
+          `You already have a match with ${opponent.displayName} that is pending, active, or waiting. Finish or resolve that match before sending a new challenge.`
+        );
+        return;
+      }
+    }
+
     setSubmitBusy(true);
+
+    // Final submit order (required by `match-settings` storage RLS): insert the `matches` row
+    // first so the path `{match_id}/{user_id}/…` is allowed, then upload, then patch the signed URL.
     const ins = await insertMatch({
       player_2_id: challengeKind === 'open' ? null : opponent!.userId,
       is_open: challengeKind === 'open',
@@ -431,10 +519,11 @@ export default function MatchCreateScreen() {
       showAppAlert('Could not create match', ins.error ?? 'Unknown error');
       return;
     }
-    const mid = ins.data.id;
+    const matchId = ins.data.id;
+
     if (photoUri != null) {
       const up = await uploadMatchSettingsScreenshot({
-        matchId: mid,
+        matchId,
         userId: user.id,
         localUri: photoUri,
         mimeType: settingsImage?.mimeType ?? undefined,
@@ -452,7 +541,7 @@ export default function MatchCreateScreen() {
         router.replace('/(tabs)/groups' as never);
         return;
       }
-      const upd = await updateMatchById(mid, { player_1_settings_photo_url: up.signedUrl });
+      const upd = await updateMatchById(matchId, { player_1_settings_photo_url: up.signedUrl });
       if (upd.error) {
         console.warn('[match-create] update photo url', upd.error);
       }
@@ -499,16 +588,14 @@ export default function MatchCreateScreen() {
       case 1:
         return 'Opponent';
       case 2:
-        return 'Course';
+        return 'Sim, course & tee';
       case 3:
-        return 'Your tee';
-      case 4:
         return 'Sim settings';
-      case 5:
+      case 4:
         return 'Holes';
+      case 5:
+        return 'Sim setup photo';
       case 6:
-        return 'Settings screenshot';
-      case 7:
         return 'Review & send';
       default:
         return '';
@@ -613,77 +700,80 @@ export default function MatchCreateScreen() {
                 <Text style={styles.pillVal}>{course?.name ?? 'Select'}</Text>
                 <Text style={styles.chev}>▾</Text>
               </Pressable>
-            </>
-          ) : null}
 
-          {screenStep === 3 && course ? (
-            <>
-              {!showTeeSelector ? (
-                <Text style={styles.body}>
-                  This course uses a single rating/slope for your platform. We&apos;ll use it for your side of the match.
-                </Text>
-              ) : (
+              {course ? (
                 <>
-                  <Text style={styles.sectionLabel}>Tee</Text>
-                  <View style={styles.teeChipWrap}>
-                    {courseTees.map((t) => (
-                      <Pressable
-                        key={t.name}
-                        style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
-                        onPress={() => {
-                          setTeePickKey(t.name);
-                          setCustomRating('');
-                          setCustomSlope('');
-                        }}
-                      >
-                        <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
-                        <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
-                          {t.rating} / {t.slope}
-                        </Text>
-                      </Pressable>
-                    ))}
-                    <Pressable
-                      style={[styles.teeChip, teePickKey === CUSTOM_TEE_ID && styles.teeChipOn]}
-                      onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
-                    >
-                      <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>Custom</Text>
-                      <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
-                        Your rating / slope
-                      </Text>
-                    </Pressable>
-                  </View>
-                  {teePickKey === CUSTOM_TEE_ID ? (
-                    <View style={styles.teeCustomRow}>
-                      <View style={styles.teeCustomField}>
-                        <Text style={styles.teeCustomLbl}>Course rating</Text>
-                        <TextInput
-                          style={styles.teeNumInput}
-                          value={customRating}
-                          onChangeText={setCustomRating}
-                          placeholder="e.g. 72.1"
-                          placeholderTextColor={colors.subtle}
-                          keyboardType="decimal-pad"
-                        />
+                  {!showTeeSelector ? (
+                    <Text style={styles.body}>
+                      This course uses a single rating/slope for your platform. We&apos;ll use it for your side of the
+                      match.
+                    </Text>
+                  ) : (
+                    <>
+                      <Text style={styles.sectionLabel}>Tee</Text>
+                      <View style={styles.teeChipWrap}>
+                        {courseTees.map((t) => (
+                          <Pressable
+                            key={t.name}
+                            style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
+                            onPress={() => {
+                              setTeePickKey(t.name);
+                              setCustomRating('');
+                              setCustomSlope('');
+                            }}
+                          >
+                            <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
+                            <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
+                              {t.rating} / {t.slope}
+                            </Text>
+                          </Pressable>
+                        ))}
+                        <Pressable
+                          style={[styles.teeChip, teePickKey === CUSTOM_TEE_ID && styles.teeChipOn]}
+                          onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
+                        >
+                          <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>
+                            Custom
+                          </Text>
+                          <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
+                            Your rating / slope
+                          </Text>
+                        </Pressable>
                       </View>
-                      <View style={styles.teeCustomField}>
-                        <Text style={styles.teeCustomLbl}>Slope</Text>
-                        <TextInput
-                          style={styles.teeNumInput}
-                          value={customSlope}
-                          onChangeText={setCustomSlope}
-                          placeholder="e.g. 128"
-                          placeholderTextColor={colors.subtle}
-                          keyboardType="number-pad"
-                        />
-                      </View>
-                    </View>
-                  ) : null}
+                      {teePickKey === CUSTOM_TEE_ID ? (
+                        <View style={styles.teeCustomRow}>
+                          <View style={styles.teeCustomField}>
+                            <Text style={styles.teeCustomLbl}>Course rating</Text>
+                            <TextInput
+                              style={styles.teeNumInput}
+                              value={customRating}
+                              onChangeText={setCustomRating}
+                              placeholder="e.g. 72.1"
+                              placeholderTextColor={colors.subtle}
+                              keyboardType="decimal-pad"
+                            />
+                          </View>
+                          <View style={styles.teeCustomField}>
+                            <Text style={styles.teeCustomLbl}>Slope</Text>
+                            <TextInput
+                              style={styles.teeNumInput}
+                              value={customSlope}
+                              onChangeText={setCustomSlope}
+                              placeholder="e.g. 128"
+                              placeholderTextColor={colors.subtle}
+                              keyboardType="number-pad"
+                            />
+                          </View>
+                        </View>
+                      ) : null}
+                    </>
+                  )}
                 </>
-              )}
+              ) : null}
             </>
           ) : null}
 
-          {screenStep === 4 ? (
+          {screenStep === 3 ? (
             <>
               <Text style={styles.sectionLabel}>Putting mode</Text>
               <View style={styles.dayRow}>
@@ -740,7 +830,7 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {screenStep === 5 ? (
+          {screenStep === 4 ? (
             <>
               <Text style={styles.body}>Choose how many holes you&apos;re playing on this course.</Text>
               {(
@@ -768,11 +858,11 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {screenStep === 6 ? (
+          {screenStep === 5 ? (
             <>
               <Text style={styles.body}>
-                Screenshot your sim&apos;s settings screen so your opponent can confirm putting mode, pins, wind, and
-                mulligans match. Both players use the honor system for conditions.
+                Take a photo of your sim&apos;s settings screen so your opponent can see your exact setup — putting mode,
+                pins, wind, and mulligans. Both players use the honor system for conditions.
               </Text>
               {libraryPermissionBlocked ? (
                 <View style={styles.photoPermCallout} accessibilityLiveRegion="polite">
@@ -811,7 +901,7 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          {screenStep === 7 && course && (challengeKind === 'open' || opponent) ? (
+          {screenStep === 6 && course && (challengeKind === 'open' || opponent) ? (
             <>
               <View style={styles.summaryBlock}>
                 {challengeKind === 'direct' && opponent ? (
@@ -873,26 +963,34 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
-          <View style={[styles.navRow, isWide && styles.navRowWide]}>
-            {stepIdx > 0 ? (
-              <Pressable style={styles.secondaryBtn} onPress={goBackStep}>
+          {stepIdx === totalSteps - 1 && stepIdx > 0 ? (
+            <View style={[styles.navFooterReview, isWide && styles.navRowWide]}>
+              <Pressable style={styles.secondaryBtnFull} onPress={goBackStep}>
                 <Text style={styles.secondaryBtnTxt}>Back</Text>
               </Pressable>
-            ) : (
-              <View style={styles.navSpacer} />
-            )}
-            {stepIdx < totalSteps - 1 ? (
-              <Pressable
-                style={[styles.primaryBtn, !canContinue && styles.primaryBtnDisabled]}
-                onPress={goNext}
-                disabled={!canContinue}
-              >
-                <Text style={styles.primaryBtnTxt}>Continue</Text>
-              </Pressable>
-            ) : (
-              <View style={styles.navSpacer} />
-            )}
-          </View>
+            </View>
+          ) : (
+            <View style={[styles.navRow, isWide && styles.navRowWide]}>
+              {stepIdx > 0 ? (
+                <Pressable style={styles.secondaryBtn} onPress={goBackStep}>
+                  <Text style={styles.secondaryBtnTxt}>Back</Text>
+                </Pressable>
+              ) : (
+                <View style={styles.navSpacer} />
+              )}
+              {stepIdx < totalSteps - 1 ? (
+                <Pressable
+                  style={[styles.primaryBtn, !canContinue && styles.primaryBtnDisabled]}
+                  onPress={() => void goNext()}
+                  disabled={!canContinue}
+                >
+                  <Text style={styles.primaryBtnTxt}>Continue</Text>
+                </Pressable>
+              ) : (
+                <View style={styles.navSpacer} />
+              )}
+            </View>
+          )}
         </ScrollView>
 
         <Modal
@@ -1153,9 +1251,21 @@ const styles = StyleSheet.create({
   sendBtnPressed: { opacity: 0.9 },
   sendBtnDisabled: { opacity: 0.7 },
   sendBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
+  navFooterReview: { marginTop: 22, width: '100%', alignSelf: 'stretch' },
   navRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 22, gap: 12 },
   navRowWide: { maxWidth: 480, alignSelf: 'center', width: '100%' },
   navSpacer: { flex: 1 },
+  secondaryBtnFull: {
+    width: '100%',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+    backgroundColor: colors.accentSoft,
+  },
   primaryBtn: {
     flex: 1,
     backgroundColor: colors.header,

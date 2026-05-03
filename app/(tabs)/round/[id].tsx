@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback } from 'react';
@@ -13,7 +14,6 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { IconTrashOutline } from '../../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { mergeViewStyles } from '../../../src/lib/mergeStyles';
@@ -329,7 +329,7 @@ export default function RoundDetailScreen() {
           </View>
 
           <Pressable style={styles.deleteBtn} onPress={onDelete}>
-            <IconTrashOutline size={16} color={colors.danger} />
+            <Ionicons name="trash-outline" size={22} color={colors.danger} />
             <Text style={styles.deleteTxt}>Delete round</Text>
           </Pressable>
           </View>
