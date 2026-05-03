@@ -153,7 +153,7 @@ export default function ResetPasswordScreen() {
           },
         ]}
       >
-        <AuthBrandBanner variant="signIn" />
+        <AuthBrandBanner />
 
         {linkPhase === 'pending' ? (
           <View style={styles.centerBlock}>

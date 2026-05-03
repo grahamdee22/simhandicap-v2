@@ -55,7 +55,7 @@ export default function SignInScreen() {
           },
         ]}
       >
-        <AuthBrandBanner variant="signIn" />
+        <AuthBrandBanner />
 
         <View style={styles.signUpPrompt}>
           <Text style={styles.signUpPromptText}>New here? </Text>

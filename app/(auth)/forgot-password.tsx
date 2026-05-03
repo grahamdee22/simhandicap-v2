@@ -62,7 +62,7 @@ export default function ForgotPasswordScreen() {
           },
         ]}
       >
-        <AuthBrandBanner variant="signIn" />
+        <AuthBrandBanner />
 
         {success ? (
           <View style={styles.successBlock}>

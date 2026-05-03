@@ -1,19 +1,14 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { colors } from '@/src/lib/constants';
 import { SimCapLogoHero, SIM_CAP_LOGO_ASPECT } from '@/src/components/SimCapLogoHero';
-
-type Props = {
-  variant: 'signIn' | 'signUp';
-};
 
 /**
  * Forest-green panel so the hero wordmark (light type) matches auth / home branding.
  */
-export function AuthBrandBanner({ variant }: Props) {
+export function AuthBrandBanner() {
   return (
     <View style={styles.panel}>
       <SimCapLogoHero style={styles.logo} wordmarkSize={36} />
-      {variant === 'signUp' ? <Text style={styles.welcome}>Welcome to SimCap — beta</Text> : null}
     </View>
   );
 }
@@ -34,14 +29,5 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 280,
     aspectRatio: SIM_CAP_LOGO_ASPECT,
-  },
-  welcome: {
-    marginTop: 12,
-    fontSize: 19,
-    lineHeight: 26,
-    fontWeight: '600',
-    color: '#fff',
-    textAlign: 'center',
-    letterSpacing: -0.3,
   },
 });

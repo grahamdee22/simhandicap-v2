@@ -65,15 +65,12 @@ export default function SignUpScreen() {
           { paddingTop: 16, paddingBottom: insets.bottom + 28 },
         ]}
       >
-        <AuthBrandBanner variant="signUp" />
+        <AuthBrandBanner />
 
         <View style={styles.contextBox}>
           <Text style={styles.contextTxt}>
-            SimCap tracks your simulator golf handicap based on the actual settings you play under. It's free and takes
-            2 minutes to set up.
-          </Text>
-          <Text style={[styles.contextTxt, styles.contextPara2]}>
-            Create a simple password just for this app — no need to use your regular one.
+            SimCap tracks your simulator golf handicap and lets you challenge other players to live head-to-head
+            matches. Free, and takes 2 minutes to set up.
           </Text>
         </View>
 
@@ -110,7 +107,7 @@ export default function SignUpScreen() {
           secureTextEntry
           textContentType="newPassword"
         />
-        <Text style={styles.passwordNote}>Use a simple password — this is a beta app, not a bank</Text>
+        <Text style={styles.passwordNote}>Use a simple password — just don't make it 1234.</Text>
 
         <Pressable
           onPress={onSubmit}
@@ -154,9 +151,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 23,
     color: colors.ink,
-  },
-  contextPara2: {
-    marginTop: 12,
   },
   lbl: {
     fontSize: 11,
