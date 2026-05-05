@@ -25,6 +25,7 @@ import {
   COURSE_SEEDS,
   courseMatchesSearch,
   CUSTOM_TEE_ID,
+  findCourseSeedIdByCourseName,
   getCourseById,
   getCourseTees,
   middleCourseTee,
@@ -39,7 +40,14 @@ import {
   type Wind,
 } from '../../src/lib/handicap';
 import { showAppAlert } from '../../src/lib/alertCompat';
-import { insertMatch, listMyMatches, updateMatchById, type DbMatchRow } from '../../src/lib/matchPlay';
+import { settingsScreenshotPickerOptions } from '../../src/lib/settingsScreenshotPicker';
+import {
+  countActiveDirectMatchesForUser,
+  findActiveDirectMatchBetween,
+  hasBlockingDirectMatchWithOpponent,
+  MAX_ACTIVE_DIRECT_CHALLENGES,
+} from '../../src/lib/matchDirectChallenges';
+import { getMatchById, insertMatch, listMyMatches, updateMatchById } from '../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../src/lib/matchPlayStorage';
 import { useResponsive } from '../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
@@ -51,32 +59,6 @@ type ChallengeKind = 'direct' | 'open';
 const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
 
 const MAX_OPEN_CHALLENGES_POSTED = 3;
-const MAX_ACTIVE_DIRECT_CHALLENGES = 3;
-
-const DIRECT_CONFLICT_STATUSES = new Set<DbMatchRow['status']>(['pending', 'active', 'waiting']);
-
-/** Non-open matches in pending/active/waiting where `selfId` is a participant (counts toward direct cap). */
-function countActiveDirectMatchesForUser(rows: DbMatchRow[], selfId: string): number {
-  let n = 0;
-  for (const m of rows) {
-    if (m.is_open || m.player_2_id == null) continue;
-    if (!DIRECT_CONFLICT_STATUSES.has(m.status)) continue;
-    if (m.player_1_id === selfId || m.player_2_id === selfId) n += 1;
-  }
-  return n;
-}
-
-/** True if `selfId` already has a non-open match vs `opponentId` in a state that blocks a new direct challenge. */
-function hasBlockingDirectMatchWithOpponent(rows: DbMatchRow[], selfId: string, opponentId: string): boolean {
-  for (const m of rows) {
-    if (m.is_open || m.player_2_id == null) continue;
-    if (!DIRECT_CONFLICT_STATUSES.has(m.status)) continue;
-    const p1 = m.player_1_id;
-    const p2 = m.player_2_id;
-    if ((p1 === selfId && p2 === opponentId) || (p1 === opponentId && p2 === selfId)) return true;
-  }
-  return false;
-}
 
 const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
   { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
@@ -160,8 +142,12 @@ function resolvePlayer1Tee(args: {
 export default function MatchCreateScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { fresh: freshRaw } = useLocalSearchParams<{ fresh?: string | string[] }>();
+  const { fresh: freshRaw, rematchFrom: rematchFromRaw } = useLocalSearchParams<{
+    fresh?: string | string[];
+    rematchFrom?: string | string[];
+  }>();
   const freshParam = Array.isArray(freshRaw) ? freshRaw[0] : freshRaw;
+  const rematchFromParam = Array.isArray(rematchFromRaw) ? rematchFromRaw[0] : rematchFromRaw;
   const insets = useSafeAreaInsets();
   const { gutter, isWide } = useResponsive();
   const { user } = useAuth();
@@ -189,8 +175,15 @@ export default function MatchCreateScreen() {
   const [submitBusy, setSubmitBusy] = useState(false);
   const [libraryPermissionBlocked, setLibraryPermissionBlocked] = useState(false);
   const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
+  const [rematchHydrating, setRematchHydrating] = useState(false);
+  /** Completed match id to store on inserted row as `rematch_from` when sending a rematch challenge. */
+  const [rematchSourceMatchId, setRematchSourceMatchId] = useState<string | null>(null);
+
+  const lastRematchHydratedRef = useRef<string | undefined>(undefined);
 
   const resetWizardToInitial = useCallback(() => {
+    lastRematchHydratedRef.current = undefined;
+    setRematchSourceMatchId(null);
     const plat = useAppStore.getState().preferredLogPlatform;
     setChallengeKind('direct');
     setStepIdx(0);
@@ -221,6 +214,194 @@ export default function MatchCreateScreen() {
     lastFreshAppliedRef.current = freshParam;
     resetWizardToInitial();
   }, [freshParam, resetWizardToInitial]);
+
+  useLayoutEffect(() => {
+    const r = rematchFromParam?.trim();
+    if (r) setRematchHydrating(true);
+    else setRematchHydrating(false);
+  }, [rematchFromParam]);
+
+  useEffect(() => {
+    const rid = rematchFromParam?.trim();
+    if (!rid) {
+      setRematchHydrating(false);
+      return;
+    }
+    if (!supabaseOn || !user?.id) {
+      setRematchHydrating(false);
+      return;
+    }
+    if (lastRematchHydratedRef.current === rid) {
+      setRematchHydrating(false);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const sourceRes = await getMatchById(rid);
+        if (cancelled) return;
+        if (sourceRes.error || !sourceRes.data) {
+          lastRematchHydratedRef.current = rid;
+          showAppAlert('Rematch', sourceRes.error ?? 'Could not load that match.', {
+            onOk: () => router.back(),
+          });
+          return;
+        }
+        const source = sourceRes.data;
+        if (source.status !== 'complete' || !source.player_2_id) {
+          lastRematchHydratedRef.current = rid;
+          showAppAlert('Rematch', 'That match is not available for a rematch.', {
+            onOk: () => router.back(),
+          });
+          return;
+        }
+        if (user.id !== source.player_1_id && user.id !== source.player_2_id) {
+          lastRematchHydratedRef.current = rid;
+          showAppAlert('Rematch', 'You were not in that match.', { onOk: () => router.back() });
+          return;
+        }
+
+        const myRes = await listMyMatches();
+        if (cancelled) return;
+        if (myRes.error || !myRes.data) {
+          showAppAlert('Rematch', myRes.error ?? 'Could not verify your matches.');
+          return;
+        }
+
+        const oppId = source.player_1_id === user.id ? source.player_2_id : source.player_1_id;
+        const existing = findActiveDirectMatchBetween(myRes.data, user.id, oppId);
+        if (existing) {
+          lastRematchHydratedRef.current = rid;
+          if (user.id === existing.player_2_id && existing.status === 'pending') {
+            showAppAlert('Rematch', 'Your opponent already wants a rematch!', {
+              onOk: () => router.replace(`/(tabs)/match-accept/${existing.id}` as never),
+            });
+          } else if (user.id === existing.player_1_id && existing.status === 'pending') {
+            showAppAlert(
+              'Rematch',
+              'You already have a direct challenge waiting. Finish or resolve it before starting another rematch.',
+              { onOk: () => router.back() }
+            );
+          } else {
+            showAppAlert('Rematch', 'You already have a match in progress with this opponent.', {
+              onOk: () => router.replace(`/(tabs)/match-score/${existing.id}` as never),
+            });
+          }
+          return;
+        }
+
+        if (countActiveDirectMatchesForUser(myRes.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
+          lastRematchHydratedRef.current = rid;
+          showAppAlert(
+            'Challenge limit',
+            `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve one before sending a rematch.`,
+            { onOk: () => router.back() }
+          );
+          return;
+        }
+
+        const groupsNow = useAppStore.getState().groups;
+        const opps = collectOpponents(groupsNow, user.id);
+        const oppPick =
+          opps.find((o) => o.userId === oppId) ??
+          ({
+            userId: oppId,
+            displayName: 'Golfer',
+            groupLine: 'Rematch',
+          } as OpponentPick);
+
+        const amP1Old = source.player_1_id === user.id;
+        const myTeeName = (amP1Old ? source.player_1_tee : source.player_2_tee) ?? 'White';
+        const myRating = amP1Old ? source.player_1_course_rating : source.player_2_course_rating;
+        const mySlope = amP1Old ? source.player_1_course_slope : source.player_2_course_slope;
+
+        const cid = findCourseSeedIdByCourseName(source.course_name) ?? 'pebble';
+        const courseSeed = getCourseById(cid);
+        const plat = useAppStore.getState().preferredLogPlatform;
+        const tees = courseSeed ? getCourseTees(courseSeed, plat) : [];
+
+        if (cancelled) return;
+
+        setChallengeKind('direct');
+        setOpponent(oppPick);
+        setPlatform(plat);
+        setCourseId(cid);
+        setPutting(
+          PUTTING_OPTS.some((x) => x.key === source.putting_mode)
+            ? (source.putting_mode as PuttingMode)
+            : 'auto_2putt'
+        );
+        setPin(
+          PIN_OPTS.some((x) => x.key === source.pin_placement)
+            ? (source.pin_placement as PinDay)
+            : 'thu'
+        );
+        setWind(WIND_OPTS.some((x) => x.key === source.wind) ? (source.wind as Wind) : 'off');
+        setMulligans(
+          MULL_OPTS.some((x) => x.key === source.mulligans) ? (source.mulligans as Mulligans) : 'off'
+        );
+
+        if (source.holes === 18) {
+          setHolesChoice('18');
+        } else if (source.nine_selection === 'back') {
+          setHolesChoice('back');
+        } else {
+          setHolesChoice('front');
+        }
+
+        const teeMatchesNamed =
+          courseSeed?.confident !== false &&
+          tees.some((t) => t.name === myTeeName) &&
+          myTeeName.trim().toLowerCase() !== 'custom';
+        if (teeMatchesNamed) {
+          setTeePickKey(myTeeName);
+          setCustomRating('');
+          setCustomSlope('');
+        } else {
+          setTeePickKey(CUSTOM_TEE_ID);
+          setCustomRating(String(myRating ?? ''));
+          setCustomSlope(mySlope != null ? String(mySlope) : '');
+        }
+
+        const myPhotoUrl = amP1Old
+          ? source.player_1_settings_photo_url?.trim() || null
+          : source.player_2_settings_photo_url?.trim() || null;
+
+        if (myPhotoUrl) {
+          const lower = myPhotoUrl.toLowerCase();
+          const mimeType = lower.includes('.png')
+            ? 'image/png'
+            : lower.includes('.webp')
+              ? 'image/webp'
+              : 'image/jpeg';
+          setSettingsImage({ uri: myPhotoUrl, mimeType, width: 0, height: 0 } as ImagePicker.ImagePickerAsset);
+          setDevSkipSettingsPhoto(false);
+          setStepIdx(6);
+        } else {
+          setSettingsImage(null);
+          setDevSkipSettingsPhoto(false);
+          setStepIdx(5);
+        }
+
+        setPlatOpen(false);
+        setCourseOpen(false);
+        setCourseSearchQuery('');
+        setLibraryPermissionBlocked(false);
+        setSubmitBusy(false);
+
+        setRematchSourceMatchId(rid);
+        lastRematchHydratedRef.current = rid;
+      } finally {
+        setRematchHydrating(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      setRematchHydrating(false);
+    };
+  }, [rematchFromParam, supabaseOn, user?.id, router]);
 
   const opponents = useMemo(
     () => (user?.id ? collectOpponents(groups, user.id) : []),
@@ -317,11 +498,7 @@ export default function MatchCreateScreen() {
   }, []);
 
   const onPickImage = useCallback(async () => {
-    const pickerOptions: ImagePicker.ImagePickerOptions = {
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsMultipleSelection: false,
-    };
+    const pickerOptions = settingsScreenshotPickerOptions();
 
     // Web: `requestMediaLibraryPermissionsAsync` is a no-op; keep the chain short so
     // `launchImageLibraryAsync` stays tied to the button press (user activation).
@@ -397,6 +574,16 @@ export default function MatchCreateScreen() {
     settingsImage,
     devSkipSettingsPhoto,
   ]);
+
+  const canSendChallenge = useMemo(() => {
+    if (!user || !course) return false;
+    if (challengeKind === 'direct' && !opponent) return false;
+    const photoUri = settingsImage?.uri;
+    const skipPhotoDev =
+      ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto && photoUri == null;
+    if (photoUri == null && !skipPhotoDev) return false;
+    return true;
+  }, [user, course, challengeKind, opponent, settingsImage, devSkipSettingsPhoto]);
 
   const selectChallengeKind = useCallback(
     async (key: ChallengeKind) => {
@@ -513,6 +700,7 @@ export default function MatchCreateScreen() {
       nine_selection: holesChoice === '18' ? null : holesChoice === 'front' ? 'front' : 'back',
       status: challengeKind === 'open' ? 'open' : 'pending',
       player_1_settings_photo_url: null,
+      rematch_from: challengeKind === 'direct' && rematchSourceMatchId ? rematchSourceMatchId : null,
     });
     if (ins.error || !ins.data) {
       setSubmitBusy(false);
@@ -547,6 +735,7 @@ export default function MatchCreateScreen() {
       }
     }
     setSubmitBusy(false);
+    setRematchSourceMatchId(null);
     router.replace('/(tabs)/groups' as never);
   }, [
     user,
@@ -565,6 +754,7 @@ export default function MatchCreateScreen() {
     holesChoice,
     settingsImage,
     devSkipSettingsPhoto,
+    rematchSourceMatchId,
     router,
   ]);
 
@@ -608,6 +798,12 @@ export default function MatchCreateScreen() {
   return (
     <ContentWidth bg={colors.surface}>
       <View style={styles.root}>
+        {rematchHydrating ? (
+          <View style={styles.rematchHydrateOverlay} pointerEvents="auto">
+            <ActivityIndicator size="large" color={colors.header} />
+            <Text style={styles.rematchHydrateTxt}>Setting up rematch…</Text>
+          </View>
+        ) : null}
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={{
@@ -948,9 +1144,13 @@ export default function MatchCreateScreen() {
                 <Text style={styles.devSkipPhotoNote}>Settings screenshot · Skipped (dev only)</Text>
               ) : null}
               <Pressable
-                style={({ pressed }) => [styles.sendBtn, pressed && styles.sendBtnPressed, submitBusy && styles.sendBtnDisabled]}
+                style={({ pressed }) => [
+                  styles.sendBtn,
+                  pressed && styles.sendBtnPressed,
+                  (submitBusy || rematchHydrating || !canSendChallenge) && styles.sendBtnDisabled,
+                ]}
                 onPress={() => void onSendChallenge()}
-                disabled={submitBusy}
+                disabled={submitBusy || rematchHydrating || !canSendChallenge}
               >
                 {submitBusy ? (
                   <ActivityIndicator color="#fff" />
@@ -1080,7 +1280,30 @@ export default function MatchCreateScreen() {
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, minHeight: 0, backgroundColor: colors.surface, width: '100%' },
+  root: {
+    flex: 1,
+    minHeight: 0,
+    backgroundColor: colors.surface,
+    width: '100%',
+    position: 'relative',
+  },
+  rematchHydrateOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+    opacity: 0.97,
+    zIndex: 40,
+    paddingHorizontal: 24,
+  },
+  rematchHydrateTxt: {
+    marginTop: 14,
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.muted,
+    textAlign: 'center',
+    lineHeight: 21,
+  },
   scroll: { flex: 1, minHeight: 0, width: '100%' },
   headerCancelPress: { paddingHorizontal: 8, paddingVertical: 4 },
   headerCancelTxt: { color: '#fff', fontSize: 16, fontWeight: '600' },

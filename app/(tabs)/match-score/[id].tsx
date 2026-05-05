@@ -648,8 +648,14 @@ export default function MatchScoreScreen() {
               <View key={h} style={styles.tr}>
                 <Text style={[styles.td, styles.colHole]}>{h}</Text>
                 <View style={[styles.tdCell, styles.colNum]}>
-                  <Text style={[styles.td, styles.tdCenter]}>{myGross ?? '—'}</Text>
-                  {reactionOnMyScore ? <Text style={styles.reactionEmoji}>{reactionOnMyScore}</Text> : null}
+                  <View style={styles.oppGrossInlineWrap}>
+                    <View style={styles.oppGrossInlineRow}>
+                      <Text style={[styles.td, styles.oppGrossInlineNum]}>{myGross ?? '—'}</Text>
+                      {reactionOnMyScore ? (
+                        <Text style={styles.reactionEmojiInline}>{reactionOnMyScore}</Text>
+                      ) : null}
+                    </View>
+                  </View>
                 </View>
                 <View style={[styles.tdCell, styles.colNum]}>
                   <Text style={[styles.td, styles.tdCenter]}>{myNetDisp}</Text>
@@ -895,7 +901,6 @@ const styles = StyleSheet.create({
   tdCenter: { textAlign: 'center', width: '100%' },
   colHole: { width: 44 },
   colNum: { flex: 1 },
-  reactionEmoji: { fontSize: 18, lineHeight: 24, marginTop: 2, textAlign: 'center' },
   oppGrossInlineWrap: { width: '100%', alignItems: 'center' },
   oppGrossInlineRow: {
     flexDirection: 'row',

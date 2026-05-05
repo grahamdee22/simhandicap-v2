@@ -21,6 +21,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../../src/lib/alertCompat';
+import { settingsScreenshotPickerOptions } from '../../../src/lib/settingsScreenshotPicker';
 import { PLATFORMS, colors, type PlatformId } from '../../../src/lib/constants';
 import {
   COURSE_SEEDS,
@@ -278,17 +279,29 @@ export default function MatchOpenAcceptScreen() {
   }, []);
 
   const onPickImage = useCallback(async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const pickerOpts = settingsScreenshotPickerOptions();
+
+    if (Platform.OS === 'web') {
+      const result = await ImagePicker.launchImageLibraryAsync(pickerOpts);
+      if (!result.canceled && result.assets[0]) {
+        setSettingsImage(result.assets[0]);
+        setLibraryPermissionBlocked(false);
+        setDevSkipSettingsPhoto(false);
+      }
+      return;
+    }
+
+    let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
+    if (!perm.granted) {
+      perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
+    }
     if (!perm.granted) {
       setLibraryPermissionBlocked(true);
       return;
     }
     setLibraryPermissionBlocked(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsMultipleSelection: false,
-    });
+
+    const result = await ImagePicker.launchImageLibraryAsync(pickerOpts);
     if (!result.canceled && result.assets[0]) {
       setSettingsImage(result.assets[0]);
       setLibraryPermissionBlocked(false);

@@ -14,8 +14,14 @@ import {
   matchIndexRoundStorageKey,
 } from '../../../src/lib/matchPlayIndexRound';
 import {
+  countActiveDirectMatchesForUser,
+  findActiveDirectMatchBetween,
+  MAX_ACTIVE_DIRECT_CHALLENGES,
+} from '../../../src/lib/matchDirectChallenges';
+import {
   getMatchById,
   listMatchHoles,
+  listMyMatches,
   type DbMatchHoleRow,
   type DbMatchRow,
 } from '../../../src/lib/matchPlay';
@@ -43,6 +49,7 @@ export default function MatchResultsScreen() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [indexRoundUi, setIndexRoundUi] = useState<IndexRoundUi>('off');
+  const [rematchBusy, setRematchBusy] = useState(false);
 
   const supabaseOn = isSupabaseConfigured();
 
@@ -122,6 +129,49 @@ export default function MatchResultsScreen() {
     await AsyncStorage.setItem(matchIndexRoundStorageKey(matchId, userId), 'skipped');
     setIndexRoundUi('skipped');
   }, [matchId, userId]);
+
+  const onRematch = useCallback(async () => {
+    if (!match?.player_2_id || !userId || !matchId) return;
+    setRematchBusy(true);
+    const res = await listMyMatches();
+    setRematchBusy(false);
+    if (res.error || !res.data) {
+      showAppAlert('Rematch', res.error ?? 'Could not verify your matches.');
+      return;
+    }
+    const p1 = match.player_1_id;
+    const p2 = match.player_2_id;
+    const oppId = userId === p1 ? p2 : p1;
+    const oppName = userId === p1 ? names.p2 : names.p1;
+    const existing = findActiveDirectMatchBetween(res.data, userId, oppId);
+    if (existing) {
+      if (userId === existing.player_2_id && existing.status === 'pending') {
+        showAppAlert('Rematch', 'Your opponent already wants a rematch!', {
+          onOk: () => router.push(`/(tabs)/match-accept/${existing.id}` as never),
+        });
+        return;
+      }
+      if (userId === existing.player_1_id && existing.status === 'pending') {
+        showAppAlert(
+          'Rematch',
+          `You already have a challenge waiting on ${oppName}. Wait for them to accept before sending another.`
+        );
+        return;
+      }
+      showAppAlert('Rematch', `You and ${oppName} already have a match in progress.`, {
+        onOk: () => router.push(`/(tabs)/match-score/${existing.id}` as never),
+      });
+      return;
+    }
+    if (countActiveDirectMatchesForUser(res.data, userId) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
+      showAppAlert(
+        'Challenge limit',
+        `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a rematch.`
+      );
+      return;
+    }
+    router.push(`/(tabs)/match-create?rematchFrom=${matchId}` as never);
+  }, [match, matchId, names.p1, names.p2, router, userId]);
 
   const onSaveToIndex = useCallback(async () => {
     if (!match || !userId || !matchId) return;
@@ -319,6 +369,24 @@ export default function MatchResultsScreen() {
           </View>
         </View>
 
+        {match.player_2_id &&
+        userId &&
+        (userId === match.player_1_id || userId === match.player_2_id) ? (
+          <Pressable
+            style={[styles.secondaryBtn, styles.rematchBtn, rematchBusy && styles.btnBusy]}
+            disabled={rematchBusy}
+            onPress={() => void onRematch()}
+            accessibilityRole="button"
+            accessibilityLabel="Rematch this opponent"
+          >
+            {rematchBusy ? (
+              <ActivityIndicator color={colors.accent} />
+            ) : (
+              <Text style={styles.secondaryBtnTxt}>Rematch</Text>
+            )}
+          </Pressable>
+        ) : null}
+
         {match.player_2_id ? (
           <View style={styles.holeByHole}>
             <Text style={styles.holeByHoleTitle}>Hole-by-hole</Text>
@@ -346,12 +414,16 @@ export default function MatchResultsScreen() {
                 <View key={h} style={styles.hbhRow}>
                   <Text style={[styles.hbhTd, styles.hbhHole]}>{h}</Text>
                   <View style={[styles.hbhCell, styles.hbhCol]}>
-                    <Text style={styles.hbhGross}>{g1 ?? '—'}</Text>
-                    {rx1 ? <Text style={styles.hbhRx}>{rx1}</Text> : <View style={styles.hbhRxSlot} />}
+                    <View style={styles.hbhGrossRow}>
+                      <Text style={styles.hbhGrossNum}>{g1 ?? '—'}</Text>
+                      {rx1 ? <Text style={styles.hbhRxInline}>{rx1}</Text> : null}
+                    </View>
                   </View>
                   <View style={[styles.hbhCell, styles.hbhCol]}>
-                    <Text style={styles.hbhGross}>{g2 ?? '—'}</Text>
-                    {rx2 ? <Text style={styles.hbhRx}>{rx2}</Text> : <View style={styles.hbhRxSlot} />}
+                    <View style={styles.hbhGrossRow}>
+                      <Text style={styles.hbhGrossNum}>{g2 ?? '—'}</Text>
+                      {rx2 ? <Text style={styles.hbhRxInline}>{rx2}</Text> : null}
+                    </View>
                   </View>
                 </View>
               );
@@ -440,6 +512,7 @@ const styles = StyleSheet.create({
   },
   scoreName: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.ink, paddingRight: 12 },
   scoreVal: { fontSize: 16, fontWeight: '800', color: colors.ink },
+  rematchBtn: { marginTop: 4, marginBottom: 14 },
   holeByHole: {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
@@ -473,9 +546,15 @@ const styles = StyleSheet.create({
   hbhHole: { width: 40 },
   hbhCol: { flex: 1, minWidth: 0 },
   hbhCell: { alignItems: 'center' },
-  hbhGross: { fontSize: 15, fontWeight: '700', color: colors.ink, textAlign: 'center' },
-  hbhRx: { fontSize: 17, lineHeight: 22, marginTop: 2, textAlign: 'center' },
-  hbhRxSlot: { minHeight: 22 },
+  hbhGrossRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    maxWidth: '100%',
+  },
+  hbhGrossNum: { fontSize: 15, fontWeight: '700', color: colors.ink, textAlign: 'center' },
+  hbhRxInline: { fontSize: 17, lineHeight: 20 },
   indexPromptCard: {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,

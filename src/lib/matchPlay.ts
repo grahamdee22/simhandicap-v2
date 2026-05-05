@@ -50,6 +50,8 @@ export type DbMatchRow = {
   player_2_finished: boolean;
   player_1_settings_photo_url: string | null;
   player_2_settings_photo_url: string | null;
+  /** Prior match id when this row is a direct rematch created from a completed match. */
+  rematch_from?: string | null;
 };
 
 export type MatchListResult = { data: DbMatchRow[] | null; error: string | null };
@@ -135,6 +137,7 @@ export type InsertMatchInput = {
   player_2_finished?: boolean;
   player_1_settings_photo_url?: string | null;
   player_2_settings_photo_url?: string | null;
+  rematch_from?: string | null;
 };
 
 /** Updatable subset (RLS still applies). */
@@ -410,6 +413,7 @@ export async function insertMatch(input: InsertMatchInput): Promise<MatchSingleR
     player_2_finished: input.player_2_finished ?? false,
     player_1_settings_photo_url: input.player_1_settings_photo_url ?? null,
     player_2_settings_photo_url: input.player_2_settings_photo_url ?? null,
+    rematch_from: input.rematch_from ?? null,
   };
 
   const { data, error } = await supabase.from('matches').insert(payload).select('*').single();

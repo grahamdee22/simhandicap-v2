@@ -43,6 +43,18 @@ function base64ToArrayBuffer(base64: string): ArrayBuffer {
 async function readLocalImageBytes(uri: string): Promise<ArrayBuffer> {
   console.log('[matchPlayStorage] read uri', uri);
 
+  if (uri.startsWith('http://') || uri.startsWith('https://')) {
+    const res = await fetch(uri);
+    if (!res.ok) {
+      throw new Error(`Could not read image (${res.status})`);
+    }
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength === 0) {
+      throw new Error('Image is empty');
+    }
+    return buf;
+  }
+
   if (Platform.OS === 'web') {
     const res = await fetch(uri);
     if (!res.ok) {

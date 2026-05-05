@@ -1,10 +1,11 @@
 import { useNavigation } from '@react-navigation/native';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   AppState,
+  BackHandler,
   Image,
   Linking,
   Modal,
@@ -25,6 +26,8 @@ import { PLATFORMS, colors, type PlatformId } from '../../../src/lib/constants';
 import {
   COURSE_SEEDS,
   CUSTOM_TEE_ID,
+  findCourseSeedIdByCourseName,
+  getCourseById,
   getCourseTees,
   middleCourseTee,
   ratingForCourse,
@@ -37,8 +40,14 @@ import {
   round1,
   type Wind,
 } from '../../../src/lib/handicap';
-import { getMatchById, updateMatchById, type DbMatchRow } from '../../../src/lib/matchPlay';
+import {
+  getMatchById,
+  updateMatchById,
+  type DbMatchRow,
+  type MatchUpdatePatch,
+} from '../../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../../src/lib/matchPlayStorage';
+import { settingsScreenshotPickerOptions } from '../../../src/lib/settingsScreenshotPicker';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
@@ -153,6 +162,9 @@ export default function MatchAcceptScreen() {
   const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
   const [submitBusy, setSubmitBusy] = useState(false);
   const [p1SettingsImageError, setP1SettingsImageError] = useState(false);
+  /** True when accept flow was hydrated from `rematch_from` (locked path: photo + confirm only). */
+  const [rematchAcceptLocked, setRematchAcceptLocked] = useState(false);
+  const skipNextCourseTeeResetRef = useRef(false);
 
   const course = useMemo(
     () => (match ? findCourseByMatchName(match.course_name) : undefined),
@@ -163,6 +175,10 @@ export default function MatchAcceptScreen() {
 
   useEffect(() => {
     if (!course) return;
+    if (skipNextCourseTeeResetRef.current) {
+      skipNextCourseTeeResetRef.current = false;
+      return;
+    }
     const tees = getCourseTees(course, platform);
     if (tees.length === 0) return;
     if (course.confident === false) {
@@ -203,6 +219,9 @@ export default function MatchAcceptScreen() {
     let cancelled = false;
     setLoadingMatch(true);
     setLoadErr(null);
+    setStep(0);
+    setSettingsImage(null);
+    setRematchAcceptLocked(false);
 
     void (async () => {
       const res = await getMatchById(matchId);
@@ -213,19 +232,99 @@ export default function MatchAcceptScreen() {
         setLoadingMatch(false);
         return;
       }
-      const m = res.data;
-      if (m.player_2_id !== user.id || m.status !== 'pending' || m.is_open) {
+      let displayMatch = res.data;
+      if (displayMatch.player_2_id !== user.id || displayMatch.status !== 'pending' || displayMatch.is_open) {
         setLoadErr('This challenge is no longer available to accept.');
         setMatch(null);
         setLoadingMatch(false);
         return;
       }
-      setMatch(m);
+
+      const rematchId = displayMatch.rematch_from?.trim();
+      if (rematchId) {
+        const srcRes = await getMatchById(rematchId);
+        if (!cancelled && srcRes.data && srcRes.data.status === 'complete') {
+          const src = srcRes.data;
+          const uid = user.id;
+          if (src.player_1_id === uid || src.player_2_id === uid) {
+            const wasP1OnSource = src.player_1_id === uid;
+            const prefs: MatchUpdatePatch = {};
+            if (PUTTING_OPTS.some((x) => x.key === src.putting_mode) && src.putting_mode !== displayMatch.putting_mode) {
+              prefs.putting_mode = src.putting_mode;
+            }
+            if (PIN_OPTS.some((x) => x.key === src.pin_placement) && src.pin_placement !== displayMatch.pin_placement) {
+              prefs.pin_placement = src.pin_placement;
+            }
+            if (WIND_OPTS.some((x) => x.key === src.wind) && src.wind !== displayMatch.wind) {
+              prefs.wind = src.wind;
+            }
+            if (MULL_OPTS.some((x) => x.key === src.mulligans) && src.mulligans !== displayMatch.mulligans) {
+              prefs.mulligans = src.mulligans;
+            }
+            if (Object.keys(prefs).length > 0) {
+              const prefUpd = await updateMatchById(displayMatch.id, prefs);
+              if (!cancelled && !prefUpd.error && prefUpd.data) {
+                displayMatch = prefUpd.data;
+              }
+            }
+
+            const plat = useAppStore.getState().preferredLogPlatform;
+            const cid = findCourseSeedIdByCourseName(src.course_name) ?? null;
+            const courseSeed = cid ? getCourseById(cid) : undefined;
+            const tees = courseSeed ? getCourseTees(courseSeed, plat) : [];
+            const myTeeName = (wasP1OnSource ? src.player_1_tee : src.player_2_tee) ?? 'White';
+            const myRating = wasP1OnSource ? src.player_1_course_rating : src.player_2_course_rating;
+            const mySlope = wasP1OnSource ? src.player_1_course_slope : src.player_2_course_slope;
+
+            skipNextCourseTeeResetRef.current = true;
+            setPlatform(plat);
+            const teeMatchesNamed =
+              courseSeed?.confident !== false &&
+              tees.some((t) => t.name === myTeeName) &&
+              myTeeName.trim().toLowerCase() !== 'custom';
+            if (teeMatchesNamed) {
+              setTeePickKey(myTeeName);
+              setCustomRating('');
+              setCustomSlope('');
+            } else {
+              setTeePickKey(CUSTOM_TEE_ID);
+              setCustomRating(String(myRating ?? ''));
+              setCustomSlope(mySlope != null ? String(mySlope) : '');
+            }
+
+            setStep(2);
+            const myPhotoUrl = wasP1OnSource
+              ? src.player_1_settings_photo_url?.trim() || null
+              : src.player_2_settings_photo_url?.trim() || null;
+            if (myPhotoUrl && /^https?:\/\//i.test(myPhotoUrl)) {
+              const lower = myPhotoUrl.toLowerCase();
+              const mimeType = lower.includes('.png')
+                ? 'image/png'
+                : lower.includes('.webp')
+                  ? 'image/webp'
+                  : 'image/jpeg';
+              setSettingsImage({
+                uri: myPhotoUrl,
+                mimeType,
+                width: 0,
+                height: 0,
+              } as ImagePicker.ImagePickerAsset);
+            } else {
+              setSettingsImage(null);
+            }
+            setDevSkipSettingsPhoto(false);
+            setRematchAcceptLocked(true);
+          }
+        }
+      }
+
+      if (cancelled) return;
+      setMatch(displayMatch);
       if (supabase) {
         const { data: prof } = await supabase
           .from('profiles')
           .select('display_name')
-          .eq('id', m.player_1_id)
+          .eq('id', displayMatch.player_1_id)
           .maybeSingle();
         if (!cancelled && prof && typeof (prof as { display_name?: string }).display_name === 'string') {
           const dn = (prof as { display_name: string }).display_name?.trim();
@@ -244,9 +343,23 @@ export default function MatchAcceptScreen() {
     setP1SettingsImageError(false);
   }, [match?.player_1_settings_photo_url]);
 
+  useEffect(() => {
+    if (!rematchAcceptLocked) return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (step === 2) return true;
+      if (step === 3) {
+        setStep(2);
+        return true;
+      }
+      return false;
+    });
+    return () => sub.remove();
+  }, [rematchAcceptLocked, step]);
+
   useLayoutEffect(() => {
     navigation.setOptions({
       title: 'Accept challenge',
+      gestureEnabled: !rematchAcceptLocked,
       headerRight: () => (
         <Pressable
           onPress={() => router.back()}
@@ -259,7 +372,7 @@ export default function MatchAcceptScreen() {
         </Pressable>
       ),
     });
-  }, [navigation, router]);
+  }, [navigation, router, rematchAcceptLocked]);
 
   const openPhotoSettings = useCallback(() => {
     if (Platform.OS === 'web') return;
@@ -267,23 +380,45 @@ export default function MatchAcceptScreen() {
   }, []);
 
   const onPickImage = useCallback(async () => {
-    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    const pickerOpts = settingsScreenshotPickerOptions();
+
+    if (Platform.OS === 'web') {
+      const result = await ImagePicker.launchImageLibraryAsync(pickerOpts);
+      if (!result.canceled && result.assets[0]) {
+        setSettingsImage(result.assets[0]);
+        setLibraryPermissionBlocked(false);
+        setDevSkipSettingsPhoto(false);
+      }
+      return;
+    }
+
+    let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
+    if (!perm.granted) {
+      perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
+    }
     if (!perm.granted) {
       setLibraryPermissionBlocked(true);
       return;
     }
     setLibraryPermissionBlocked(false);
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
-      quality: 0.85,
-      allowsMultipleSelection: false,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setSettingsImage(result.assets[0]);
-      setLibraryPermissionBlocked(false);
-      setDevSkipSettingsPhoto(false);
+
+    const unlockStackGestures = rematchAcceptLocked;
+    if (unlockStackGestures) {
+      navigation.setOptions({ gestureEnabled: true });
     }
-  }, []);
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync(pickerOpts);
+      if (!result.canceled && result.assets[0]) {
+        setSettingsImage(result.assets[0]);
+        setLibraryPermissionBlocked(false);
+        setDevSkipSettingsPhoto(false);
+      }
+    } finally {
+      if (unlockStackGestures) {
+        navigation.setOptions({ gestureEnabled: !rematchAcceptLocked });
+      }
+    }
+  }, [navigation, rematchAcceptLocked]);
 
   const teeResolved = useMemo(
     () =>
@@ -320,8 +455,15 @@ export default function MatchAcceptScreen() {
   }, [canContinue, step]);
 
   const goBackStep = useCallback(() => {
+    if (rematchAcceptLocked) {
+      if (step === 2) return;
+      if (step === 3) {
+        setStep(2);
+        return;
+      }
+    }
     if (step > 0) setStep((s) => s - 1);
-  }, [step]);
+  }, [step, rematchAcceptLocked]);
 
   const onConfirmAccept = useCallback(async () => {
     if (!user || !match || !teeResolved || !matchId) return;
@@ -614,10 +756,18 @@ export default function MatchAcceptScreen() {
                   ) : null}
                 </View>
               ) : null}
+              {rematchAcceptLocked ? (
+                <View style={styles.rematchNotice} accessibilityRole="text">
+                  <Text style={styles.rematchNoticeTxt}>
+                    Settings must match the original match. If you&apos;d like to change conditions, create a new
+                    challenge instead.
+                  </Text>
+                </View>
+              ) : null}
               <Pressable style={styles.pickPhotoBtn} onPress={() => void onPickImage()}>
                 <Text style={styles.pickPhotoBtnTxt}>{settingsImage ? 'Change photo' : 'Choose photo'}</Text>
               </Pressable>
-              {ALLOW_SKIP_SETTINGS_SCREENSHOT && !settingsImage?.uri && !devSkipSettingsPhoto ? (
+              {ALLOW_SKIP_SETTINGS_SCREENSHOT && !rematchAcceptLocked && !settingsImage?.uri && !devSkipSettingsPhoto ? (
                 <Pressable
                   style={styles.skipPhotoBtn}
                   onPress={() => setDevSkipSettingsPhoto(true)}
@@ -669,7 +819,7 @@ export default function MatchAcceptScreen() {
           ) : null}
 
           <View style={[styles.navFooter, isWide && styles.navFooterWide]}>
-            {step > 0 ? (
+            {step > 0 && !(rematchAcceptLocked && step === 2) ? (
               <Pressable style={styles.secondaryBtnNav} onPress={goBackStep}>
                 <Text style={styles.secondaryBtnTxt}>Back</Text>
               </Pressable>
@@ -726,6 +876,16 @@ const styles = StyleSheet.create({
   stepHead: { fontSize: 20, fontWeight: '700', color: colors.ink, marginBottom: 14 },
   body: { fontSize: 14, color: colors.muted, lineHeight: 21, marginBottom: 10 },
   bodyStrong: { fontWeight: '700', color: colors.ink },
+  rematchNotice: {
+    marginBottom: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 9,
+    backgroundColor: colors.accentSoft,
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+  },
+  rematchNoticeTxt: { fontSize: 13, color: colors.ink, lineHeight: 20, fontWeight: '500' },
   sectionLabel: {
     fontSize: 10,
     fontWeight: '600',
