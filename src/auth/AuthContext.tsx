@@ -9,12 +9,15 @@ import {
   fetchInboundGroupInvitesIntoStore,
   fetchMySocialGroupsIntoStore,
 } from '../lib/socialGroups';
+import { clearOnboardingSeen, getOnboardingSeen, setOnboardingSeen } from '../lib/onboardingStorage';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
 
 type AuthContextValue = {
   configured: boolean;
   loading: boolean;
+  /** False until AsyncStorage onboarding flag has been read (blocks auth redirects). */
+  onboardingReady: boolean;
   session: Session | null;
   user: User | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
@@ -25,6 +28,10 @@ type AuthContextValue = {
   ) => Promise<{ error?: string; sessionCreated?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  /** Persist onboarding seen and update in-memory gate (call before leaving onboarding). */
+  completeOnboarding: () => Promise<void>;
+  /** Dev: clear onboarding flag in storage + memory so onboarding can be shown again. */
+  resetOnboardingForDev: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -37,6 +44,7 @@ async function syncProfileIntoStore(): Promise<void> {
 
 /** Expo Router may omit route groups from segments; pathname is usually `/sign-in`, `/sign-up`. */
 function isAuthRoute(segments: string[], pathname: string): boolean {
+  if (segments.includes('onboarding') || pathname.includes('/onboarding')) return true;
   if (segments[0] === '(auth)' || segments.includes('(auth)')) return true;
   if (
     segments.includes('sign-in') ||
@@ -61,10 +69,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const configured = isSupabaseConfigured();
   const [loading, setLoading] = useState(configured);
   const [session, setSession] = useState<Session | null>(null);
+  const [onboardingReady, setOnboardingReady] = useState(false);
+  const [onboardingSeen, setOnboardingSeenState] = useState(false);
   const router = useRouter();
   const segments = useSegments();
   const pathname = usePathname();
   const navReady = useRootNavigationState()?.key != null;
+
+  useEffect(() => {
+    let cancelled = false;
+    void getOnboardingSeen().then((seen) => {
+      if (!cancelled) {
+        setOnboardingSeenState(seen);
+        setOnboardingReady(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!configured) {
@@ -130,16 +153,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [configured, session?.user?.id, session?.access_token]);
 
   useEffect(() => {
-    if (!configured || loading || !navReady) return;
+    if (!navReady || !onboardingReady) return;
+    if (configured && loading) return;
     const inAuth = isAuthRoute(segments, pathname);
     const p = pathname.replace(/\/$/, '') || '/';
     const onPasswordReset = p.includes('reset-password');
     if (!session && !inAuth) {
-      router.replace('/(auth)/sign-in');
+      if (!onboardingSeen) {
+        router.replace('/(auth)/onboarding');
+      } else {
+        router.replace('/(auth)/sign-in');
+      }
     } else if (session && inAuth && !onPasswordReset) {
       router.replace('/');
     }
-  }, [configured, loading, session, segments, pathname, navReady, router]);
+  }, [
+    configured,
+    loading,
+    session,
+    segments,
+    pathname,
+    navReady,
+    router,
+    onboardingReady,
+    onboardingSeen,
+  ]);
+
+  const completeOnboarding = useCallback(async () => {
+    await setOnboardingSeen();
+    setOnboardingSeenState(true);
+  }, []);
+
+  const resetOnboardingForDev = useCallback(async () => {
+    await clearOnboardingSeen();
+    setOnboardingSeenState(false);
+  }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'Supabase is not configured' };
@@ -196,14 +244,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       configured,
       loading,
+      onboardingReady,
       session,
       user: session?.user ?? null,
       signIn,
       signUp,
       signOut,
       refreshProfile,
+      completeOnboarding,
+      resetOnboardingForDev,
     }),
-    [configured, loading, session, signIn, signUp, signOut, refreshProfile]
+    [
+      configured,
+      loading,
+      onboardingReady,
+      session,
+      signIn,
+      signUp,
+      signOut,
+      refreshProfile,
+      completeOnboarding,
+      resetOnboardingForDev,
+    ]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

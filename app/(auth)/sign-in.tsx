@@ -20,7 +20,7 @@ import { colors } from '@/src/lib/constants';
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { signIn } = useAuth();
+  const { signIn, resetOnboardingForDev } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
@@ -111,6 +111,22 @@ export default function SignInScreen() {
             </Pressable>
           </Link>
         </View>
+
+        {__DEV__ ? (
+          <Pressable
+            style={({ pressed }) => [styles.devOnboardingBtn, pressed && styles.devOnboardingBtnPressed]}
+            onPress={() => {
+              void (async () => {
+                await resetOnboardingForDev();
+                router.replace('/(auth)/onboarding');
+              })();
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Development only: clear onboarding flag and open onboarding"
+          >
+            <Text style={styles.devOnboardingTxt}>Dev: show onboarding</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
   );
@@ -185,6 +201,22 @@ const styles = StyleSheet.create({
   primaryDisabled: { opacity: 0.7 },
   primaryTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
   forgotRow: { marginTop: 16, alignItems: 'center' },
+  devOnboardingBtn: {
+    marginTop: 28,
+    alignSelf: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.surface,
+  },
+  devOnboardingBtnPressed: { opacity: 0.75 },
+  devOnboardingTxt: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.subtle,
+  },
   forgotLink: {
     fontSize: 15,
     fontWeight: '600',

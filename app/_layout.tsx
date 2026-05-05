@@ -63,10 +63,10 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const { configured, loading } = useAuth();
+  const { configured, loading, onboardingReady } = useAuth();
   const colorScheme = useColorScheme();
 
-  if (configured && loading) {
+  if ((configured && loading) || !onboardingReady) {
     return null;
   }
 
