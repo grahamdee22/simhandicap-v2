@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
@@ -19,6 +19,7 @@ import {
   type DbMatchHoleRow,
   type DbMatchRow,
 } from '../../../src/lib/matchPlay';
+import { grossMapsForPlayers, matchHoleNumbers } from '../../../src/lib/matchStrokeMath';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
@@ -44,6 +45,13 @@ export default function MatchResultsScreen() {
   const [indexRoundUi, setIndexRoundUi] = useState<IndexRoundUi>('off');
 
   const supabaseOn = isSupabaseConfigured();
+
+  const holeNumsList = useMemo(() => (match ? matchHoleNumbers(match) : []), [match]);
+
+  const grossMapsComplete = useMemo(() => {
+    if (!match?.player_2_id) return { p1: new Map<number, number>(), p2: new Map<number, number>() };
+    return grossMapsForPlayers(holesRows, match.player_1_id, match.player_2_id);
+  }, [holesRows, match]);
 
   const load = useCallback(async () => {
     if (!matchId || !supabaseOn) {
@@ -311,6 +319,46 @@ export default function MatchResultsScreen() {
           </View>
         </View>
 
+        {match.player_2_id ? (
+          <View style={styles.holeByHole}>
+            <Text style={styles.holeByHoleTitle}>Hole-by-hole</Text>
+            <View style={styles.hbhHead}>
+              <Text style={[styles.hbhTh, styles.hbhHole]}>Hole</Text>
+              <Text style={[styles.hbhTh, styles.hbhCol]} numberOfLines={1}>
+                {names.p1}
+              </Text>
+              <Text style={[styles.hbhTh, styles.hbhCol]} numberOfLines={1}>
+                {names.p2}
+              </Text>
+            </View>
+            {holeNumsList.map((h) => {
+              const g1 = grossMapsComplete.p1.get(h);
+              const g2 = grossMapsComplete.p2.get(h);
+              const row1 = holesRows.find(
+                (r) => r.player_id === match.player_1_id && r.hole_number === h
+              );
+              const row2 = holesRows.find(
+                (r) => r.player_id === match.player_2_id && r.hole_number === h
+              );
+              const rx1 = row1?.player_2_reaction?.trim();
+              const rx2 = row2?.player_1_reaction?.trim();
+              return (
+                <View key={h} style={styles.hbhRow}>
+                  <Text style={[styles.hbhTd, styles.hbhHole]}>{h}</Text>
+                  <View style={[styles.hbhCell, styles.hbhCol]}>
+                    <Text style={styles.hbhGross}>{g1 ?? '—'}</Text>
+                    {rx1 ? <Text style={styles.hbhRx}>{rx1}</Text> : <View style={styles.hbhRxSlot} />}
+                  </View>
+                  <View style={[styles.hbhCell, styles.hbhCol]}>
+                    <Text style={styles.hbhGross}>{g2 ?? '—'}</Text>
+                    {rx2 ? <Text style={styles.hbhRx}>{rx2}</Text> : <View style={styles.hbhRxSlot} />}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        ) : null}
+
         {indexRoundUi === 'prompt' || indexRoundUi === 'saving' ? (
           <View style={styles.indexPromptCard}>
             <Text style={styles.indexPromptTitle}>Save this round to your SimCap index?</Text>
@@ -392,6 +440,42 @@ const styles = StyleSheet.create({
   },
   scoreName: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.ink, paddingRight: 12 },
   scoreVal: { fontSize: 16, fontWeight: '800', color: colors.ink },
+  holeByHole: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+    padding: 14,
+    marginBottom: 16,
+  },
+  holeByHoleTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.ink,
+    marginBottom: 10,
+  },
+  hbhHead: {
+    flexDirection: 'row',
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    paddingBottom: 8,
+    marginBottom: 6,
+  },
+  hbhRow: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 6 },
+  hbhTh: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.subtle,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  hbhTd: { fontSize: 13, color: colors.muted, fontWeight: '600' },
+  hbhHole: { width: 40 },
+  hbhCol: { flex: 1, minWidth: 0 },
+  hbhCell: { alignItems: 'center' },
+  hbhGross: { fontSize: 15, fontWeight: '700', color: colors.ink, textAlign: 'center' },
+  hbhRx: { fontSize: 17, lineHeight: 22, marginTop: 2, textAlign: 'center' },
+  hbhRxSlot: { minHeight: 22 },
   indexPromptCard: {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,

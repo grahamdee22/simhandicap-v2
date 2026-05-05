@@ -56,6 +56,10 @@ export type MatchListResult = { data: DbMatchRow[] | null; error: string | null 
 
 export type MatchSingleResult = { data: DbMatchRow | null; error: string | null };
 
+/** Allowed emoji reactions on an opponent's hole score (must match `set_match_hole_reaction` RPC). */
+export const MATCH_HOLE_REACTION_EMOJIS = ['🔥', '💀', '😤', '🫡', '😂', '💩'] as const;
+export type MatchHoleReactionEmoji = (typeof MATCH_HOLE_REACTION_EMOJIS)[number];
+
 /** Row from `public.match_holes`. */
 export type DbMatchHoleRow = {
   id: string;
@@ -64,7 +68,33 @@ export type DbMatchHoleRow = {
   hole_number: number;
   gross_score: number;
   created_at: string;
+  /** Present when `player_id` is player 2: emoji from player 1 reacting to this gross score. */
+  player_1_reaction?: string | null;
+  /** Present when `player_id` is player 1: emoji from player 2 reacting to this gross score. */
+  player_2_reaction?: string | null;
 };
+
+/** Reaction the opponent left on the viewer’s hole row (viewer must have posted this hole). */
+export function reactionReceivedOnMyHoleRow(
+  myRow: DbMatchHoleRow | undefined,
+  viewerIsPlayer1: boolean
+): string | null {
+  if (!myRow) return null;
+  const r = viewerIsPlayer1 ? myRow.player_2_reaction : myRow.player_1_reaction;
+  const t = typeof r === 'string' ? r.trim() : '';
+  return t.length > 0 ? t : null;
+}
+
+/** Reaction the viewer sent on the opponent’s hole row (opponent must have posted this hole). */
+export function reactionSentOnOpponentRow(
+  opponentRow: DbMatchHoleRow | undefined,
+  viewerIsPlayer1: boolean
+): string | null {
+  if (!opponentRow) return null;
+  const r = viewerIsPlayer1 ? opponentRow.player_1_reaction : opponentRow.player_2_reaction;
+  const t = typeof r === 'string' ? r.trim() : '';
+  return t.length > 0 ? t : null;
+}
 
 export type MatchHoleListResult = { data: DbMatchHoleRow[] | null; error: string | null };
 
@@ -311,6 +341,36 @@ export async function upsertMatchHoleScore(params: {
     return { data: null, error: error.message };
   }
   return { data: asMatchHoleRow(data), error: null };
+}
+
+export type SetMatchHoleReactionResult = { ok: boolean; error: string | null };
+
+/** Lock one emoji on the opponent’s hole row after they have posted that hole (RPC; active/waiting only). */
+export async function setMatchHoleReaction(params: {
+  matchId: string;
+  holeNumber: number;
+  emoji: string;
+}): Promise<SetMatchHoleReactionResult> {
+  if (!supabase) return { ok: false, error: 'Supabase is not configured' };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in' };
+
+  const { data, error } = await supabase.rpc('set_match_hole_reaction', {
+    p_match_id: params.matchId,
+    p_hole_number: params.holeNumber,
+    p_emoji: params.emoji,
+  });
+  if (error) {
+    console.warn('[matchPlay] setMatchHoleReaction', error.message);
+    return { ok: false, error: error.message };
+  }
+  const payload = data as { ok?: boolean; error?: string } | null;
+  if (!payload?.ok) {
+    return { ok: false, error: payload?.error ?? 'Could not save reaction' };
+  }
+  return { ok: true, error: null };
 }
 
 /**

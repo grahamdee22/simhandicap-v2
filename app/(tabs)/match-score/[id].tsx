@@ -19,6 +19,10 @@ import {
   abandonMatch,
   getMatchById,
   listMatchHoles,
+  MATCH_HOLE_REACTION_EMOJIS,
+  reactionReceivedOnMyHoleRow,
+  reactionSentOnOpponentRow,
+  setMatchHoleReaction,
   updateMatchById,
   upsertMatchHoleScore,
   type DbMatchHoleRow,
@@ -71,9 +75,15 @@ export default function MatchScoreScreen() {
   const [settingsThumbOppOpen, setSettingsThumbOppOpen] = useState(false);
   const [settingsMineImgErr, setSettingsMineImgErr] = useState(false);
   const [settingsOppImgErr, setSettingsOppImgErr] = useState(false);
+  const [reactionPickerOpenHole, setReactionPickerOpenHole] = useState<number | null>(null);
+  /** Hole numbers where we show the user's reaction before server confirms (cleared when `holes` includes it). */
+  const [optimisticSentReactionByHole, setOptimisticSentReactionByHole] = useState<Record<number, string>>(
+    {}
+  );
 
   const supabaseOn = isSupabaseConfigured();
   const mounted = useRef(true);
+  const reactionRpcInFlightByHoleRef = useRef<Set<number>>(new Set());
 
   useEffect(() => {
     mounted.current = true;
@@ -208,6 +218,33 @@ export default function MatchScoreScreen() {
     return grossMapsForPlayers(holes, match.player_1_id, match.player_2_id);
   }, [holes, match]);
 
+  const holeRowByPlayerHole = useMemo(() => {
+    const m = new Map<string, DbMatchHoleRow>();
+    for (const r of holes) {
+      m.set(`${r.player_id}:${r.hole_number}`, r);
+    }
+    return m;
+  }, [holes]);
+
+  useEffect(() => {
+    if (!oppId) return;
+    setOptimisticSentReactionByHole((prev) => {
+      const keys = Object.keys(prev);
+      if (keys.length === 0) return prev;
+      let changed = false;
+      const next = { ...prev };
+      for (const k of keys) {
+        const hn = Number(k);
+        const oppRow = holes.find((r) => r.player_id === oppId && r.hole_number === hn);
+        if (reactionSentOnOpponentRow(oppRow, amPlayer1)) {
+          delete next[hn];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [holes, oppId, amPlayer1]);
+
   const myDistinct = user?.id && match ? distinctHoleCount(holes, user.id) : 0;
   const oppDistinct = oppId ? distinctHoleCount(holes, oppId) : 0;
   const showAheadBanner = opponentAhead(myDistinct, oppDistinct);
@@ -297,6 +334,40 @@ export default function MatchScoreScreen() {
     tryFinalize,
     refreshAll,
   ]);
+
+  const onPickHoleReaction = useCallback(
+    async (holeNum: number, emoji: string) => {
+      if (!matchId || !user?.id || !oppId) return;
+      if (reactionRpcInFlightByHoleRef.current.has(holeNum)) return;
+
+      const oppRow = holes.find((r) => r.player_id === oppId && r.hole_number === holeNum);
+      if (reactionSentOnOpponentRow(oppRow, amPlayer1)) return;
+
+      reactionRpcInFlightByHoleRef.current.add(holeNum);
+      setReactionPickerOpenHole(null);
+      setOptimisticSentReactionByHole((prev) => ({ ...prev, [holeNum]: emoji }));
+
+      try {
+        const res = await setMatchHoleReaction({
+          matchId,
+          holeNumber: holeNum,
+          emoji,
+        });
+        if (!res.ok) {
+          setOptimisticSentReactionByHole((prev) => {
+            const { [holeNum]: _, ...rest } = prev;
+            return rest;
+          });
+          showAppAlert('Reaction', res.error ?? 'Could not save.');
+          return;
+        }
+        void refreshAll();
+      } finally {
+        reactionRpcInFlightByHoleRef.current.delete(holeNum);
+      }
+    },
+    [matchId, user?.id, oppId, holes, amPlayer1, refreshAll]
+  );
 
   const onAbandonMatch = useCallback(async () => {
     if (!matchId || abandonBusy) return;
@@ -402,6 +473,9 @@ export default function MatchScoreScreen() {
     oppGross: number | undefined;
     myNetDisp: string | number;
     oppNetDisp: string | number;
+    reactionOnMyScore: string | null;
+    reactionISent: string | null;
+    showReactionPicker: boolean;
   }[] = [];
 
   for (const h of holeNums) {
@@ -409,6 +483,15 @@ export default function MatchScoreScreen() {
     const g2 = maps.p2.get(h);
     const myGross = amPlayer1 ? g1 : g2;
     const oppGross = amPlayer1 ? g2 : g1;
+    const myRow =
+      user?.id ? holeRowByPlayerHole.get(`${user.id}:${h}`) : undefined;
+    const oppRow =
+      oppId ? holeRowByPlayerHole.get(`${oppId}:${h}`) : undefined;
+    const reactionOnMyScore = reactionReceivedOnMyHoleRow(myRow, amPlayer1);
+    const reactionISentFromServer = reactionSentOnOpponentRow(oppRow, amPlayer1);
+    const reactionISent =
+      reactionISentFromServer ?? optimisticSentReactionByHole[h] ?? null;
+    const showReactionPicker = Boolean(oppId && oppGross != null && !reactionISent);
     let myNetDisp: string | number = '—';
     let oppNetDisp: string | number = '—';
     if (g1 != null && g2 != null) {
@@ -432,7 +515,16 @@ export default function MatchScoreScreen() {
       cumOppGross += oppGross;
       cumOppNet += holeNetScore(oppGross, h, strokeCtx, !amPlayer1);
     }
-    rows.push({ h, myGross, oppGross, myNetDisp, oppNetDisp });
+    rows.push({
+      h,
+      myGross,
+      oppGross,
+      myNetDisp,
+      oppNetDisp,
+      reactionOnMyScore,
+      reactionISent,
+      showReactionPicker,
+    });
   }
 
   const myDisplayName = amPlayer1 ? names.p1 : names.p2;
@@ -456,7 +548,7 @@ export default function MatchScoreScreen() {
           contentContainerStyle={{
             paddingHorizontal: gutter,
             paddingTop: 12,
-            paddingBottom: insets.bottom + 280,
+            paddingBottom: insets.bottom + 320,
           }}
           keyboardShouldPersistTaps="handled"
         >
@@ -542,26 +634,97 @@ export default function MatchScoreScreen() {
             <Text style={[styles.th, styles.colNum]}>Net</Text>
           </View>
 
-          {rows.map(({ h, myGross, oppGross, myNetDisp, oppNetDisp }) => (
-            <View key={h} style={styles.tr}>
-              <Text style={[styles.td, styles.colHole]}>{h}</Text>
-              <Text style={[styles.td, styles.colNum]}>{myGross ?? '—'}</Text>
-              <Text style={[styles.td, styles.colNum]}>{myNetDisp}</Text>
-              <Text style={[styles.td, styles.colNum]}>{oppGross ?? '—'}</Text>
-              <Text style={[styles.td, styles.colNum]}>{oppNetDisp}</Text>
-            </View>
-          ))}
+          {rows.map(
+            ({
+              h,
+              myGross,
+              oppGross,
+              myNetDisp,
+              oppNetDisp,
+              reactionOnMyScore,
+              reactionISent,
+              showReactionPicker,
+            }) => (
+              <View key={h} style={styles.tr}>
+                <Text style={[styles.td, styles.colHole]}>{h}</Text>
+                <View style={[styles.tdCell, styles.colNum]}>
+                  <Text style={[styles.td, styles.tdCenter]}>{myGross ?? '—'}</Text>
+                  {reactionOnMyScore ? <Text style={styles.reactionEmoji}>{reactionOnMyScore}</Text> : null}
+                </View>
+                <View style={[styles.tdCell, styles.colNum]}>
+                  <Text style={[styles.td, styles.tdCenter]}>{myNetDisp}</Text>
+                </View>
+                <View style={[styles.tdCell, styles.colNum]}>
+                  <View style={styles.oppGrossInlineWrap}>
+                    <View style={styles.oppGrossInlineRow}>
+                      <Text style={[styles.td, styles.oppGrossInlineNum]}>{oppGross ?? '—'}</Text>
+                      {reactionISent ? (
+                        <Text style={styles.reactionEmojiInline}>{reactionISent}</Text>
+                      ) : showReactionPicker ? (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.reactionHintHitInline,
+                            pressed && styles.reactionHintHitPressed,
+                          ]}
+                          onPress={() =>
+                            setReactionPickerOpenHole((cur) => (cur === h ? null : h))
+                          }
+                          accessibilityRole="button"
+                          accessibilityLabel="Add reaction to opponent score"
+                          accessibilityState={{ expanded: reactionPickerOpenHole === h }}
+                          hitSlop={{ top: 4, bottom: 6, left: 8, right: 8 }}
+                        >
+                          <Text style={styles.reactionHintTxt}>+</Text>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  </View>
+                  {showReactionPicker && reactionPickerOpenHole === h ? (
+                    <View style={styles.reactionPickPopover}>
+                      <View style={styles.reactionPickWrap}>
+                        {MATCH_HOLE_REACTION_EMOJIS.map((emo) => (
+                          <Pressable
+                            key={`${h}-${emo}`}
+                            style={({ pressed }) => [
+                              styles.reactionPickHit,
+                              pressed && styles.reactionPickHitPressed,
+                            ]}
+                            onPress={() => void onPickHoleReaction(h, emo)}
+                            accessibilityRole="button"
+                            accessibilityLabel={`React ${emo}`}
+                          >
+                            <Text style={styles.reactionPickEmoji}>{emo}</Text>
+                          </Pressable>
+                        ))}
+                      </View>
+                    </View>
+                  ) : null}
+                </View>
+                <View style={[styles.tdCell, styles.colNum]}>
+                  <Text style={[styles.td, styles.tdCenter]}>{oppNetDisp}</Text>
+                </View>
+              </View>
+            )
+          )}
 
           <View style={[styles.tr, styles.trTotals]}>
             <Text style={[styles.tdStrong, styles.colHole]}>Total</Text>
-            <Text style={[styles.tdStrong, styles.colNum]}>
-              {myScoredHoles === 0 ? '—' : cumMyGross}
-            </Text>
-            <Text style={[styles.tdStrong, styles.colNum]}>{myScoredHoles === 0 ? '—' : cumMyNet}</Text>
-            <Text style={[styles.tdStrong, styles.colNum]}>
-              {oppScoredHoles === 0 ? '—' : cumOppGross}
-            </Text>
-            <Text style={[styles.tdStrong, styles.colNum]}>{oppScoredHoles === 0 ? '—' : cumOppNet}</Text>
+            <View style={[styles.tdCell, styles.colNum]}>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>
+                {myScoredHoles === 0 ? '—' : cumMyGross}
+              </Text>
+            </View>
+            <View style={[styles.tdCell, styles.colNum]}>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>{myScoredHoles === 0 ? '—' : cumMyNet}</Text>
+            </View>
+            <View style={[styles.tdCell, styles.colNum]}>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>
+                {oppScoredHoles === 0 ? '—' : cumOppGross}
+              </Text>
+            </View>
+            <View style={[styles.tdCell, styles.colNum]}>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>{oppScoredHoles === 0 ? '—' : cumOppNet}</Text>
+            </View>
           </View>
         </ScrollView>
 
@@ -711,18 +874,80 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
     marginBottom: 4,
   },
-  tr: { flexDirection: 'row', paddingVertical: 7 },
+  tr: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 7 },
   trTotals: {
     marginTop: 6,
     paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.border,
   },
-  th: { fontSize: 10, fontWeight: '700', color: colors.subtle, textTransform: 'uppercase' },
+  th: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.subtle,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+    width: '100%',
+  },
   td: { fontSize: 13, color: colors.ink },
   tdStrong: { fontSize: 13, fontWeight: '800', color: colors.ink },
+  tdCell: { flex: 1, alignItems: 'center', minWidth: 0 },
+  tdCenter: { textAlign: 'center', width: '100%' },
   colHole: { width: 44 },
-  colNum: { flex: 1, textAlign: 'center' },
+  colNum: { flex: 1 },
+  reactionEmoji: { fontSize: 18, lineHeight: 24, marginTop: 2, textAlign: 'center' },
+  oppGrossInlineWrap: { width: '100%', alignItems: 'center' },
+  oppGrossInlineRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    maxWidth: '100%',
+  },
+  oppGrossInlineNum: { fontSize: 13, color: colors.ink, textAlign: 'center' },
+  reactionEmojiInline: { fontSize: 17, lineHeight: 20 },
+  reactionHintHitInline: {
+    paddingVertical: 1,
+    paddingHorizontal: 7,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  reactionHintHitPressed: { opacity: 0.72 },
+  reactionHintTxt: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: colors.subtle,
+    opacity: 0.42,
+    lineHeight: 18,
+  },
+  reactionPickPopover: {
+    marginTop: 6,
+    alignSelf: 'stretch',
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.accentSoft,
+  },
+  reactionPickWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 2,
+    maxWidth: '100%',
+  },
+  reactionPickHit: {
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  reactionPickHitPressed: { opacity: 0.65 },
+  reactionPickEmoji: { fontSize: 20, lineHeight: 26 },
   footer: {
     position: 'absolute',
     left: 0,
