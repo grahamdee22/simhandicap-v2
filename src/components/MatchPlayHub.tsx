@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { confirmDestructive, showAppAlert } from '../lib/alertCompat';
 import { colors } from '../lib/constants';
+import { formatHandicapIndexDisplay } from '../lib/handicap';
 import { socialPageSectionTitleStyles } from '../lib/socialPageSectionTitle';
 import {
   deleteMatchById,
@@ -21,8 +22,14 @@ import {
   updateMatchById,
   type DbMatchRow,
 } from '../lib/matchPlay';
+import {
+  DEFAULT_OPEN_FEED_FILTERS,
+  filterAndSortOpenFeedRows,
+  uniqueCourseNamesFromOpenFeed,
+  type OpenFeedFilterState,
+} from '../lib/openFeedFilters';
 import { supabase } from '../lib/supabase';
-
+import { OpenFeedFilterPanel } from './OpenFeedFilterPanel';
 type Props = {
   gutter: number;
   userId: string | undefined;
@@ -170,6 +177,10 @@ export function MatchPlayHub({
   const [cancelOpenBusyId, setCancelOpenBusyId] = useState<string | null>(null);
   const [seenP1AcceptedIds, setSeenP1AcceptedIds] = useState<Set<string>>(() => new Set());
   const [seenP1Hydrated, setSeenP1Hydrated] = useState(false);
+  const [openFeedFilters, setOpenFeedFilters] = useState<OpenFeedFilterState>(DEFAULT_OPEN_FEED_FILTERS);
+  const [draftOpenFeedFilters, setDraftOpenFeedFilters] =
+    useState<OpenFeedFilterState>(DEFAULT_OPEN_FEED_FILTERS);
+  const [openFeedFiltersExpanded, setOpenFeedFiltersExpanded] = useState(false);
   const refetchMatchesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const myMatchesRef = useRef<DbMatchRow[]>([]);
   const activeHubUserIdRef = useRef<string | undefined>(undefined);
@@ -472,6 +483,45 @@ export function MatchPlayHub({
     [openFeed, userId]
   );
 
+  const openFeedCourseOptions = useMemo(
+    () => uniqueCourseNamesFromOpenFeed(openFeedForOthers),
+    [openFeedForOthers]
+  );
+  const openFeedFiltered = useMemo(
+    () => filterAndSortOpenFeedRows(openFeedForOthers, openFeedFilters),
+    [openFeedForOthers, openFeedFilters]
+  );
+  const openOpenFeedFilters = useCallback(() => {
+    setDraftOpenFeedFilters({ ...openFeedFilters });
+    setOpenFeedFiltersExpanded(true);
+  }, [openFeedFilters]);
+
+  const applyOpenFeedFiltersPanel = useCallback(() => {
+    setOpenFeedFilters({ ...draftOpenFeedFilters });
+    setOpenFeedFiltersExpanded(false);
+  }, [draftOpenFeedFilters]);
+
+  const resetOpenFeedFilters = useCallback(() => {
+    setOpenFeedFilters(DEFAULT_OPEN_FEED_FILTERS);
+    setDraftOpenFeedFilters(DEFAULT_OPEN_FEED_FILTERS);
+    setOpenFeedFiltersExpanded(false);
+  }, []);
+
+  const onRemoveOpenFeedHandicapChip = useCallback(() => {
+    setOpenFeedFilters((f) => ({ ...f, handicapRanges: [] }));
+    setDraftOpenFeedFilters((f) => ({ ...f, handicapRanges: [] }));
+  }, []);
+
+  const onRemoveOpenFeedCourseChip = useCallback(() => {
+    setOpenFeedFilters((f) => ({ ...f, courseName: null }));
+    setDraftOpenFeedFilters((f) => ({ ...f, courseName: null }));
+  }, []);
+
+  const onClearOpenFeedPlatformsChip = useCallback(() => {
+    setOpenFeedFilters((f) => ({ ...f, platforms: [] }));
+    setDraftOpenFeedFilters((f) => ({ ...f, platforms: [] }));
+  }, []);
+
   const nameFor = (id: string | null) => (id ? names[id] ?? 'Golfer' : '—');
 
   const renderCard = (m: DbMatchRow, uid: string, listKind: 'hub' | 'openFeed' | 'recentHistory' = 'hub') => {
@@ -479,7 +529,14 @@ export function MatchPlayHub({
     const p2 = nameFor(m.player_2_id);
     const peopleLine =
       m.is_open && m.status === 'open'
-        ? `Posted by ${p1}`
+        ? listKind === 'openFeed'
+          ? (() => {
+              const idx = m.player_1_ghin_index_at_post;
+              if (idx != null && Number.isFinite(Number(idx)))
+                return `Posted by ${p1} · ${formatHandicapIndexDisplay(Number(idx))}`;
+              return `Posted by ${p1}`;
+            })()
+          : `Posted by ${p1}`
         : m.player_2_id
           ? `${p1} vs ${p2}`
           : `Challenger ${p1}`;
@@ -497,10 +554,17 @@ export function MatchPlayHub({
       (m.player_1_id === uid || m.player_2_id === uid);
 
     const hubBadge = listKind === 'hub' ? incomingActiveBadge(m, uid) : null;
-    const metaLine =
-      listKind === 'hub'
-        ? `${formatHoles(m)} · Stroke play`
-        : `${statusLabel(m, uid)} · ${formatHoles(m)} · Stroke play`;
+    const openFeedPlatform =
+      listKind === 'openFeed' ? (m.player_1_platform?.trim() ? m.player_1_platform.trim() : null) : null;
+    const metaLine = (() => {
+      if (listKind === 'hub') return `${formatHoles(m)} · Stroke play`;
+      const status = statusLabel(m, uid);
+      const holes = formatHoles(m);
+      if (listKind === 'openFeed') {
+        return openFeedPlatform ? `${status} · ${holes} · ${openFeedPlatform}` : `${status} · ${holes}`;
+      }
+      return `${status} · ${holes} · Stroke play`;
+    })();
 
     const cardInner = (
       <>
@@ -539,13 +603,18 @@ export function MatchPlayHub({
     );
 
     if (listKind === 'openFeed') {
+      const idx = m.player_1_ghin_index_at_post;
+      const idxOk = idx != null && Number.isFinite(Number(idx));
+      const idxA11y = idxOk ? `, index ${formatHandicapIndexDisplay(Number(idx))}` : '';
+      const platA11y = openFeedPlatform ? `, ${openFeedPlatform}` : '';
+      const openA11y = `Open challenge on ${m.course_name}${platA11y}${idxA11y}`;
       return (
         <Pressable
           key={m.id}
           style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
           onPress={() => router.push(`/(tabs)/match-open-accept/${m.id}` as never)}
           accessibilityRole="button"
-          accessibilityLabel={`Open challenge on ${m.course_name}`}
+          accessibilityLabel={openA11y}
         >
           {cardInner}
           <Text style={styles.cardTapHint}>Tap for details</Text>
@@ -682,12 +751,30 @@ export function MatchPlayHub({
         section1.map((m) => renderCard(m, userId))
       )}
 
-      <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Open challenge feed</Text>
+      <Text style={[styles.sectionTitle, styles.sectionSpaced]} accessibilityRole="header">
+        Open challenge feed
+      </Text>
       <Text style={styles.sectionSub}>Anyone on SimCap can accept these.</Text>
+      <OpenFeedFilterPanel
+        gutter={gutter}
+        coursesInFeed={openFeedCourseOptions}
+        applied={openFeedFilters}
+        draft={draftOpenFeedFilters}
+        expanded={openFeedFiltersExpanded}
+        onOpen={openOpenFeedFilters}
+        onDraftChange={setDraftOpenFeedFilters}
+        onApply={applyOpenFeedFiltersPanel}
+        onResetAll={resetOpenFeedFilters}
+        onRemoveHandicapChip={onRemoveOpenFeedHandicapChip}
+        onRemoveCourseChip={onRemoveOpenFeedCourseChip}
+        onClearPlatformsChip={onClearOpenFeedPlatformsChip}
+      />
       {openFeedForOthers.length === 0 ? (
         <Text style={styles.empty}>No open challenges right now.</Text>
+      ) : openFeedFiltered.length === 0 ? (
+        <Text style={styles.empty}>No open challenges match these filters. Clear filters or adjust your choices.</Text>
       ) : (
-        openFeedForOthers.map((m) => renderCard(m, userId, 'openFeed'))
+        openFeedFiltered.map((m) => renderCard(m, userId, 'openFeed'))
       )}
 
       <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Recent matches</Text>

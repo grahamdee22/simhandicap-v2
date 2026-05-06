@@ -41,3 +41,22 @@ export const PLATFORMS = [
 ] as const;
 
 export type PlatformId = (typeof PLATFORMS)[number];
+
+/**
+ * Maps DB / API platform text to a canonical `PlatformId` (trim, case-insensitive match,
+ * internal spaces collapsed so e.g. "gs pro" → GSPro).
+ */
+export function canonicalPlatformId(raw: string | null | undefined): PlatformId | null {
+  if (raw == null) return null;
+  const t = String(raw).trim();
+  if (t.length === 0) return null;
+  if ((PLATFORMS as readonly string[]).includes(t)) return t as PlatformId;
+  const lower = t.toLowerCase();
+  const byCase = PLATFORMS.find((p) => p.toLowerCase() === lower);
+  if (byCase) return byCase;
+  const collapsed = t.replace(/\s+/g, '');
+  const byCollapse = PLATFORMS.find(
+    (p) => p.replace(/\s+/g, '').toLowerCase() === collapsed.toLowerCase()
+  );
+  return byCollapse ?? null;
+}

@@ -51,7 +51,7 @@ import { getMatchById, insertMatch, listMyMatches, updateMatchById } from '../..
 import { uploadMatchSettingsScreenshot } from '../../src/lib/matchPlayStorage';
 import { useResponsive } from '../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
-import { useAppStore, type FriendGroup } from '../../src/store/useAppStore';
+import { currentIndexFromRounds, useAppStore, type FriendGroup } from '../../src/store/useAppStore';
 
 type ChallengeKind = 'direct' | 'open';
 
@@ -685,6 +685,7 @@ export default function MatchCreateScreen() {
 
     // Final submit order (required by `match-settings` storage RLS): insert the `matches` row
     // first so the path `{match_id}/{user_id}/…` is allowed, then upload, then patch the signed URL.
+    const idxSnapshot = currentIndexFromRounds(useAppStore.getState().rounds);
     const ins = await insertMatch({
       player_2_id: challengeKind === 'open' ? null : opponent!.userId,
       is_open: challengeKind === 'open',
@@ -701,6 +702,8 @@ export default function MatchCreateScreen() {
       status: challengeKind === 'open' ? 'open' : 'pending',
       player_1_settings_photo_url: null,
       rematch_from: challengeKind === 'direct' && rematchSourceMatchId ? rematchSourceMatchId : null,
+      player_1_ghin_index_at_post: idxSnapshot != null && Number.isFinite(idxSnapshot) ? idxSnapshot : null,
+      player_1_platform: platform,
     });
     if (ins.error || !ins.data) {
       setSubmitBusy(false);

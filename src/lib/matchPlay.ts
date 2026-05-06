@@ -3,6 +3,7 @@
  * RLS governs visibility; callers must use an authenticated supabase session.
  */
 
+import { canonicalPlatformId } from './constants';
 import { supabase } from './supabase';
 
 export const MATCH_STATUSES = [
@@ -52,6 +53,10 @@ export type DbMatchRow = {
   player_2_settings_photo_url: string | null;
   /** Prior match id when this row is a direct rematch created from a completed match. */
   rematch_from?: string | null;
+  /** Challenger index snapshot at post time (open-feed handicap filter). */
+  player_1_ghin_index_at_post?: number | null;
+  /** Challenger sim platform at post time (open-feed platform filter). */
+  player_1_platform?: string | null;
 };
 
 export type MatchListResult = { data: DbMatchRow[] | null; error: string | null };
@@ -138,6 +143,8 @@ export type InsertMatchInput = {
   player_1_settings_photo_url?: string | null;
   player_2_settings_photo_url?: string | null;
   rematch_from?: string | null;
+  player_1_ghin_index_at_post?: number | null;
+  player_1_platform?: string | null;
 };
 
 /** Updatable subset (RLS still applies). */
@@ -173,8 +180,34 @@ function asMatchRow(row: unknown): DbMatchRow {
   return row as DbMatchRow;
 }
 
+/**
+ * Normalizes API/DB fields: platform uses canonical id when known, otherwise trimmed raw text
+ * (so open-feed cards still show values PostgREST returns). GHIN index is coerced to a finite number.
+ */
+function normalizeMatchRow(record: unknown): DbMatchRow {
+  const r = record as Record<string, unknown>;
+  const base = asMatchRow(record);
+  const rawPlat = r.player_1_platform;
+  let player_1_platform: string | null = null;
+  if (rawPlat != null) {
+    const s = String(rawPlat).trim();
+    if (s.length > 0) player_1_platform = canonicalPlatformId(s) ?? s;
+  }
+  const rawGhin = r.player_1_ghin_index_at_post;
+  let player_1_ghin_index_at_post: number | null = null;
+  if (rawGhin != null && rawGhin !== '') {
+    const n = Number(rawGhin);
+    if (Number.isFinite(n)) player_1_ghin_index_at_post = n;
+  }
+  return {
+    ...base,
+    player_1_platform,
+    player_1_ghin_index_at_post,
+  };
+}
+
 function mapMatchRows(rows: unknown[] | null): DbMatchRow[] {
-  return (rows ?? []).map((r) => asMatchRow(r));
+  return (rows ?? []).map((row) => normalizeMatchRow(row));
 }
 
 /**
@@ -264,7 +297,7 @@ export async function getMatchById(matchId: string): Promise<MatchSingleResult> 
     return { data: null, error: error.message };
   }
   if (!data) return { data: null, error: null };
-  return { data: asMatchRow(data), error: null };
+  return { data: normalizeMatchRow(data), error: null };
 }
 
 /** All hole scores for a match (both players), hole_number ascending. */
@@ -414,6 +447,11 @@ export async function insertMatch(input: InsertMatchInput): Promise<MatchSingleR
     player_1_settings_photo_url: input.player_1_settings_photo_url ?? null,
     player_2_settings_photo_url: input.player_2_settings_photo_url ?? null,
     rematch_from: input.rematch_from ?? null,
+    player_1_ghin_index_at_post: input.player_1_ghin_index_at_post ?? null,
+    player_1_platform:
+      input.player_1_platform == null
+        ? null
+        : canonicalPlatformId(String(input.player_1_platform)),
   };
 
   const { data, error } = await supabase.from('matches').insert(payload).select('*').single();
@@ -422,7 +460,7 @@ export async function insertMatch(input: InsertMatchInput): Promise<MatchSingleR
     console.warn('[matchPlay] insertMatch', error.message);
     return { data: null, error: error.message };
   }
-  return { data: asMatchRow(data), error: null };
+  return { data: normalizeMatchRow(data), error: null };
 }
 
 /**
@@ -450,7 +488,7 @@ export async function updateMatchById(
     console.warn('[matchPlay] updateMatchById', error.message);
     return { data: null, error: error.message };
   }
-  return { data: asMatchRow(data), error: null };
+  return { data: normalizeMatchRow(data), error: null };
 }
 
 /** Remove a match row (RLS: e.g. poster deleting an unclaimed open challenge). */
