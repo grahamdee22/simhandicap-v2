@@ -77,6 +77,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const navReady = useRootNavigationState()?.key != null;
 
   useEffect(() => {
+    if (Platform.OS === 'web') {
+      setOnboardingSeenState(true);
+      setOnboardingReady(true);
+      return;
+    }
     let cancelled = false;
     void getOnboardingSeen().then((seen) => {
       if (!cancelled) {
