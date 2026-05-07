@@ -1,4 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
+import DateTimePicker from '@react-native-community/datetimepicker';
 import * as ImagePicker from 'expo-image-picker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -54,11 +55,13 @@ import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { currentIndexFromRounds, useAppStore, type FriendGroup } from '../../src/store/useAppStore';
 
 type ChallengeKind = 'direct' | 'open';
+type OpenChallengeMode = 'now' | 'future';
 
 /** Release builds require a settings screenshot; dev/simulator can skip. */
 const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
 
 const MAX_OPEN_CHALLENGES_POSTED = 3;
+const FUTURE_OPEN_MAX_DAYS = 30;
 
 const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
   { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
@@ -139,6 +142,26 @@ function resolvePlayer1Tee(args: {
   return { rating: fb.rating, slope: fb.slope, teeName: course.defaultTee ?? 'Default' };
 }
 
+function minScheduleDate(now = new Date()): Date {
+  const d = new Date(now);
+  d.setSeconds(0, 0);
+  return d;
+}
+
+function maxScheduleDate(now = new Date()): Date {
+  const d = new Date(now);
+  d.setDate(d.getDate() + FUTURE_OPEN_MAX_DAYS);
+  d.setHours(23, 59, 0, 0);
+  return d;
+}
+
+function clampScheduledDate(v: Date, now = new Date()): Date {
+  const min = minScheduleDate(now).getTime();
+  const max = maxScheduleDate(now).getTime();
+  const t = Math.min(max, Math.max(min, v.getTime()));
+  return new Date(t);
+}
+
 export default function MatchCreateScreen() {
   const router = useRouter();
   const navigation = useNavigation();
@@ -156,6 +179,7 @@ export default function MatchCreateScreen() {
   const supabaseOn = isSupabaseConfigured();
 
   const [challengeKind, setChallengeKind] = useState<ChallengeKind>('direct');
+  const [openChallengeMode, setOpenChallengeMode] = useState<OpenChallengeMode>('now');
   const [stepIdx, setStepIdx] = useState(0);
   const [opponent, setOpponent] = useState<OpponentPick | null>(null);
   const [platform, setPlatform] = useState<PlatformId>(preferredLogPlatform);
@@ -175,6 +199,13 @@ export default function MatchCreateScreen() {
   const [submitBusy, setSubmitBusy] = useState(false);
   const [libraryPermissionBlocked, setLibraryPermissionBlocked] = useState(false);
   const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
+  const [devFutureTwoMinuteMode, setDevFutureTwoMinuteMode] = useState(false);
+  const [scheduledForDraft, setScheduledForDraft] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setSeconds(0, 0);
+    return d;
+  });
   const [rematchHydrating, setRematchHydrating] = useState(false);
   /** Completed match id to store on inserted row as `rematch_from` when sending a rematch challenge. */
   const [rematchSourceMatchId, setRematchSourceMatchId] = useState<string | null>(null);
@@ -186,6 +217,7 @@ export default function MatchCreateScreen() {
     setRematchSourceMatchId(null);
     const plat = useAppStore.getState().preferredLogPlatform;
     setChallengeKind('direct');
+    setOpenChallengeMode('now');
     setStepIdx(0);
     setOpponent(null);
     setPlatform(plat);
@@ -205,6 +237,11 @@ export default function MatchCreateScreen() {
     setSubmitBusy(false);
     setLibraryPermissionBlocked(false);
     setDevSkipSettingsPhoto(false);
+    setDevFutureTwoMinuteMode(false);
+    const next = new Date();
+    next.setDate(next.getDate() + 1);
+    next.setSeconds(0, 0);
+    setScheduledForDraft(next);
   }, []);
 
   const lastFreshAppliedRef = useRef<string | undefined>(undefined);
@@ -324,6 +361,7 @@ export default function MatchCreateScreen() {
         if (cancelled) return;
 
         setChallengeKind('direct');
+        setOpenChallengeMode('now');
         setOpponent(oppPick);
         setPlatform(plat);
         setCourseId(cid);
@@ -408,10 +446,10 @@ export default function MatchCreateScreen() {
     [groups, user?.id]
   );
 
-  const stepSequence = useMemo(
-    () => (challengeKind === 'direct' ? [0, 1, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 5, 6]),
-    [challengeKind]
-  );
+  const stepSequence = useMemo(() => {
+    if (challengeKind === 'direct') return [0, 1, 2, 3, 4, 5, 6];
+    return openChallengeMode === 'future' ? [0, 2, 3, 4, 7, 6] : [0, 2, 3, 4, 5, 6];
+  }, [challengeKind, openChallengeMode]);
   const totalSteps = stepSequence.length;
   const screenStep = stepSequence[Math.min(stepIdx, Math.max(0, stepSequence.length - 1))] ?? 0;
 
@@ -557,6 +595,11 @@ export default function MatchCreateScreen() {
         );
       case 6:
         return true;
+      case 7: {
+        const base = devFutureTwoMinuteMode ? new Date(Date.now() + 2 * 60 * 1000) : scheduledForDraft;
+        const t = base.getTime();
+        return t >= minScheduleDate().getTime() && t <= maxScheduleDate().getTime();
+      }
       default:
         return false;
     }
@@ -573,22 +616,26 @@ export default function MatchCreateScreen() {
     courseTees,
     settingsImage,
     devSkipSettingsPhoto,
+    devFutureTwoMinuteMode,
+    scheduledForDraft,
   ]);
 
   const canSendChallenge = useMemo(() => {
     if (!user || !course) return false;
     if (challengeKind === 'direct' && !opponent) return false;
+    if (challengeKind === 'open' && openChallengeMode === 'future') return true;
     const photoUri = settingsImage?.uri;
     const skipPhotoDev =
       ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto && photoUri == null;
     if (photoUri == null && !skipPhotoDev) return false;
     return true;
-  }, [user, course, challengeKind, opponent, settingsImage, devSkipSettingsPhoto]);
+  }, [user, course, challengeKind, openChallengeMode, opponent, settingsImage, devSkipSettingsPhoto]);
 
   const selectChallengeKind = useCallback(
     async (key: ChallengeKind) => {
       if (key === 'direct') {
         setChallengeKind('direct');
+        setOpenChallengeMode('now');
         return;
       }
       const uid = user?.id;
@@ -609,6 +656,7 @@ export default function MatchCreateScreen() {
         return;
       }
       setChallengeKind('open');
+      setOpenChallengeMode('now');
     },
     [user?.id]
   );
@@ -649,7 +697,8 @@ export default function MatchCreateScreen() {
     const photoUri = settingsImage?.uri;
     const skipPhotoDev =
       ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto && photoUri == null;
-    if (photoUri == null && !skipPhotoDev) return;
+    const isFutureOpen = challengeKind === 'open' && openChallengeMode === 'future';
+    if (!isFutureOpen && photoUri == null && !skipPhotoDev) return;
     const tee = resolvePlayer1Tee({
       course,
       platform,
@@ -686,6 +735,11 @@ export default function MatchCreateScreen() {
     // Final submit order (required by `match-settings` storage RLS): insert the `matches` row
     // first so the path `{match_id}/{user_id}/…` is allowed, then upload, then patch the signed URL.
     const idxSnapshot = currentIndexFromRounds(useAppStore.getState().rounds);
+    const resolvedScheduledFor = isFutureOpen
+      ? devFutureTwoMinuteMode
+        ? new Date(Date.now() + 2 * 60 * 1000)
+        : clampScheduledDate(scheduledForDraft)
+      : null;
     const ins = await insertMatch({
       player_2_id: challengeKind === 'open' ? null : opponent!.userId,
       is_open: challengeKind === 'open',
@@ -701,6 +755,8 @@ export default function MatchCreateScreen() {
       nine_selection: holesChoice === '18' ? null : holesChoice === 'front' ? 'front' : 'back',
       status: challengeKind === 'open' ? 'open' : 'pending',
       player_1_settings_photo_url: null,
+      scheduled_for: resolvedScheduledFor?.toISOString() ?? null,
+      challenge_status: challengeKind === 'open' ? (isFutureOpen ? 'scheduled' : 'active') : null,
       rematch_from: challengeKind === 'direct' && rematchSourceMatchId ? rematchSourceMatchId : null,
       player_1_ghin_index_at_post: idxSnapshot != null && Number.isFinite(idxSnapshot) ? idxSnapshot : null,
       player_1_platform: platform,
@@ -712,7 +768,7 @@ export default function MatchCreateScreen() {
     }
     const matchId = ins.data.id;
 
-    if (photoUri != null) {
+    if (!isFutureOpen && photoUri != null) {
       const up = await uploadMatchSettingsScreenshot({
         matchId,
         userId: user.id,
@@ -743,6 +799,7 @@ export default function MatchCreateScreen() {
   }, [
     user,
     challengeKind,
+    openChallengeMode,
     opponent,
     course,
     platform,
@@ -757,6 +814,8 @@ export default function MatchCreateScreen() {
     holesChoice,
     settingsImage,
     devSkipSettingsPhoto,
+    devFutureTwoMinuteMode,
+    scheduledForDraft,
     rematchSourceMatchId,
     router,
   ]);
@@ -790,6 +849,8 @@ export default function MatchCreateScreen() {
         return 'Sim setup photo';
       case 6:
         return 'Review & send';
+      case 7:
+        return 'Schedule go-live time';
       default:
         return '';
     }
@@ -854,6 +915,32 @@ export default function MatchCreateScreen() {
                   </Pressable>
                 );
               })}
+              {challengeKind === 'open' ? (
+                <>
+                  <Text style={styles.sectionLabel}>Open challenge type</Text>
+                  <View style={styles.openModeRow}>
+                    <Pressable
+                      style={[styles.openModeBtn, openChallengeMode === 'now' && styles.openModeBtnOn]}
+                      onPress={() => {
+                        setOpenChallengeMode('now');
+                        setDevFutureTwoMinuteMode(false);
+                      }}
+                    >
+                      <Text style={[styles.openModeBtnTxt, openChallengeMode === 'now' && styles.openModeBtnTxtOn]}>
+                        Post Open Challenge
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.openModeBtn, openChallengeMode === 'future' && styles.openModeBtnOn]}
+                      onPress={() => setOpenChallengeMode('future')}
+                    >
+                      <Text style={[styles.openModeBtnTxt, openChallengeMode === 'future' && styles.openModeBtnTxtOn]}>
+                        Future Open Challenge
+                      </Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
             </>
           ) : null}
 
@@ -1100,6 +1187,39 @@ export default function MatchCreateScreen() {
             </>
           ) : null}
 
+          {screenStep === 7 ? (
+            <>
+              <Text style={styles.body}>
+                Pick when this challenge should go live. At that time, you&apos;ll be asked to upload your sim setup
+                photo before it appears in the active feed.
+              </Text>
+              <Text style={styles.bodyMuted}>Schedule window: now through {FUTURE_OPEN_MAX_DAYS} days from now.</Text>
+              <View style={styles.schedulePickerWrap}>
+                <DateTimePicker
+                  mode="datetime"
+                  value={scheduledForDraft}
+                  minimumDate={minScheduleDate()}
+                  maximumDate={maxScheduleDate()}
+                  onChange={(_, d) => {
+                    if (!d) return;
+                    setDevFutureTwoMinuteMode(false);
+                    setScheduledForDraft(clampScheduledDate(d));
+                  }}
+                />
+              </View>
+              {__DEV__ ? (
+                <Pressable
+                  style={[styles.devFastBtn, devFutureTwoMinuteMode && styles.devFastBtnOn]}
+                  onPress={() => setDevFutureTwoMinuteMode((v) => !v)}
+                >
+                  <Text style={[styles.devFastBtnTxt, devFutureTwoMinuteMode && styles.devFastBtnTxtOn]}>
+                    Dev only: go live in 2 minutes
+                  </Text>
+                </Pressable>
+              ) : null}
+            </>
+          ) : null}
+
           {screenStep === 6 && course && (challengeKind === 'open' || opponent) ? (
             <>
               <View style={styles.summaryBlock}>
@@ -1112,7 +1232,13 @@ export default function MatchCreateScreen() {
                 {challengeKind === 'open' ? (
                   <Text style={styles.summaryLine}>
                     <Text style={styles.summaryLbl}>Visibility · </Text>
-                    Open challenge — Social feed
+                    {openChallengeMode === 'future' ? 'Future open challenge — Scheduled feed' : 'Open challenge — Social feed'}
+                  </Text>
+                ) : null}
+                {challengeKind === 'open' && openChallengeMode === 'future' ? (
+                  <Text style={styles.summaryLine}>
+                    <Text style={styles.summaryLbl}>Go live · </Text>
+                    {devFutureTwoMinuteMode ? 'Dev only: in 2 minutes' : scheduledForDraft.toLocaleString()}
                   </Text>
                 ) : null}
                 <Text style={styles.summaryLine}>
@@ -1146,6 +1272,28 @@ export default function MatchCreateScreen() {
               ) : ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto ? (
                 <Text style={styles.devSkipPhotoNote}>Settings screenshot · Skipped (dev only)</Text>
               ) : null}
+              {challengeKind === 'open' && openChallengeMode === 'now' ? (
+                <>
+                  <Text style={styles.sectionLabel}>Open challenge type</Text>
+                  <View style={styles.openModeRow}>
+                    <Pressable
+                      style={[styles.openModeBtn, styles.openModeBtnOn]}
+                      onPress={() => {
+                        setOpenChallengeMode('now');
+                        setDevFutureTwoMinuteMode(false);
+                      }}
+                    >
+                      <Text style={[styles.openModeBtnTxt, styles.openModeBtnTxtOn]}>Post Open Challenge</Text>
+                    </Pressable>
+                    <Pressable
+                      style={styles.openModeBtn}
+                      onPress={() => setOpenChallengeMode('future')}
+                    >
+                      <Text style={styles.openModeBtnTxt}>Future Open Challenge</Text>
+                    </Pressable>
+                  </View>
+                </>
+              ) : null}
               <Pressable
                 style={({ pressed }) => [
                   styles.sendBtn,
@@ -1159,7 +1307,11 @@ export default function MatchCreateScreen() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.sendBtnTxt}>
-                    {challengeKind === 'open' ? 'Post open challenge' : 'Send challenge'}
+                    {challengeKind === 'open'
+                      ? openChallengeMode === 'future'
+                        ? 'Schedule future challenge'
+                        : 'Post open challenge'
+                      : 'Send challenge'}
                   </Text>
                 )}
               </Pressable>
@@ -1355,6 +1507,20 @@ const styles = StyleSheet.create({
   teeCustomRow: { flexDirection: 'row', gap: 10, marginTop: 10 },
   teeCustomField: { flex: 1, minWidth: 0 },
   teeCustomLbl: { fontSize: 10, fontWeight: '600', color: colors.subtle, marginBottom: 4 },
+  openModeRow: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  openModeBtn: {
+    flex: 1,
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 9,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+  },
+  openModeBtnOn: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  openModeBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.muted, textAlign: 'center' },
+  openModeBtnTxtOn: { color: colors.accentDark },
   teeNumInput: {
     borderWidth: 0.5,
     borderColor: colors.pillBorder,
@@ -1456,6 +1622,28 @@ const styles = StyleSheet.create({
   },
   preview: { width: '100%', height: 220, borderRadius: 10, backgroundColor: colors.bg },
   previewSmall: { width: '100%', height: 120, borderRadius: 10, marginTop: 8, backgroundColor: colors.bg },
+  schedulePickerWrap: {
+    marginTop: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    borderRadius: 10,
+    backgroundColor: colors.bg,
+    padding: 10,
+    alignItems: 'stretch',
+  },
+  devFastBtn: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: '#e08f2b',
+    borderRadius: 9,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#fff7ea',
+  },
+  devFastBtnOn: { borderColor: '#b86900', backgroundColor: '#ffe9c5' },
+  devFastBtnTxt: { fontSize: 12, fontWeight: '700', color: '#a55f00' },
+  devFastBtnTxtOn: { color: '#7a4400' },
   summaryBlock: {
     backgroundColor: colors.bg,
     borderRadius: 12,

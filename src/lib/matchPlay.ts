@@ -17,6 +17,8 @@ export const MATCH_STATUSES = [
 ] as const;
 
 export type MatchStatus = (typeof MATCH_STATUSES)[number];
+export const OPEN_CHALLENGE_STATUSES = ['scheduled', 'awaiting_photo', 'active', 'expired'] as const;
+export type OpenChallengeStatus = (typeof OPEN_CHALLENGE_STATUSES)[number];
 
 export const MATCH_NINE_SELECTIONS = ['front', 'back'] as const;
 export type MatchNineSelection = (typeof MATCH_NINE_SELECTIONS)[number];
@@ -57,6 +59,10 @@ export type DbMatchRow = {
   player_1_ghin_index_at_post?: number | null;
   /** Challenger sim platform at post time (open-feed platform filter). */
   player_1_platform?: string | null;
+  /** Future open-challenge publish time; null for immediate opens/direct challenges. */
+  scheduled_for?: string | null;
+  /** Open-challenge lifecycle state (scheduled/awaiting_photo/active/expired). */
+  challenge_status?: OpenChallengeStatus | null;
 };
 
 export type MatchListResult = { data: DbMatchRow[] | null; error: string | null };
@@ -145,6 +151,8 @@ export type InsertMatchInput = {
   rematch_from?: string | null;
   player_1_ghin_index_at_post?: number | null;
   player_1_platform?: string | null;
+  scheduled_for?: string | null;
+  challenge_status?: OpenChallengeStatus | null;
 };
 
 /** Updatable subset (RLS still applies). */
@@ -174,6 +182,8 @@ export type MatchUpdatePatch = Partial<{
   player_2_finished: boolean;
   player_1_settings_photo_url: string | null;
   player_2_settings_photo_url: string | null;
+  scheduled_for: string | null;
+  challenge_status: OpenChallengeStatus | null;
 }>;
 
 function asMatchRow(row: unknown): DbMatchRow {
@@ -199,10 +209,22 @@ function normalizeMatchRow(record: unknown): DbMatchRow {
     const n = Number(rawGhin);
     if (Number.isFinite(n)) player_1_ghin_index_at_post = n;
   }
+  const rawScheduledFor = r.scheduled_for;
+  const scheduled_for = rawScheduledFor == null ? null : String(rawScheduledFor);
+  const rawChallengeStatus = r.challenge_status;
+  let challenge_status: OpenChallengeStatus | null = null;
+  if (rawChallengeStatus != null) {
+    const v = String(rawChallengeStatus).trim();
+    if ((OPEN_CHALLENGE_STATUSES as readonly string[]).includes(v)) {
+      challenge_status = v as OpenChallengeStatus;
+    }
+  }
   return {
     ...base,
     player_1_platform,
     player_1_ghin_index_at_post,
+    scheduled_for,
+    challenge_status,
   };
 }
 
@@ -277,7 +299,12 @@ export async function listOpenFeedMatches(): Promise<MatchListResult> {
     console.warn('[matchPlay] listOpenFeedMatches', error.message);
     return { data: null, error: error.message };
   }
-  return { data: mapMatchRows(data as unknown[]), error: null };
+  const mapped = mapMatchRows(data as unknown[]);
+  const visible = mapped.filter((m) => {
+    const cs = m.challenge_status ?? 'active';
+    return cs === 'active' || cs === 'scheduled';
+  });
+  return { data: visible, error: null };
 }
 
 /**
@@ -452,6 +479,8 @@ export async function insertMatch(input: InsertMatchInput): Promise<MatchSingleR
       input.player_1_platform == null
         ? null
         : canonicalPlatformId(String(input.player_1_platform)),
+    scheduled_for: input.scheduled_for ?? null,
+    challenge_status: input.challenge_status ?? null,
   };
 
   const { data, error } = await supabase.from('matches').insert(payload).select('*').single();
@@ -533,6 +562,50 @@ export async function abandonMatch(matchId: string): Promise<AbandonMatchResult>
 }
 
 export type AcceptOpenChallengeResult = { ok: boolean; error: string | null };
+
+export type ProcessFutureOpenChallengesResult = {
+  ok: boolean;
+  activatedCount: number;
+  expiredCount: number;
+  readyForUid: boolean;
+  error: string | null;
+};
+
+/** Runs server-side lifecycle transitions for future open challenges. */
+export async function processFutureOpenChallenges(): Promise<ProcessFutureOpenChallengesResult> {
+  if (!supabase) {
+    return { ok: false, activatedCount: 0, expiredCount: 0, readyForUid: false, error: 'Supabase is not configured' };
+  }
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, activatedCount: 0, expiredCount: 0, readyForUid: false, error: 'Not signed in' };
+
+  const { data, error } = await supabase.rpc('process_future_open_challenges');
+  if (error) {
+    console.warn('[matchPlay] processFutureOpenChallenges', error.message);
+    return { ok: false, activatedCount: 0, expiredCount: 0, readyForUid: false, error: error.message };
+  }
+  const payload = data as
+    | { ok?: boolean; activated_count?: number; expired_count?: number; ready_for_uid?: boolean; error?: string }
+    | null;
+  if (!payload?.ok) {
+    return {
+      ok: false,
+      activatedCount: 0,
+      expiredCount: 0,
+      readyForUid: false,
+      error: payload?.error ?? 'Could not process future challenges',
+    };
+  }
+  return {
+    ok: true,
+    activatedCount: Number(payload.activated_count ?? 0),
+    expiredCount: Number(payload.expired_count ?? 0),
+    readyForUid: !!payload.ready_for_uid,
+    error: null,
+  };
+}
 
 /** Atomically claims an open challenge (RPC); concurrent acceptors get `Challenge already taken`. */
 export async function acceptOpenChallenge(params: {

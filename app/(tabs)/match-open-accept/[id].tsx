@@ -219,10 +219,24 @@ export default function MatchOpenAcceptScreen() {
         return;
       }
       const m = res.data;
-      const okOpen = m.is_open && m.status === 'open' && m.player_2_id == null;
+      const lifecycle = m.challenge_status ?? 'active';
+      const okOpen = m.is_open && m.status === 'open' && lifecycle === 'active' && m.player_2_id == null;
       if (!okOpen) {
         const taken = m.is_open && m.status === 'open' && m.player_2_id != null;
-        setLoadErr(taken ? 'Challenge already taken.' : 'This open challenge is no longer available.');
+        const scheduled = m.is_open && m.status === 'open' && lifecycle === 'scheduled';
+        const awaitingPhoto = m.is_open && m.status === 'open' && lifecycle === 'awaiting_photo';
+        const expired = m.is_open && m.status === 'open' && lifecycle === 'expired';
+        setLoadErr(
+          taken
+            ? 'Challenge already taken.'
+            : scheduled
+              ? 'This challenge is scheduled and not live yet.'
+              : awaitingPhoto
+                ? 'This challenge is waiting for the poster to upload a settings photo.'
+                : expired
+                  ? 'This challenge has expired.'
+                  : 'This open challenge is no longer available.'
+        );
         setMatch(null);
         setLoadingMatch(false);
         return;
@@ -356,10 +370,17 @@ export default function MatchOpenAcceptScreen() {
       showAppAlert('Unavailable', res.error ?? 'Could not load this challenge.');
       return;
     }
-    if (!(m.is_open && m.status === 'open' && m.player_2_id == null)) {
+    const lifecycle = m.challenge_status ?? 'active';
+    if (!(m.is_open && m.status === 'open' && lifecycle === 'active' && m.player_2_id == null)) {
       showAppAlert(
         'Challenge already taken',
-        'Someone else accepted this challenge. It has been removed from the open feed.'
+        lifecycle === 'scheduled'
+          ? 'This challenge is scheduled and not live yet.'
+          : lifecycle === 'awaiting_photo'
+            ? 'This challenge is waiting for the poster to upload a settings photo.'
+            : lifecycle === 'expired'
+              ? 'This challenge has expired.'
+              : 'Someone else accepted this challenge. It has been removed from the open feed.'
       );
       router.back();
       return;

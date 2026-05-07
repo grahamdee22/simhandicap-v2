@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -13,15 +14,18 @@ import {
 import { confirmDestructive, showAppAlert } from '../lib/alertCompat';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
+import { settingsScreenshotPickerOptions } from '../lib/settingsScreenshotPicker';
 import { socialPageSectionTitleStyles } from '../lib/socialPageSectionTitle';
 import {
   deleteMatchById,
   fetchMatchPlayerDisplayNames,
   listMyMatches,
   listOpenFeedMatches,
+  processFutureOpenChallenges,
   updateMatchById,
   type DbMatchRow,
 } from '../lib/matchPlay';
+import { uploadMatchSettingsScreenshot } from '../lib/matchPlayStorage';
 import {
   DEFAULT_OPEN_FEED_FILTERS,
   filterAndSortOpenFeedRows,
@@ -94,10 +98,49 @@ function formatHoles(m: DbMatchRow): string {
   return `${m.holes} holes`;
 }
 
+function challengeLifecycle(m: DbMatchRow): 'scheduled' | 'awaiting_photo' | 'active' | 'expired' {
+  const s = m.challenge_status;
+  if (s === 'scheduled' || s === 'awaiting_photo' || s === 'active' || s === 'expired') return s;
+  return 'active';
+}
+
+function formatScheduledWhenAndCountdown(
+  v: string | null | undefined
+): { whenLabel: string; countdownLabel: string } {
+  if (!v) return { whenLabel: 'Scheduled', countdownLabel: 'soon' };
+  const d = new Date(v);
+  if (!Number.isFinite(d.getTime())) return { whenLabel: 'Scheduled', countdownLabel: 'soon' };
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(now.getDate() + 1);
+  const sameDay = d.toDateString() === now.toDateString();
+  const sameTomorrow = d.toDateString() === tomorrow.toDateString();
+  const time = d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const diffMs = d.getTime() - now.getTime();
+  const diffDays = Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
+  const diffHours = Math.max(0, Math.floor(diffMs / (60 * 60 * 1000)));
+  const whenLabel = sameDay
+    ? `Today at ${time}`
+    : sameTomorrow
+      ? `Tomorrow at ${time}`
+      : diffDays <= 7
+        ? `In ${diffDays + 1} days at ${time}`
+        : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  const countdownLabel =
+    diffDays >= 2 ? `in ${diffDays} days` : diffHours >= 1 ? `in ${diffHours} hours` : 'soon';
+  return { whenLabel, countdownLabel };
+}
+
 function statusLabel(m: DbMatchRow, uid: string): string {
   if (m.status === 'pending' && !m.is_open && m.player_2_id === uid) return 'Needs your response';
   if (m.status === 'pending' && !m.is_open && m.player_1_id === uid) return 'Awaiting opponent';
-  if (m.status === 'open' && m.is_open) return 'Open challenge';
+  if (m.status === 'open' && m.is_open) {
+    const cs = challengeLifecycle(m);
+    if (cs === 'scheduled') return 'Scheduled';
+    if (cs === 'awaiting_photo') return 'Awaiting photo';
+    if (cs === 'expired') return 'Expired';
+    return 'Open challenge';
+  }
   if (m.status === 'active') return 'In progress';
   if (m.status === 'waiting') return 'Waiting on opponent';
   if (m.status === 'complete') return 'Complete';
@@ -145,11 +188,30 @@ function partitionHubData(my: DbMatchRow[], uid: string) {
       (m.player_1_id === uid || m.player_2_id === uid)
   );
 
-  const myOpenPosted = my.filter(
-    (m) => m.is_open && m.status === 'open' && m.player_1_id === uid
+  const awaitingPhotoOwnOpen = my.filter(
+    (m) =>
+      m.is_open &&
+      m.status === 'open' &&
+      m.player_1_id === uid &&
+      challengeLifecycle(m) === 'awaiting_photo'
   );
 
-  const section1 = uniqById([...incomingDirect, ...outgoingPending, ...activeOrWaiting, ...myOpenPosted]);
+  const myOpenPostedActive = my.filter(
+    (m) =>
+      m.is_open &&
+      m.status === 'open' &&
+      m.player_1_id === uid &&
+      challengeLifecycle(m) === 'active'
+  );
+
+  // Top section includes direct challenges, in-progress matches, and own awaiting-photo open challenges.
+  const section1 = uniqById([
+    ...incomingDirect,
+    ...outgoingPending,
+    ...activeOrWaiting,
+    ...awaitingPhotoOwnOpen,
+    ...myOpenPostedActive,
+  ]);
 
   const completed = my
     .filter((m) => m.status === 'complete' || m.status === 'abandoned')
@@ -175,12 +237,14 @@ export function MatchPlayHub({
   const [fetchError, setFetchError] = useState(false);
   const [declineBusyId, setDeclineBusyId] = useState<string | null>(null);
   const [cancelOpenBusyId, setCancelOpenBusyId] = useState<string | null>(null);
+  const [awaitingPhotoBusyId, setAwaitingPhotoBusyId] = useState<string | null>(null);
   const [seenP1AcceptedIds, setSeenP1AcceptedIds] = useState<Set<string>>(() => new Set());
   const [seenP1Hydrated, setSeenP1Hydrated] = useState(false);
   const [openFeedFilters, setOpenFeedFilters] = useState<OpenFeedFilterState>(DEFAULT_OPEN_FEED_FILTERS);
   const [draftOpenFeedFilters, setDraftOpenFeedFilters] =
     useState<OpenFeedFilterState>(DEFAULT_OPEN_FEED_FILTERS);
   const [openFeedFiltersExpanded, setOpenFeedFiltersExpanded] = useState(false);
+  const [futureLifecycleBusy, setFutureLifecycleBusy] = useState(false);
   const refetchMatchesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const myMatchesRef = useRef<DbMatchRow[]>([]);
   const activeHubUserIdRef = useRef<string | undefined>(undefined);
@@ -249,10 +313,9 @@ export function MatchPlayHub({
       setLoading(true);
       setFetchError(false);
 
-      void (async () => {
+      const fetchHubRows = async () => {
         const [myRes, openRes] = await Promise.all([listMyMatches(), listOpenFeedMatches()]);
         if (cancelled) return;
-
         if (myRes.error || openRes.error) {
           if (mergeSeenDelayTimerRef.current) {
             clearTimeout(mergeSeenDelayTimerRef.current);
@@ -267,20 +330,35 @@ export function MatchPlayHub({
           setLoading(false);
           return;
         }
-
         const my = myRes.data ?? [];
         const open = openRes.data ?? [];
         myMatchesRef.current = my;
         setMyMatches(my);
         setOpenFeed(open);
-
         const { incomingDirect } = partitionHubData(my, userId);
         onIncomingDirectCount(incomingDirect.length);
-
         const nameRows = uniqById([...my, ...open]);
         const nm = await fetchMatchPlayerDisplayNames(nameRows);
         if (!cancelled) setNames(nm);
         setLoading(false);
+      };
+
+      void (async () => {
+        const proc = await processFutureOpenChallenges();
+        if (!cancelled && proc.ok && proc.readyForUid) {
+          showAppAlert(
+            'Future open challenge ready',
+            'Your Future Open Challenge is ready — upload your sim setup photo to go live.',
+            {
+              onOk: () => {
+                if (!cancelled) {
+                  void fetchHubRows();
+                }
+              },
+            }
+          );
+        }
+        await fetchHubRows();
       })();
 
       return () => {
@@ -452,6 +530,94 @@ export function MatchPlayHub({
     setOpenFeed((prev) => prev.filter((row) => row.id !== m.id));
   }, []);
 
+  const onUploadAwaitingPhoto = useCallback(async (m: DbMatchRow) => {
+    if (!userId) return;
+    setAwaitingPhotoBusyId(m.id);
+    try {
+      let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
+      if (!perm.granted) perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
+      if (!perm.granted) {
+        showAppAlert('Photos access needed', 'Allow photo library access to upload your sim settings screenshot.');
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync(settingsScreenshotPickerOptions());
+      if (result.canceled || !result.assets[0]) return;
+      const up = await uploadMatchSettingsScreenshot({
+        matchId: m.id,
+        userId,
+        localUri: result.assets[0].uri,
+        mimeType: result.assets[0].mimeType ?? undefined,
+      });
+      if ('error' in up) {
+        showAppAlert('Upload failed', up.error);
+        return;
+      }
+      const upd = await updateMatchById(m.id, {
+        player_1_settings_photo_url: up.signedUrl,
+        challenge_status: 'active',
+      });
+      if (upd.error) {
+        showAppAlert('Could not go live', upd.error);
+        return;
+      }
+      setMyMatches((prev) =>
+        prev.map((row) =>
+          row.id === m.id
+            ? { ...row, player_1_settings_photo_url: up.signedUrl, challenge_status: 'active' as const }
+            : row
+        )
+      );
+      setOpenFeed((prev) =>
+        prev.map((row) =>
+          row.id === m.id
+            ? { ...row, player_1_settings_photo_url: up.signedUrl, challenge_status: 'active' as const }
+            : row
+        )
+      );
+      showAppAlert('Challenge is live', 'Your Future Open Challenge is now active in the feed.', {
+        onOk: () => {
+          void Promise.all([listMyMatches(), listOpenFeedMatches()]).then(async ([myRes, openRes]) => {
+            if (myRes.error || openRes.error) return;
+            const my = myRes.data ?? [];
+            const open = openRes.data ?? [];
+            myMatchesRef.current = my;
+            setMyMatches(my);
+            setOpenFeed(open);
+            const { incomingDirect } = partitionHubData(my, userId);
+            onIncomingDirectCount(incomingDirect.length);
+            const nameRows = uniqById([...my, ...open]);
+            const nm = await fetchMatchPlayerDisplayNames(nameRows);
+            setNames(nm);
+          });
+        },
+      });
+    } finally {
+      setAwaitingPhotoBusyId(null);
+    }
+  }, [onIncomingDirectCount, userId]);
+
+  const onDevRunFutureLifecycleNow = useCallback(async () => {
+    if (!__DEV__) return;
+    setFutureLifecycleBusy(true);
+    const proc = await processFutureOpenChallenges();
+    setFutureLifecycleBusy(false);
+    if (!proc.ok) {
+      showAppAlert('Future lifecycle check failed', proc.error ?? 'Unknown error');
+      return;
+    }
+    if (proc.readyForUid) {
+      showAppAlert(
+        'Future open challenge ready',
+        'Your Future Open Challenge is ready — upload your sim setup photo to go live.'
+      );
+    } else {
+      showAppAlert(
+        'Future lifecycle (dev)',
+        `Activated: ${proc.activatedCount} · Expired: ${proc.expiredCount}`
+      );
+    }
+  }, []);
+
   if (!supabaseOn || !userId) {
     return (
       <View style={[styles.wrap, { marginHorizontal: gutter }]}>
@@ -483,13 +649,22 @@ export function MatchPlayHub({
     [openFeed, userId]
   );
 
-  const openFeedCourseOptions = useMemo(
-    () => uniqueCourseNamesFromOpenFeed(openFeedForOthers),
-    [openFeedForOthers]
-  );
-  const openFeedFiltered = useMemo(
+  const openFeedCourseOptions = useMemo(() => uniqueCourseNamesFromOpenFeed(openFeed), [openFeed]);
+  const openFeedFilteredForOthers = useMemo(
     () => filterAndSortOpenFeedRows(openFeedForOthers, openFeedFilters),
     [openFeedForOthers, openFeedFilters]
+  );
+  const openFeedFilteredAll = useMemo(
+    () => filterAndSortOpenFeedRows(openFeed, openFeedFilters),
+    [openFeed, openFeedFilters]
+  );
+  const openFeedScheduled = useMemo(
+    () => openFeedFilteredAll.filter((m) => challengeLifecycle(m) === 'scheduled'),
+    [openFeedFilteredAll]
+  );
+  const openFeedActive = useMemo(
+    () => openFeedFilteredForOthers.filter((m) => challengeLifecycle(m) === 'active'),
+    [openFeedFilteredForOthers]
   );
   const openOpenFeedFilters = useCallback(() => {
     setDraftOpenFeedFilters({ ...openFeedFilters });
@@ -524,12 +699,16 @@ export function MatchPlayHub({
 
   const nameFor = (id: string | null) => (id ? names[id] ?? 'Golfer' : '—');
 
-  const renderCard = (m: DbMatchRow, uid: string, listKind: 'hub' | 'openFeed' | 'recentHistory' = 'hub') => {
+  const renderCard = (
+    m: DbMatchRow,
+    uid: string,
+    listKind: 'hub' | 'openFeed' | 'openFeedScheduled' | 'recentHistory' = 'hub'
+  ) => {
     const p1 = nameFor(m.player_1_id);
     const p2 = nameFor(m.player_2_id);
     const peopleLine =
       m.is_open && m.status === 'open'
-        ? listKind === 'openFeed'
+        ? listKind === 'openFeed' || listKind === 'openFeedScheduled'
           ? (() => {
               const idx = m.player_1_ghin_index_at_post;
               if (idx != null && Number.isFinite(Number(idx)))
@@ -547,6 +726,10 @@ export function MatchPlayHub({
       m.status === 'open' &&
       m.player_1_id === uid &&
       m.player_2_id == null;
+    const isMyAwaitingPhoto =
+      isMyOpenPostedCancelable &&
+      challengeLifecycle(m) === 'awaiting_photo' &&
+      (!m.player_1_settings_photo_url || m.player_1_settings_photo_url.trim() === '');
     const declineBusy = declineBusyId === m.id;
     const isLiveScoring =
       (m.status === 'active' || m.status === 'waiting') &&
@@ -555,12 +738,23 @@ export function MatchPlayHub({
 
     const hubBadge = listKind === 'hub' ? incomingActiveBadge(m, uid) : null;
     const openFeedPlatform =
-      listKind === 'openFeed' ? (m.player_1_platform?.trim() ? m.player_1_platform.trim() : null) : null;
+      listKind === 'openFeed' || listKind === 'openFeedScheduled'
+        ? m.player_1_platform?.trim()
+          ? m.player_1_platform.trim()
+          : null
+        : null;
     const metaLine = (() => {
       if (listKind === 'hub') return `${formatHoles(m)} · Stroke play`;
       const status = statusLabel(m, uid);
       const holes = formatHoles(m);
-      if (listKind === 'openFeed') {
+      if (listKind === 'openFeed' || listKind === 'openFeedScheduled') {
+        const cs = challengeLifecycle(m);
+        if (cs === 'scheduled') {
+          const when = formatScheduledWhenAndCountdown(m.scheduled_for);
+          return openFeedPlatform
+            ? `${when.whenLabel} · ${when.countdownLabel} · ${holes} · ${openFeedPlatform}`
+            : `${when.whenLabel} · ${when.countdownLabel} · ${holes}`;
+        }
         return openFeedPlatform ? `${status} · ${holes} · ${openFeedPlatform}` : `${status} · ${holes}`;
       }
       return `${status} · ${holes} · Stroke play`;
@@ -619,6 +813,34 @@ export function MatchPlayHub({
           {cardInner}
           <Text style={styles.cardTapHint}>Tap for details</Text>
         </Pressable>
+      );
+    }
+    if (listKind === 'openFeedScheduled') {
+      const canDeleteScheduled = m.player_1_id === uid && challengeLifecycle(m) === 'scheduled';
+      return (
+        <View key={m.id} style={styles.card}>
+          {canDeleteScheduled ? (
+            <View style={styles.cardTopRow}>
+              <View style={styles.cardBodyFlex}>{cardInner}</View>
+              <Pressable
+                onPress={() => void onCancelOpenPosted(m)}
+                disabled={cancelOpenBusyId === m.id}
+                style={({ pressed }) => [styles.groupDeleteBtn, pressed && styles.groupDeleteBtnPressed]}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Delete scheduled challenge"
+              >
+                {cancelOpenBusyId === m.id ? (
+                  <ActivityIndicator size="small" color={colors.subtle} />
+                ) : (
+                  <Ionicons name="trash-outline" size={22} color={colors.subtle} />
+                )}
+              </Pressable>
+            </View>
+          ) : (
+            cardInner
+          )}
+        </View>
       );
     }
 
@@ -701,6 +923,23 @@ export function MatchPlayHub({
             </Pressable>
           </View>
         ) : null}
+        {isMyAwaitingPhoto ? (
+          <View style={styles.cardActions}>
+            <Pressable
+              style={({ pressed }) => [styles.acceptBtn, pressed && styles.cardActionPressed]}
+              onPress={() => void onUploadAwaitingPhoto(m)}
+              disabled={awaitingPhotoBusyId === m.id}
+              accessibilityRole="button"
+              accessibilityLabel="Upload settings photo to activate challenge"
+            >
+              {awaitingPhotoBusyId === m.id ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.acceptBtnTxt}>Upload photo to go live</Text>
+              )}
+            </Pressable>
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -755,6 +994,21 @@ export function MatchPlayHub({
         Open challenge feed
       </Text>
       <Text style={styles.sectionSub}>Anyone on SimCap can accept these.</Text>
+      {__DEV__ ? (
+        <Pressable
+          onPress={() => void onDevRunFutureLifecycleNow()}
+          disabled={futureLifecycleBusy}
+          style={({ pressed }) => [styles.devFutureBtn, pressed && styles.devFutureBtnPressed]}
+          accessibilityRole="button"
+          accessibilityLabel="Run future open lifecycle check now, development only"
+        >
+          {futureLifecycleBusy ? (
+            <ActivityIndicator size="small" color="#9a5a00" />
+          ) : (
+            <Text style={styles.devFutureBtnTxt}>DEV ONLY · Run future lifecycle now</Text>
+          )}
+        </Pressable>
+      ) : null}
       <OpenFeedFilterPanel
         gutter={gutter}
         coursesInFeed={openFeedCourseOptions}
@@ -769,12 +1023,24 @@ export function MatchPlayHub({
         onRemoveCourseChip={onRemoveOpenFeedCourseChip}
         onClearPlatformsChip={onClearOpenFeedPlatformsChip}
       />
-      {openFeedForOthers.length === 0 ? (
-        <Text style={styles.empty}>No open challenges right now.</Text>
-      ) : openFeedFiltered.length === 0 ? (
+      {openFeedActive.length === 0 && openFeedScheduled.length === 0 ? (
         <Text style={styles.empty}>No open challenges match these filters. Clear filters or adjust your choices.</Text>
       ) : (
-        openFeedFiltered.map((m) => renderCard(m, userId, 'openFeed'))
+        <>
+          <Text style={styles.feedSplitTitle}>Open now</Text>
+          {openFeedActive.length === 0 ? (
+            <Text style={styles.empty}>No active open challenges right now.</Text>
+          ) : (
+            openFeedActive.map((m) => renderCard(m, userId, 'openFeed'))
+          )}
+          <Text style={[styles.feedSplitTitle, styles.feedSplitTitleSpaced]}>Scheduled challenges</Text>
+          <Text style={styles.feedSplitSub}>Coming soon — not yet open for acceptance</Text>
+          {openFeedScheduled.length === 0 ? (
+            <Text style={styles.empty}>No scheduled open challenges right now.</Text>
+          ) : (
+            openFeedScheduled.map((m) => renderCard(m, userId, 'openFeedScheduled'))
+          )}
+        </>
       )}
 
       <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Recent matches</Text>
@@ -810,6 +1076,21 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.ink, marginTop: 4 },
   sectionSub: { fontSize: 11, color: colors.muted, marginTop: 3, marginBottom: 8, lineHeight: 16 },
   sectionSpaced: { marginTop: 18 },
+  devFutureBtn: {
+    alignSelf: 'flex-start',
+    marginBottom: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#dd9a3f',
+    backgroundColor: '#fff5e7',
+  },
+  devFutureBtnPressed: { opacity: 0.85 },
+  devFutureBtnTxt: { fontSize: 11, fontWeight: '700', color: '#9a5a00' },
+  feedSplitTitle: { fontSize: 12, fontWeight: '700', color: colors.ink, marginBottom: 6, marginTop: 2 },
+  feedSplitTitleSpaced: { marginTop: 10 },
+  feedSplitSub: { fontSize: 11, color: colors.muted, marginTop: -2, marginBottom: 8, lineHeight: 16 },
   createBtn: {
     alignItems: 'center',
     justifyContent: 'center',
