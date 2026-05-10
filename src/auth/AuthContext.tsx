@@ -1,5 +1,5 @@
 import type { Session, User } from '@supabase/supabase-js';
-import { usePathname, useRootNavigationState, useRouter, useSegments } from 'expo-router';
+import { usePathname, useRootNavigationState, useRouter, useSegments, type Href } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import { applyProfileRowToStore, fetchMyProfile } from '../lib/profiles';
@@ -11,6 +11,7 @@ import {
 } from '../lib/socialGroups';
 import { clearOnboardingSeen, getOnboardingSeen, setOnboardingSeen } from '../lib/onboardingStorage';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { shouldPromptOauthDisplayName } from '../lib/oauthDisplayNameGate';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
 
 type AuthContextValue = {
@@ -62,6 +63,8 @@ function isAuthRoute(segments: string[], pathname: string): boolean {
     p.endsWith('/reset-password')
   )
     return true;
+  if (p.includes('/auth/callback')) return true;
+  if (p.includes('complete-oauth-profile')) return true;
   return false;
 }
 
@@ -75,6 +78,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const segments = useSegments();
   const pathname = usePathname();
   const navReady = useRootNavigationState()?.key != null;
+  const profileDisplayName = useAppStore((s) => s.displayName);
+  const needsOauthDisplayName =
+    !!session?.user && shouldPromptOauthDisplayName(session.user, profileDisplayName);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
@@ -163,14 +169,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const inAuth = isAuthRoute(segments, pathname);
     const p = pathname.replace(/\/$/, '') || '/';
     const onPasswordReset = p.includes('reset-password');
-    if (!session && !inAuth) {
+    const onOAuthCallback = p.includes('/auth/callback');
+    const onCompleteOauth = p.includes('complete-oauth-profile');
+
+    if (!session && !inAuth && !onOAuthCallback) {
       if (!onboardingSeen) {
         router.replace('/(auth)/onboarding');
       } else {
         router.replace('/(auth)/sign-in');
       }
+    } else if (!session && onCompleteOauth) {
+      router.replace('/(auth)/sign-in');
+    } else if (session && needsOauthDisplayName && !onCompleteOauth) {
+      router.replace('/(auth)/complete-oauth-profile' as Href);
     } else if (session && inAuth && !onPasswordReset) {
-      router.replace('/');
+      if (!needsOauthDisplayName && !onOAuthCallback) {
+        router.replace('/');
+      }
     }
   }, [
     configured,
@@ -182,6 +197,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router,
     onboardingReady,
     onboardingSeen,
+    needsOauthDisplayName,
   ]);
 
   const completeOnboarding = useCallback(async () => {

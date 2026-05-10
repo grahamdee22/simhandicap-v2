@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
+import { OAuthSignInButtons } from '@/src/components/OAuthSignInButtons';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 
@@ -67,6 +68,8 @@ export default function SignInScreen() {
         </View>
 
         <Text style={styles.sectionTitle}>Sign in to your account</Text>
+
+        <OAuthSignInButtons dividerLabel="or use email" />
 
         <Text style={styles.lbl}>Email</Text>
         <TextInput

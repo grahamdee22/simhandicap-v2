@@ -69,7 +69,13 @@ export const supabase: SupabaseClient | null =
           storage: getAuthStorage(),
           autoRefreshToken: true,
           persistSession: true,
-          detectSessionInUrl: false,
+          /** Native: Expo Router + callback screen handle OAuth URLs. Web: allow Supabase to read PKCE/hash from the page URL. */
+          detectSessionInUrl: Platform.OS === 'web',
+          /**
+           * Web: PKCE (WebCrypto). Native: implicit avoids PKCE verifier generation issues (e.g. iOS Simulator).
+           * Native still supports PKCE-style `?code=` redirects in the callback handler as a fallback.
+           */
+          flowType: Platform.OS === 'web' ? 'pkce' : 'implicit',
         },
       })
     : null;

@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
+import { OAuthSignInButtons } from '@/src/components/OAuthSignInButtons';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 
@@ -73,6 +74,8 @@ export default function SignUpScreen() {
             matches. Free, and takes 2 minutes to set up.
           </Text>
         </View>
+
+        <OAuthSignInButtons dividerLabel="or create with email" />
 
         <Text style={styles.lbl}>Display name</Text>
         <TextInput
