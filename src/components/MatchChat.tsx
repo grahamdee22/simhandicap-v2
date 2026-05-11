@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,7 +13,23 @@ import {
   View,
 } from 'react-native';
 import { colors } from '@/src/lib/constants';
+import { googleOAuthAccessToken } from '@/src/lib/googleOAuthAccessToken';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
+
+function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const extra = Constants.expoConfig?.extra as
+    | { supabaseUrl?: string; supabaseAnonKey?: string; supabasePublishableKey?: string }
+    | undefined;
+  return {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '',
+    supabaseAnonKey:
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '',
+  };
+}
 
 const PRESET_PHRASES = [
   "Get rekt 🏌️",
@@ -49,7 +66,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [presetOpen, setPresetOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const supabaseOn = isSupabaseConfigured();
@@ -71,14 +88,35 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
     let cancelled = false;
 
     const load = async () => {
-      const { data, error } = await client
-        .from('match_messages')
-        .select('*')
-        .eq('match_id', matchId)
-        .order('created_at', { ascending: true });
-      if (cancelled) return;
-      if (!error && data) {
-        setMessages(data as MatchMessageRow[]);
+      const restTok = googleOAuthAccessToken ?? undefined;
+      if (restTok) {
+        const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+        if (!supabaseUrl || !supabaseAnonKey) {
+          if (!cancelled) setLoading(false);
+          return;
+        }
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/match_messages?match_id=eq.${encodeURIComponent(matchId)}&select=*&order=created_at.asc`,
+          { headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${restTok}` } }
+        );
+        if (!cancelled) {
+          if (res.ok) {
+            const parsed: unknown = await res.json();
+            if (Array.isArray(parsed)) {
+              setMessages(parsed as MatchMessageRow[]);
+            }
+          }
+        }
+      } else {
+        const { data, error } = await client
+          .from('match_messages')
+          .select('*')
+          .eq('match_id', matchId)
+          .order('created_at', { ascending: true });
+        if (cancelled) return;
+        if (!error && data) {
+          setMessages(data as MatchMessageRow[]);
+        }
       }
       setLoading(false);
       // start with everything read
@@ -126,7 +164,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
       cancelled = true;
       void client.removeChannel(channel);
     };
-  }, [matchId, currentUserId, opponentId, supabaseOn, expanded]);
+  }, [matchId, currentUserId, opponentId, supabaseOn, expanded, googleOAuthAccessToken]);
 
   const lastMessage = messages[messages.length - 1] ?? null;
   const lastPreview = lastMessage ? lastMessage.message : 'No messages yet';
@@ -210,7 +248,10 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
         accessibilityLabel="Match chat"
       >
         <View style={styles.headerRow}>
-          <Text style={styles.headerTitle}>Match chat</Text>
+          <View style={styles.headerTitleRow}>
+            <Text style={styles.headerTitle}>Match chat</Text>
+            <Text style={styles.headerToggle}>{expanded ? 'Hide' : 'Show'}</Text>
+          </View>
           {unreadCount > 0 ? (
             <View style={styles.unreadBadge}>
               <Text style={styles.unreadBadgeTxt}>{unreadCount}</Text>
@@ -363,9 +404,18 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 4,
   },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerTitle: {
     fontSize: 16,
     fontWeight: '600',
+    color: colors.header,
+  },
+  headerToggle: {
+    marginLeft: 8,
+    fontSize: 13,
     color: colors.header,
   },
   unreadBadge: {

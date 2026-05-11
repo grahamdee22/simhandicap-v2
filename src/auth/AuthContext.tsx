@@ -12,6 +12,7 @@ import {
 } from '../lib/socialGroups';
 import { clearOnboardingSeen, getOnboardingSeen, setOnboardingSeen } from '../lib/onboardingStorage';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { clearGoogleOAuthAccessToken, googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
 import { shouldPromptOauthDisplayName } from '../lib/oauthDisplayNameGate';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
 
@@ -142,8 +143,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
         }
         await syncProfileIntoStore();
-        await fetchMySocialGroupsIntoStore();
-        await fetchInboundGroupInvitesIntoStore();
+        await fetchMySocialGroupsIntoStore(
+          data.session?.user?.id,
+          googleOAuthAccessToken ?? undefined
+        );
+        await fetchInboundGroupInvitesIntoStore(
+          data.session?.user?.id,
+          googleOAuthAccessToken ?? undefined
+        );
         useAppStore.getState().recomputeGroupsFromYou();
       }
       setSession(data.session);
@@ -162,8 +169,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
         }
         await syncProfileIntoStore();
-        await fetchMySocialGroupsIntoStore();
-        await fetchInboundGroupInvitesIntoStore();
+        await fetchMySocialGroupsIntoStore(next?.user?.id, googleOAuthAccessToken ?? undefined);
+        await fetchInboundGroupInvitesIntoStore(next?.user?.id, googleOAuthAccessToken ?? undefined);
         useAppStore.getState().recomputeGroupsFromYou();
       } else if (!next?.user) {
         useAppStore.getState().setInboundGroupInvites([]);
@@ -185,12 +192,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     const s = session;
-    const detach = attachSocialGroupsRealtimeSync(s.access_token);
+    const detach = attachSocialGroupsRealtimeSync(s.access_token, s.user.id);
     return detach;
   }, [configured, session?.user?.id, session?.access_token]);
 
   useEffect(() => {
-    console.log('[guard] firing - pathname:', pathname, 'session:', !!session);
     if (!navReady || !onboardingReady) return;
     if (configured && loading) return;
     const inAuth = isAuthRoute(segments, pathname);
@@ -228,7 +234,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       !hasRedirectedToCompleteOauth.current
     ) {
       hasRedirectedToCompleteOauth.current = true;
-      console.log('[guard] hydrated:', hydrated, 'needsOauthDisplayName:', needsOauthDisplayName, 'onCompleteOauth:', onCompleteOauth, 'pathname:', pathname);
       router.replace('/(auth)/complete-oauth-profile' as Href);
     } else if (session && inAuth && !onPasswordReset) {
       if (!needsOauthDisplayName && !onOAuthCallback) {
@@ -284,6 +289,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const userId = session?.user?.id;
     const wipeLocalSessionArtifacts = async () => {
+      clearGoogleOAuthAccessToken();
       try {
         await AsyncStorage.removeItem('supabase.auth.token');
       } catch {
@@ -315,13 +321,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setTimeout(() => reject(new Error(`signOut timed out after ${SIGN_OUT_MS}ms`)), SIGN_OUT_MS)
         ),
       ]);
-    } catch (e) {
-      console.warn('[auth] signOut: error or timeout', e instanceof Error ? e.message : e);
+    } catch {
       /** Unblock a wedged client: clear local session even if the server round-trip never completes. */
       try {
         await supabase.auth.signOut({ scope: 'local' });
-      } catch (e2) {
-        console.warn('[auth] signOut: local fallback failed', e2 instanceof Error ? e2.message : e2);
+      } catch {
+        /* ignore */
       }
     }
     await wipeLocalSessionArtifacts();
@@ -334,8 +339,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
     }
     await syncProfileIntoStore();
-    await fetchMySocialGroupsIntoStore();
-    await fetchInboundGroupInvitesIntoStore();
+    await fetchMySocialGroupsIntoStore(session.user.id, googleOAuthAccessToken ?? undefined);
+    await fetchInboundGroupInvitesIntoStore(session.user.id, googleOAuthAccessToken ?? undefined);
     useAppStore.getState().recomputeGroupsFromYou();
   }, [configured, session]);
 

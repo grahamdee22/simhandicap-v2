@@ -1,4 +1,6 @@
+import Constants from 'expo-constants';
 import { PLATFORMS, type PlatformId } from './constants';
+import { googleOAuthAccessToken } from './googleOAuthAccessToken';
 import { headToHeadFromLoggedRound } from './h2hFromRound';
 import { dbRowToSimRound, type DbRoundRow } from './rounds';
 import { supabase } from './supabase';
@@ -15,6 +17,199 @@ import {
 
 function isPlatformId(v: string | null | undefined): v is PlatformId {
   return v != null && (PLATFORMS as readonly string[]).includes(v);
+}
+
+function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const extra = Constants.expoConfig?.extra as
+    | { supabaseUrl?: string; supabaseAnonKey?: string; supabasePublishableKey?: string }
+    | undefined;
+  return {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '',
+    supabaseAnonKey:
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '',
+  };
+}
+
+async function restSelectRows(accessToken: string, pathAndQuery: string): Promise<unknown[]> {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+  if (!supabaseUrl || !supabaseAnonKey) return [];
+  const res = await fetch(`${supabaseUrl}/rest/v1/${pathAndQuery}`, {
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.warn('[socialGroups] REST', pathAndQuery.slice(0, 80), res.status, body);
+    return [];
+  }
+  const parsed: unknown = await res.json();
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+const ROUNDS_SELECT_FOR_SOCIAL =
+  'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time';
+
+function applyLoadedSocialGroupData(
+  uid: string,
+  myMemberships: { group_id: string }[] | null | undefined,
+  groupsRows: { id: string; name: string; created_by: string; created_at: string }[] | null | undefined,
+  allMembers:
+    | { id: string; group_id: string; user_id: string; display_name_snapshot: string | null; joined_at?: string }[]
+    | null
+    | undefined,
+  profilesRows:
+    | { id: string; display_name: string | null; preferred_platform: string | null; ghin_index: number | string | null }[]
+    | null
+    | undefined,
+  gpiRows: { id: string; group_id: string; invitee_display_snapshot: string | null }[] | null | undefined,
+  sgiRows: { id: string; group_id: string; email: string }[] | null | undefined,
+  roundsRows: unknown[] | null | undefined
+): void {
+  const groupIds = [...new Set((myMemberships ?? []).map((m) => m.group_id))];
+  if (groupIds.length === 0) {
+    useAppStore.getState().setGroups([]);
+    return;
+  }
+  if (!groupsRows?.length) {
+    useAppStore.getState().setGroups([]);
+    return;
+  }
+  if (!allMembers) {
+    useAppStore.getState().setGroups([]);
+    return;
+  }
+
+  const pendingInAppByGroup = new Map<string, { id: string; label: string }[]>();
+  for (const row of gpiRows ?? []) {
+    const label = (row.invitee_display_snapshot as string | null)?.trim() || 'Invited member';
+    const list = pendingInAppByGroup.get(row.group_id) ?? [];
+    list.push({ id: row.id as string, label });
+    pendingInAppByGroup.set(row.group_id, list);
+  }
+
+  const pendingEmailByGroup = new Map<string, { id: string; email: string }[]>();
+  for (const row of sgiRows ?? []) {
+    const list = pendingEmailByGroup.get(row.group_id) ?? [];
+    list.push({ id: row.id as string, email: String(row.email) });
+    pendingEmailByGroup.set(row.group_id, list);
+  }
+
+  const profileById = new Map(
+    (profilesRows ?? []).map((p) => [
+      p.id,
+      {
+        display_name: p.display_name ?? '',
+        preferred_platform: p.preferred_platform,
+        ghin_index: p.ghin_index != null ? Number(p.ghin_index) : null,
+      },
+    ])
+  );
+
+  const userIds = [...new Set(allMembers.map((m) => m.user_id))];
+  const roundsByUserId = new Map<string, SimRound[]>();
+  if (userIds.length > 0 && roundsRows) {
+    for (const row of roundsRows) {
+      const r = row as { user_id?: string };
+      const rowUid = r.user_id as string;
+      const list = roundsByUserId.get(rowUid) ?? [];
+      list.push(dbRowToSimRound(row as DbRoundRow));
+      roundsByUserId.set(rowUid, list);
+    }
+  }
+
+  const friendGroups: FriendGroup[] = groupsRows.map((gr) => {
+    const membersRaw = allMembers.filter((m) => m.group_id === gr.id);
+    const members: GroupMember[] = membersRaw
+      .map((m) =>
+        mapProfileToMember(m, profileById.get(m.user_id), uid, roundsByUserId.get(m.user_id) ?? [])
+      )
+      .sort((a, b) => {
+        const ai = a.index ?? 999;
+        const bi = b.index ?? 999;
+        return ai - bi;
+      });
+    return {
+      id: gr.id,
+      name: gr.name,
+      createdByUserId: gr.created_by,
+      members,
+      pendingInApp: pendingInAppByGroup.get(gr.id),
+      pendingEmail: pendingEmailByGroup.get(gr.id),
+      lastRoundSummary: `${members.length} member${members.length === 1 ? '' : 's'}`,
+      headToHead: [],
+    };
+  });
+
+  friendGroups.sort((a, b) => a.name.localeCompare(b.name));
+  useAppStore.getState().setGroups(friendGroups);
+}
+
+async function fetchMySocialGroupsIntoStoreRest(uid: string, accessToken: string): Promise<void> {
+  const idInList = (ids: string[]) => `in.(${ids.join(',')})`;
+  const myMemberships = (await restSelectRows(
+    accessToken,
+    `group_members?user_id=eq.${encodeURIComponent(uid)}&select=group_id`
+  )) as { group_id: string }[];
+  const groupIds = [...new Set(myMemberships.map((m) => m.group_id))];
+  if (groupIds.length === 0) {
+    useAppStore.getState().setGroups([]);
+    return;
+  }
+  const groupsRows = (await restSelectRows(
+    accessToken,
+    `social_groups?id=${idInList(groupIds)}&select=id,name,created_by,created_at`
+  )) as { id: string; name: string; created_by: string; created_at: string }[];
+  const allMembers = (await restSelectRows(
+    accessToken,
+    `group_members?group_id=${idInList(groupIds)}&select=id,group_id,user_id,display_name_snapshot,joined_at`
+  )) as {
+    id: string;
+    group_id: string;
+    user_id: string;
+    display_name_snapshot: string | null;
+    joined_at?: string;
+  }[];
+  const userIds = [...new Set(allMembers.map((m) => m.user_id))];
+  const profilesRows = (await restSelectRows(
+    accessToken,
+    `profiles?id=${idInList(userIds)}&select=id,display_name,preferred_platform,ghin_index`
+  )) as {
+    id: string;
+    display_name: string | null;
+    preferred_platform: string | null;
+    ghin_index: number | string | null;
+  }[];
+  const gpiRows = (await restSelectRows(
+    accessToken,
+    `group_pending_invites?group_id=${idInList(groupIds)}&status=eq.pending&select=id,group_id,invitee_display_snapshot`
+  )) as { id: string; group_id: string; invitee_display_snapshot: string | null }[];
+  const sgiRows = (await restSelectRows(
+    accessToken,
+    `social_group_invites?group_id=${idInList(groupIds)}&status=eq.open&select=id,group_id,email`
+  )) as { id: string; group_id: string; email: string }[];
+  let roundsRows: unknown[] = [];
+  if (userIds.length > 0) {
+    roundsRows = await restSelectRows(
+      accessToken,
+      `rounds?user_id=${idInList(userIds)}&select=${encodeURIComponent(ROUNDS_SELECT_FOR_SOCIAL)}&order=played_at.asc`
+    );
+  }
+  applyLoadedSocialGroupData(
+    uid,
+    myMemberships,
+    groupsRows,
+    allMembers,
+    profilesRows,
+    gpiRows,
+    sgiRows,
+    roundsRows
+  );
 }
 
 /**
@@ -68,14 +263,13 @@ function mapProfileToMember(
 }
 
 /** Load crews from Supabase and replace `groups` in the store (then caller may run recomputeGroupsFromYou). */
-export async function fetchMySocialGroupsIntoStore(userId?: string): Promise<void> {
-  if (!supabase) {
-    return;
-  }
-  let uid: string;
-  if (userId) {
-    uid = userId;
-  } else {
+export async function fetchMySocialGroupsIntoStore(userId?: string, accessToken?: string): Promise<void> {
+  let uid: string | undefined = userId;
+  if (!uid) {
+    if (!supabase) {
+      useAppStore.getState().setGroups([]);
+      return;
+    }
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -84,6 +278,16 @@ export async function fetchMySocialGroupsIntoStore(userId?: string): Promise<voi
       return;
     }
     uid = user.id;
+  }
+
+  if (accessToken) {
+    await fetchMySocialGroupsIntoStoreRest(uid, accessToken);
+    return;
+  }
+
+  if (!supabase) {
+    useAppStore.getState().setGroups([]);
+    return;
   }
 
   const { data: myMemberships, error: memErr } = await supabase
@@ -151,35 +355,9 @@ export async function fetchMySocialGroupsIntoStore(userId?: string): Promise<voi
     console.warn('[socialGroups] email invites', sgiErr.message);
   }
 
-  const pendingInAppByGroup = new Map<string, { id: string; label: string }[]>();
-  for (const row of gpiRows ?? []) {
-    const label = (row.invitee_display_snapshot as string | null)?.trim() || 'Invited member';
-    const list = pendingInAppByGroup.get(row.group_id) ?? [];
-    list.push({ id: row.id as string, label });
-    pendingInAppByGroup.set(row.group_id, list);
-  }
-
-  const pendingEmailByGroup = new Map<string, { id: string; email: string }[]>();
-  for (const row of sgiRows ?? []) {
-    const list = pendingEmailByGroup.get(row.group_id) ?? [];
-    list.push({ id: row.id as string, email: String(row.email) });
-    pendingEmailByGroup.set(row.group_id, list);
-  }
-
-  const profileById = new Map(
-    (profilesRows ?? []).map((p) => [
-      p.id,
-      {
-        display_name: p.display_name,
-        preferred_platform: p.preferred_platform,
-        ghin_index: p.ghin_index != null ? Number(p.ghin_index) : null,
-      },
-    ])
-  );
-
-  const roundsByUserId = new Map<string, SimRound[]>();
+  let roundsRows: unknown[] | null = null;
   if (userIds.length > 0) {
-    const { data: roundsRows, error: rErr } = await supabase
+    const { data: rr, error: rErr } = await supabase
       .from('rounds')
       .select(
         'id, user_id, course_id, course_name, platform, gross_score, hole_scores, putting_mode, pin_placement, wind, mulligans, difficulty_modifier, differential, raw_differential, course_rating, slope, tee_name, played_at, created_at, h2h_group_id, h2h_opponent_member_id, h2h_opponent_display_name, simcap_index_at_time'
@@ -190,40 +368,20 @@ export async function fetchMySocialGroupsIntoStore(userId?: string): Promise<voi
     if (rErr) {
       console.warn('[socialGroups] cohort rounds', rErr.message);
     } else {
-      for (const row of roundsRows ?? []) {
-        const uid = row.user_id as string;
-        const list = roundsByUserId.get(uid) ?? [];
-        list.push(dbRowToSimRound(row as DbRoundRow));
-        roundsByUserId.set(uid, list);
-      }
+      roundsRows = rr ?? [];
     }
   }
 
-  const friendGroups: FriendGroup[] = groupsRows.map((gr) => {
-    const membersRaw = allMembers.filter((m) => m.group_id === gr.id);
-    const members: GroupMember[] = membersRaw
-      .map((m) =>
-        mapProfileToMember(m, profileById.get(m.user_id), uid, roundsByUserId.get(m.user_id) ?? [])
-      )
-      .sort((a, b) => {
-        const ai = a.index ?? 999;
-        const bi = b.index ?? 999;
-        return ai - bi;
-      });
-    return {
-      id: gr.id,
-      name: gr.name,
-      createdByUserId: gr.created_by,
-      members,
-      pendingInApp: pendingInAppByGroup.get(gr.id),
-      pendingEmail: pendingEmailByGroup.get(gr.id),
-      lastRoundSummary: `${members.length} member${members.length === 1 ? '' : 's'}`,
-      headToHead: [],
-    };
-  });
-
-  friendGroups.sort((a, b) => a.name.localeCompare(b.name));
-  useAppStore.getState().setGroups(friendGroups);
+  applyLoadedSocialGroupData(
+    uid,
+    myMemberships ?? [],
+    groupsRows,
+    allMembers,
+    profilesRows ?? [],
+    gpiRows ?? [],
+    sgiRows ?? [],
+    roundsRows
+  );
 }
 
 let socialRealtimeDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -234,7 +392,10 @@ let socialRealtimeDebounce: ReturnType<typeof setTimeout> | null = null;
  * Pass the current JWT so Realtime applies RLS and delivers `postgres_changes`.
  * Call the returned function on sign-out or when replacing the session.
  */
-export function attachSocialGroupsRealtimeSync(accessToken: string | undefined): () => void {
+export function attachSocialGroupsRealtimeSync(
+  accessToken: string | undefined,
+  socialRefetchUserId?: string
+): () => void {
   const client = supabase;
   if (!client) {
     return () => {};
@@ -250,8 +411,18 @@ export function attachSocialGroupsRealtimeSync(accessToken: string | undefined):
     socialRealtimeDebounce = setTimeout(() => {
       socialRealtimeDebounce = null;
       void (async () => {
-        await fetchMySocialGroupsIntoStore();
-        await fetchInboundGroupInvitesIntoStore();
+        const uid = socialRefetchUserId;
+        const restTok = googleOAuthAccessToken ?? undefined;
+        if (uid && restTok) {
+          await fetchMySocialGroupsIntoStore(uid, restTok);
+          await fetchInboundGroupInvitesIntoStore(uid, restTok);
+        } else if (uid) {
+          await fetchMySocialGroupsIntoStore(uid);
+          await fetchInboundGroupInvitesIntoStore(uid);
+        } else {
+          await fetchMySocialGroupsIntoStore();
+          await fetchInboundGroupInvitesIntoStore();
+        }
         useAppStore.getState().recomputeGroupsFromYou();
       })();
     }, 280);
@@ -287,15 +458,38 @@ export function attachSocialGroupsRealtimeSync(accessToken: string | undefined):
   };
 }
 
-export async function fetchInboundGroupInvitesIntoStore(userId?: string): Promise<void> {
-  if (!supabase) {
-    useAppStore.getState().setInboundGroupInvites([]);
-    return;
+async function fetchInboundGroupInvitesIntoStoreRest(uid: string, accessToken: string): Promise<void> {
+  const rows = (await restSelectRows(
+    accessToken,
+    `group_pending_invites?invitee_user_id=eq.${encodeURIComponent(uid)}&status=eq.pending&select=id,group_id,inviter_display_snapshot`
+  )) as Record<string, unknown>[];
+  const groupIds = [...new Set(rows.map((r) => String(r.group_id)))];
+  const groupNameById = new Map<string, string>();
+  if (groupIds.length > 0) {
+    const nameRows = (await restSelectRows(
+      accessToken,
+      `social_groups?id=in.(${groupIds.join(',')})&select=id,name`
+    )) as { id: string; name: string }[];
+    for (const g of nameRows) {
+      groupNameById.set(g.id, g.name?.trim() || '');
+    }
   }
-  let uid: string;
-  if (userId) {
-    uid = userId;
-  } else {
+  const invites: InboundGroupInvite[] = rows.map((row) => ({
+    id: String(row.id),
+    groupId: String(row.group_id),
+    groupName: groupNameById.get(String(row.group_id)) || 'Group',
+    inviterName: String(row.inviter_display_snapshot ?? '').trim() || 'Someone',
+  }));
+  useAppStore.getState().setInboundGroupInvites(invites);
+}
+
+export async function fetchInboundGroupInvitesIntoStore(userId?: string, accessToken?: string): Promise<void> {
+  let uid: string | undefined = userId;
+  if (!uid) {
+    if (!supabase) {
+      useAppStore.getState().setInboundGroupInvites([]);
+      return;
+    }
     const {
       data: { user },
     } = await supabase.auth.getUser();
@@ -304,6 +498,16 @@ export async function fetchInboundGroupInvitesIntoStore(userId?: string): Promis
       return;
     }
     uid = user.id;
+  }
+
+  if (accessToken) {
+    await fetchInboundGroupInvitesIntoStoreRest(uid, accessToken);
+    return;
+  }
+
+  if (!supabase) {
+    useAppStore.getState().setInboundGroupInvites([]);
+    return;
   }
 
   const { data, error } = await supabase

@@ -15,8 +15,10 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
+import { googleOAuthAccessToken } from '@/src/lib/googleOAuthAccessToken';
 import {
   abandonMatch,
+  fetchMatchPlayerDisplayNames,
   getMatchById,
   listMatchHoles,
   MATCH_HOLE_REACTION_EMOJIS,
@@ -98,7 +100,10 @@ export default function MatchScoreScreen() {
       setLoading(false);
       return;
     }
-    const [mRes, hRes] = await Promise.all([getMatchById(matchId), listMatchHoles(matchId)]);
+    const [mRes, hRes] = await Promise.all([
+      getMatchById(matchId, googleOAuthAccessToken ?? undefined),
+      listMatchHoles(matchId, googleOAuthAccessToken ?? undefined),
+    ]);
     if (!mounted.current) return;
     if (mRes.error || !mRes.data) {
       setFatalErr(mRes.error ?? 'Match not found.');
@@ -126,6 +131,8 @@ export default function MatchScoreScreen() {
     if (hRes.data) setHoles(hRes.data);
     const p1 = m.player_1_id;
     const p2 = m.player_2_id;
+    const token = googleOAuthAccessToken ?? undefined;
+    const nameMapFromToken = token ? await fetchMatchPlayerDisplayNames([m], token) : {};
     if (supabase) {
       const { data: profs } = await supabase
         .from('profiles')
@@ -145,14 +152,22 @@ export default function MatchScoreScreen() {
         };
       }
       setNames({
-        p1: map[p1]?.dn ?? 'Player 1',
-        p2: map[p2]?.dn ?? 'Player 2',
+        p1: nameMapFromToken[p1] ?? map[p1]?.dn ?? 'Player 1',
+        p2: nameMapFromToken[p2] ?? map[p2]?.dn ?? 'Player 2',
       });
       setGhin1(map[p1]?.ghin ?? 0);
       setGhin2(map[p2]?.ghin ?? 0);
+    } else if (token) {
+      if (!mounted.current) return;
+      setNames({
+        p1: nameMapFromToken[p1] ?? 'Player 1',
+        p2: nameMapFromToken[p2] ?? 'Player 2',
+      });
+      setGhin1(0);
+      setGhin2(0);
     }
     setLoading(false);
-  }, [matchId, supabaseOn, user?.id, router]);
+  }, [matchId, supabaseOn, user?.id, router, googleOAuthAccessToken]);
 
   useFocusEffect(
     useCallback(() => {
@@ -549,7 +564,7 @@ export default function MatchScoreScreen() {
           contentContainerStyle={{
             paddingHorizontal: gutter,
             paddingTop: 12,
-            paddingBottom: insets.bottom + 320,
+            paddingBottom: insets.bottom + 200,
           }}
           keyboardShouldPersistTaps="handled"
         >

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Provider, Session, User } from '@supabase/supabase-js';
+import { createClient, type Provider, type Session, type User } from '@supabase/supabase-js';
 import { router, type Href } from 'expo-router';
 import { injectOAuthSession } from '@/src/auth/AuthContext';
 import Constants from 'expo-constants';
@@ -8,11 +8,34 @@ import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import { applyProfileRowToStore, fetchMyProfile } from '@/src/lib/profiles';
 import { fetchMyRoundsForUser } from '@/src/lib/rounds';
+import { listMyMatches, listOpenFeedMatches } from '@/src/lib/matchPlay';
 import { fetchInboundGroupInvitesIntoStore, fetchMySocialGroupsIntoStore } from '@/src/lib/socialGroups';
+import { setGoogleOAuthAccessToken } from '@/src/lib/googleOAuthAccessToken';
 import { rebindPersistToUser, useAppStore } from '@/src/store/useAppStore';
 import { supabase } from './supabase';
 
 void WebBrowser.maybeCompleteAuthSession();
+
+export { clearGoogleOAuthAccessToken, googleOAuthAccessToken } from '@/src/lib/googleOAuthAccessToken';
+
+function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const extra = Constants.expoConfig?.extra as
+    | {
+        supabaseUrl?: string;
+        supabaseAnonKey?: string;
+        supabasePublishableKey?: string;
+      }
+    | undefined;
+  return {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '',
+    supabaseAnonKey:
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '',
+  };
+}
 
 export function getOAuthRedirectUri(): string {
   if (Platform.OS === 'web') {
@@ -73,33 +96,87 @@ async function persistNativeOAuthSessionAndNavigate(
   accessToken: string,
   refreshToken: string,
   user: User,
-  options?: { appleDebugLogs?: boolean }
+  options?: { tryGoogleNativeSetSession?: boolean }
 ): Promise<{ error?: string }> {
+  setGoogleOAuthAccessToken(accessToken);
   const client = supabase!;
   const storageKey = 'supabase.auth.token';
-  const sessionData = JSON.stringify({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-    expires_at: Math.floor(Date.now() / 1000) + 3600,
-    expires_in: 3600,
-    token_type: 'bearer',
-    user,
-  });
-  await AsyncStorage.setItem(storageKey, sessionData);
 
-  const fakeSession = {
-    access_token: accessToken,
-    refresh_token: refreshToken,
-    expires_at: Math.floor(Date.now() / 1000) + 3600,
-    expires_in: 3600,
-    token_type: 'bearer',
-    user,
-  };
-  if (injectOAuthSession) {
-    injectOAuthSession(fakeSession as Session);
+  let sessionForInject: Session | null = null;
+
+  /** Google native implicit: in-memory temp client `setSession` only (main client `setSession` deadlocks). */
+  if (options?.tryGoogleNativeSetSession && Platform.OS !== 'web') {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (supabaseUrl && supabaseAnonKey) {
+      const tempClient = createClient(supabaseUrl, supabaseAnonKey, {
+        auth: {
+          persistSession: false,
+          autoRefreshToken: false,
+          detectSessionInUrl: false,
+          flowType: 'implicit',
+          storage: {
+            getItem: () => Promise.resolve(null),
+            setItem: () => Promise.resolve(),
+            removeItem: () => Promise.resolve(),
+          },
+        },
+      });
+      let tempResult: Awaited<ReturnType<typeof tempClient.auth.setSession>> | null = null;
+      try {
+        tempResult = await Promise.race([
+          tempClient.auth.setSession({
+            access_token: accessToken,
+            refresh_token: refreshToken,
+          }),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error('tempClient setSession timed out')), 3000)
+          ),
+        ]);
+      } catch {
+        tempResult = null;
+      }
+      const tempSession = tempResult?.data?.session;
+      if (tempSession) {
+        sessionForInject = tempSession as Session;
+        await AsyncStorage.setItem(storageKey, JSON.stringify(tempSession));
+        try {
+          await client.auth.initialize();
+        } catch {
+          /* ignore */
+        }
+        setGoogleOAuthAccessToken(tempSession.access_token);
+      }
+    }
   }
 
-  await rebindPersistToUser(user.id);
+  if (!sessionForInject) {
+    const sessionData = JSON.stringify({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      expires_in: 3600,
+      token_type: 'bearer',
+      user,
+    });
+    await AsyncStorage.setItem(storageKey, sessionData);
+    sessionForInject = {
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      expires_in: 3600,
+      token_type: 'bearer',
+      user,
+    } as Session;
+  }
+
+  const effectiveUser = sessionForInject.user;
+  const bearerToken = sessionForInject.access_token;
+
+  if (injectOAuthSession) {
+    injectOAuthSession(sessionForInject);
+  }
+
+  await rebindPersistToUser(effectiveUser.id);
 
   const extra = Constants.expoConfig?.extra as
     | {
@@ -117,18 +194,12 @@ async function persistNativeOAuthSessionAndNavigate(
     extra?.supabasePublishableKey ??
     '';
 
-  const remoteRounds = await fetchMyRoundsForUser(user.id, accessToken);
-  if (options?.appleDebugLogs) {
-    console.log('[apple] remoteRounds:', remoteRounds?.length ?? 'null');
-  }
+  const remoteRounds = await fetchMyRoundsForUser(effectiveUser.id, bearerToken);
   if (remoteRounds !== null) {
     useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
   }
 
-  const profile = await fetchMyProfile(user.id, accessToken);
-  if (options?.appleDebugLogs) {
-    console.log('[apple] profile display_name:', profile?.display_name ?? 'null');
-  }
+  const profile = await fetchMyProfile(effectiveUser.id, bearerToken);
   const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged } = useAppStore.getState();
   applyProfileRowToStore(profile, {
     setDisplayName,
@@ -138,15 +209,15 @@ async function persistNativeOAuthSessionAndNavigate(
 
   const currentDisplayName = useAppStore.getState().displayName;
   if (!currentDisplayName || currentDisplayName === 'Golfer' || currentDisplayName.includes('@')) {
-    const emailPrefix = (user.email ?? '').split('@')[0];
+    const emailPrefix = (effectiveUser.email ?? '').split('@')[0];
     if (emailPrefix) {
       useAppStore.getState().setDisplayName(emailPrefix);
       if (supabaseUrl && supabaseAnonKey) {
-        await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+        await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${effectiveUser.id}`, {
           method: 'PATCH',
           headers: {
             apikey: supabaseAnonKey,
-            Authorization: `Bearer ${accessToken}`,
+            Authorization: `Bearer ${bearerToken}`,
             'Content-Type': 'application/json',
             Prefer: 'return=minimal',
           },
@@ -156,16 +227,21 @@ async function persistNativeOAuthSessionAndNavigate(
     }
   }
 
-  await fetchMySocialGroupsIntoStore(user.id);
-  await fetchInboundGroupInvitesIntoStore(user.id);
+  await fetchMySocialGroupsIntoStore(effectiveUser.id, bearerToken);
+  await fetchInboundGroupInvitesIntoStore(effectiveUser.id, bearerToken);
   useAppStore.getState().recomputeGroupsFromYou();
 
+  await Promise.all([
+    listMyMatches(effectiveUser.id, bearerToken),
+    listOpenFeedMatches(effectiveUser.id, bearerToken),
+  ]);
+
   const profileRes = await fetch(
-    `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=id&limit=1`,
+    `${supabaseUrl}/rest/v1/profiles?id=eq.${effectiveUser.id}&select=id&limit=1`,
     {
       headers: {
         apikey: supabaseAnonKey,
-        Authorization: `Bearer ${accessToken}`,
+        Authorization: `Bearer ${bearerToken}`,
       },
     }
   );
@@ -199,7 +275,6 @@ export async function signInWithApple(): Promise<{ error?: string }> {
       ],
     });
     const identityToken = credential.identityToken;
-    console.log('[apple] credential received, identityToken present:', !!identityToken);
     if (!identityToken) {
       return { error: 'Apple did not return an identity token' };
     }
@@ -214,16 +289,9 @@ export async function signInWithApple(): Promise<{ error?: string }> {
       data = result.data;
       error = result.error;
     } catch {
-      console.log('[apple] timed out');
       return { error: 'Apple Sign In timed out' };
     }
 
-    console.log(
-      '[apple] signInWithIdToken result - user:',
-      data?.session?.user?.email,
-      'error:',
-      error
-    );
     if (error) {
       return { error: error.message };
     }
@@ -236,11 +304,8 @@ export async function signInWithApple(): Promise<{ error?: string }> {
     if (!refreshToken) {
       return { error: 'Apple sign-in did not return a refresh token' };
     }
-    console.log('[apple] access_token present:', !!accessToken);
 
-    return persistNativeOAuthSessionAndNavigate(accessToken, refreshToken, session.user, {
-      appleDebugLogs: true,
-    });
+    return persistNativeOAuthSessionAndNavigate(accessToken, refreshToken, session.user);
   } catch (e) {
     const code = (e as { code?: string })?.code;
     if (code === 'ERR_REQUEST_CANCELED') {
@@ -304,7 +369,8 @@ export async function signInWithOAuthProvider(provider: Provider): Promise<{ err
     return persistNativeOAuthSessionAndNavigate(
       implicit.access_token,
       implicit.refresh_token,
-      userData.user
+      userData.user,
+      { tryGoogleNativeSetSession: true }
     );
   }
 

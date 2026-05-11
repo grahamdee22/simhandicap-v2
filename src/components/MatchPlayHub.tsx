@@ -32,6 +32,7 @@ import {
   uniqueCourseNamesFromOpenFeed,
   type OpenFeedFilterState,
 } from '../lib/openFeedFilters';
+import { googleOAuthAccessToken } from '../lib/oauthSignIn';
 import { supabase } from '../lib/supabase';
 import { OpenFeedFilterPanel } from './OpenFeedFilterPanel';
 type Props = {
@@ -249,6 +250,7 @@ export function MatchPlayHub({
   const myMatchesRef = useRef<DbMatchRow[]>([]);
   const activeHubUserIdRef = useRef<string | undefined>(undefined);
   const mergeSeenDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFocused = useIsFocused();
 
   useEffect(() => {
     myMatchesRef.current = myMatches;
@@ -305,64 +307,9 @@ export function MatchPlayHub({
         setLoading(false);
         onIncomingDirectCount(0);
         onOutgoingAcceptedUnseenCount?.(0);
-        return;
+        return () => {};
       }
-
-      activeHubUserIdRef.current = userId;
-      let cancelled = false;
-      setLoading(true);
-      setFetchError(false);
-
-      const fetchHubRows = async () => {
-        const [myRes, openRes] = await Promise.all([listMyMatches(userId), listOpenFeedMatches(userId)]);
-        if (cancelled) return;
-        if (myRes.error || openRes.error) {
-          if (mergeSeenDelayTimerRef.current) {
-            clearTimeout(mergeSeenDelayTimerRef.current);
-            mergeSeenDelayTimerRef.current = null;
-          }
-          setFetchError(true);
-          setMyMatches([]);
-          setOpenFeed([]);
-          myMatchesRef.current = [];
-          onIncomingDirectCount(0);
-          onOutgoingAcceptedUnseenCount?.(0);
-          setLoading(false);
-          return;
-        }
-        const my = myRes.data ?? [];
-        const open = openRes.data ?? [];
-        myMatchesRef.current = my;
-        setMyMatches(my);
-        setOpenFeed(open);
-        const { incomingDirect } = partitionHubData(my, userId);
-        onIncomingDirectCount(incomingDirect.length);
-        const nameRows = uniqById([...my, ...open]);
-        const nm = await fetchMatchPlayerDisplayNames(nameRows);
-        if (!cancelled) setNames(nm);
-        setLoading(false);
-      };
-
-      void (async () => {
-        const proc = await processFutureOpenChallenges();
-        if (!cancelled && proc.ok && proc.readyForUid) {
-          showAppAlert(
-            'Future open challenge ready',
-            'Your Future Open Challenge is ready — upload your sim setup photo to go live.',
-            {
-              onOk: () => {
-                if (!cancelled) {
-                  void fetchHubRows();
-                }
-              },
-            }
-          );
-        }
-        await fetchHubRows();
-      })();
-
       return () => {
-        cancelled = true;
         if (mergeSeenDelayTimerRef.current) {
           clearTimeout(mergeSeenDelayTimerRef.current);
           mergeSeenDelayTimerRef.current = null;
@@ -380,6 +327,72 @@ export function MatchPlayHub({
   );
 
   useEffect(() => {
+    if (!supabaseOn || !userId || userId.trim() === '' || !isFocused) {
+      return undefined;
+    }
+
+    activeHubUserIdRef.current = userId;
+    let cancelled = false;
+    setLoading(true);
+    setFetchError(false);
+
+    const fetchHubRows = async () => {
+      const [myRes, openRes] = await Promise.all([
+        listMyMatches(userId, googleOAuthAccessToken ?? undefined),
+        listOpenFeedMatches(userId, googleOAuthAccessToken ?? undefined),
+      ]);
+      if (cancelled) return;
+      if (myRes.error || openRes.error) {
+        if (mergeSeenDelayTimerRef.current) {
+          clearTimeout(mergeSeenDelayTimerRef.current);
+          mergeSeenDelayTimerRef.current = null;
+        }
+        setFetchError(true);
+        setMyMatches([]);
+        setOpenFeed([]);
+        myMatchesRef.current = [];
+        onIncomingDirectCount(0);
+        onOutgoingAcceptedUnseenCount?.(0);
+        setLoading(false);
+        return;
+      }
+      const my = myRes.data ?? [];
+      const open = openRes.data ?? [];
+      myMatchesRef.current = my;
+      setMyMatches(my);
+      setOpenFeed(open);
+      const { incomingDirect } = partitionHubData(my, userId);
+      onIncomingDirectCount(incomingDirect.length);
+      const nameRows = uniqById([...my, ...open]);
+      const nm = await fetchMatchPlayerDisplayNames(nameRows, googleOAuthAccessToken ?? undefined);
+      if (!cancelled) setNames(nm);
+      setLoading(false);
+    };
+
+    void (async () => {
+      const proc = await processFutureOpenChallenges();
+      if (!cancelled && proc.ok && proc.readyForUid) {
+        showAppAlert(
+          'Future open challenge ready',
+          'Your Future Open Challenge is ready — upload your sim setup photo to go live.',
+          {
+            onOk: () => {
+              if (!cancelled) {
+                void fetchHubRows();
+              }
+            },
+          }
+        );
+      }
+      await fetchHubRows();
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isFocused, supabaseOn, userId, onIncomingDirectCount, onOutgoingAcceptedUnseenCount]);
+
+  useEffect(() => {
     const client = supabase;
     if (!supabaseOn || !userId || !client) return;
 
@@ -387,7 +400,10 @@ export function MatchPlayHub({
       if (refetchMatchesTimerRef.current) clearTimeout(refetchMatchesTimerRef.current);
       refetchMatchesTimerRef.current = setTimeout(() => {
         refetchMatchesTimerRef.current = null;
-        void Promise.all([listMyMatches(userId), listOpenFeedMatches(userId)]).then(([myRes, openRes]) => {
+        void Promise.all([
+          listMyMatches(userId, googleOAuthAccessToken ?? undefined),
+          listOpenFeedMatches(userId, googleOAuthAccessToken ?? undefined),
+        ]).then(([myRes, openRes]) => {
           if (!myRes.error && myRes.data) {
             setMyMatches(myRes.data);
             const { incomingDirect } = partitionHubData(myRes.data, userId);
@@ -440,8 +456,6 @@ export function MatchPlayHub({
       void client.removeChannel(channel);
     };
   }, [supabaseOn, userId, onIncomingDirectCount]);
-
-  const isFocused = useIsFocused();
 
   /**
    * After fresh data while Social is focused, debounce persisting "seen" so the tab badge can paint first.
@@ -584,7 +598,10 @@ export function MatchPlayHub({
       );
       showAppAlert('Challenge is live', 'Your Future Open Challenge is now active in the feed.', {
         onOk: () => {
-          void Promise.all([listMyMatches(userId), listOpenFeedMatches(userId)]).then(async ([myRes, openRes]) => {
+          void Promise.all([
+            listMyMatches(userId, googleOAuthAccessToken ?? undefined),
+            listOpenFeedMatches(userId, googleOAuthAccessToken ?? undefined),
+          ]).then(async ([myRes, openRes]) => {
             if (myRes.error || openRes.error) return;
             const my = myRes.data ?? [];
             const open = openRes.data ?? [];
@@ -594,7 +611,7 @@ export function MatchPlayHub({
             const { incomingDirect } = partitionHubData(my, userId);
             onIncomingDirectCount(incomingDirect.length);
             const nameRows = uniqById([...my, ...open]);
-            const nm = await fetchMatchPlayerDisplayNames(nameRows);
+            const nm = await fetchMatchPlayerDisplayNames(nameRows, googleOAuthAccessToken ?? undefined);
             setNames(nm);
           });
         },
@@ -654,6 +671,86 @@ export function MatchPlayHub({
     };
   }, [supabaseOn, userId]);
 
+  const hubPartition = useMemo(() => {
+    if (!supabaseOn || !userId) {
+      return {
+        incomingDirect: [] as DbMatchRow[],
+        section1: [] as DbMatchRow[],
+        completed: [] as DbMatchRow[],
+      };
+    }
+    return partitionHubData(myMatches, userId);
+  }, [supabaseOn, userId, myMatches]);
+
+  const { section1, completed } = hubPartition;
+
+  const openFeedForOthers = useMemo(() => {
+    if (!supabaseOn || !userId) return [];
+    return openFeed.filter((m) => m.player_1_id !== userId);
+  }, [openFeed, userId, supabaseOn]);
+
+  const openFeedCourseOptions = useMemo(() => {
+    if (!supabaseOn || !userId) return [];
+    return uniqueCourseNamesFromOpenFeed(openFeed);
+  }, [openFeed, supabaseOn, userId]);
+
+  const openFeedFilteredForOthers = useMemo(() => {
+    if (!supabaseOn || !userId) return [];
+    return filterAndSortOpenFeedRows(openFeedForOthers, openFeedFilters);
+  }, [openFeedForOthers, openFeedFilters, supabaseOn, userId]);
+
+  const openFeedFilteredAll = useMemo(() => {
+    if (!supabaseOn || !userId) return [];
+    return filterAndSortOpenFeedRows(openFeed, openFeedFilters);
+  }, [openFeed, openFeedFilters, supabaseOn, userId]);
+
+  const openFeedScheduled = useMemo(() => {
+    if (!supabaseOn || !userId) return [];
+    return openFeedFilteredAll.filter((m) => challengeLifecycle(m) === 'scheduled');
+  }, [openFeedFilteredAll, supabaseOn, userId]);
+
+  const openFeedActive = useMemo(() => {
+    if (!supabaseOn || !userId) return [];
+    return openFeedFilteredForOthers.filter((m) => challengeLifecycle(m) === 'active');
+  }, [openFeedFilteredForOthers, supabaseOn, userId]);
+
+  const openOpenFeedFilters = useCallback(() => {
+    if (!supabaseOn || !userId) return;
+    setDraftOpenFeedFilters({ ...openFeedFilters });
+    setOpenFeedFiltersExpanded(true);
+  }, [openFeedFilters, supabaseOn, userId]);
+
+  const applyOpenFeedFiltersPanel = useCallback(() => {
+    if (!supabaseOn || !userId) return;
+    setOpenFeedFilters({ ...draftOpenFeedFilters });
+    setOpenFeedFiltersExpanded(false);
+  }, [draftOpenFeedFilters, supabaseOn, userId]);
+
+  const resetOpenFeedFilters = useCallback(() => {
+    if (!supabaseOn || !userId) return;
+    setOpenFeedFilters(DEFAULT_OPEN_FEED_FILTERS);
+    setDraftOpenFeedFilters(DEFAULT_OPEN_FEED_FILTERS);
+    setOpenFeedFiltersExpanded(false);
+  }, [supabaseOn, userId]);
+
+  const onRemoveOpenFeedHandicapChip = useCallback(() => {
+    if (!supabaseOn || !userId) return;
+    setOpenFeedFilters((f) => ({ ...f, handicapRanges: [] }));
+    setDraftOpenFeedFilters((f) => ({ ...f, handicapRanges: [] }));
+  }, [supabaseOn, userId]);
+
+  const onRemoveOpenFeedCourseChip = useCallback(() => {
+    if (!supabaseOn || !userId) return;
+    setOpenFeedFilters((f) => ({ ...f, courseName: null }));
+    setDraftOpenFeedFilters((f) => ({ ...f, courseName: null }));
+  }, [supabaseOn, userId]);
+
+  const onClearOpenFeedPlatformsChip = useCallback(() => {
+    if (!supabaseOn || !userId) return;
+    setOpenFeedFilters((f) => ({ ...f, platforms: [] }));
+    setDraftOpenFeedFilters((f) => ({ ...f, platforms: [] }));
+  }, [supabaseOn, userId]);
+
   if (!supabaseOn || !userId) {
     return (
       <View style={[styles.wrap, { marginHorizontal: gutter }]}>
@@ -677,61 +774,6 @@ export function MatchPlayHub({
       </View>
     );
   }
-
-  const { section1, completed } = partitionHubData(myMatches, userId);
-
-  const openFeedForOthers = useMemo(
-    () => openFeed.filter((m) => m.player_1_id !== userId),
-    [openFeed, userId]
-  );
-
-  const openFeedCourseOptions = useMemo(() => uniqueCourseNamesFromOpenFeed(openFeed), [openFeed]);
-  const openFeedFilteredForOthers = useMemo(
-    () => filterAndSortOpenFeedRows(openFeedForOthers, openFeedFilters),
-    [openFeedForOthers, openFeedFilters]
-  );
-  const openFeedFilteredAll = useMemo(
-    () => filterAndSortOpenFeedRows(openFeed, openFeedFilters),
-    [openFeed, openFeedFilters]
-  );
-  const openFeedScheduled = useMemo(
-    () => openFeedFilteredAll.filter((m) => challengeLifecycle(m) === 'scheduled'),
-    [openFeedFilteredAll]
-  );
-  const openFeedActive = useMemo(
-    () => openFeedFilteredForOthers.filter((m) => challengeLifecycle(m) === 'active'),
-    [openFeedFilteredForOthers]
-  );
-  const openOpenFeedFilters = useCallback(() => {
-    setDraftOpenFeedFilters({ ...openFeedFilters });
-    setOpenFeedFiltersExpanded(true);
-  }, [openFeedFilters]);
-
-  const applyOpenFeedFiltersPanel = useCallback(() => {
-    setOpenFeedFilters({ ...draftOpenFeedFilters });
-    setOpenFeedFiltersExpanded(false);
-  }, [draftOpenFeedFilters]);
-
-  const resetOpenFeedFilters = useCallback(() => {
-    setOpenFeedFilters(DEFAULT_OPEN_FEED_FILTERS);
-    setDraftOpenFeedFilters(DEFAULT_OPEN_FEED_FILTERS);
-    setOpenFeedFiltersExpanded(false);
-  }, []);
-
-  const onRemoveOpenFeedHandicapChip = useCallback(() => {
-    setOpenFeedFilters((f) => ({ ...f, handicapRanges: [] }));
-    setDraftOpenFeedFilters((f) => ({ ...f, handicapRanges: [] }));
-  }, []);
-
-  const onRemoveOpenFeedCourseChip = useCallback(() => {
-    setOpenFeedFilters((f) => ({ ...f, courseName: null }));
-    setDraftOpenFeedFilters((f) => ({ ...f, courseName: null }));
-  }, []);
-
-  const onClearOpenFeedPlatformsChip = useCallback(() => {
-    setOpenFeedFilters((f) => ({ ...f, platforms: [] }));
-    setDraftOpenFeedFilters((f) => ({ ...f, platforms: [] }));
-  }, []);
 
   const nameFor = (id: string | null) => (id ? names[id] ?? 'Golfer' : '—');
 

@@ -33,6 +33,7 @@ import {
   respondToGroupInvite,
   sendGroupInvite,
 } from '../../src/lib/socialGroups';
+import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useAppStore, type GroupMember } from '../../src/store/useAppStore';
 
@@ -146,8 +147,8 @@ export default function GroupsScreen() {
 
       void (async () => {
         try {
-          await fetchMySocialGroupsIntoStore();
-          await fetchInboundGroupInvitesIntoStore();
+          await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
+          await fetchInboundGroupInvitesIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
           if (groupsRefreshSessionRef.current !== session) return;
           useAppStore.getState().recomputeGroupsFromYou();
         } finally {
@@ -161,7 +162,7 @@ export default function GroupsScreen() {
         groupsRefreshSessionRef.current += 1;
         setListRefreshing(false);
       };
-    }, [supabaseOn])
+    }, [supabaseOn, user?.id, googleOAuthAccessToken])
   );
 
   useEffect(() => {
@@ -202,7 +203,7 @@ export default function GroupsScreen() {
         setCreateOpen(false);
         void (async () => {
           try {
-            await fetchMySocialGroupsIntoStore();
+            await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
             recomputeGroupsFromYou();
             const ng = useAppStore.getState().groups;
             const i = ng.findIndex((gr) => gr.id === res.id);
@@ -277,7 +278,7 @@ export default function GroupsScreen() {
           : `They will see it at the top of the Social tab with Accept and Decline.`;
         setInviteSuccessDetail(`Invite sent to ${email}.\n\n${detail}`);
         if (!result.duplicate) {
-          await fetchMySocialGroupsIntoStore();
+          await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
           recomputeGroupsFromYou();
         }
         setInvitePhase('success');
@@ -289,7 +290,7 @@ export default function GroupsScreen() {
           : `Your email app should open with a signup message. They can join at ${APP_INVITE_URL}.`;
         if (!result.duplicate) {
           openMailtoSimCapInvite(email, displayName);
-          await fetchMySocialGroupsIntoStore();
+          await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
           recomputeGroupsFromYou();
         }
         setInviteSuccessDetail(`Invite sent to ${email}.\n\n${detail}`);
@@ -314,8 +315,8 @@ export default function GroupsScreen() {
       showAppAlert('Accept invite', error);
       return;
     }
-    await fetchMySocialGroupsIntoStore();
-    await fetchInboundGroupInvitesIntoStore();
+    await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
+    await fetchInboundGroupInvitesIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
     recomputeGroupsFromYou();
     const ng = useAppStore.getState().groups;
     const gi = ng.findIndex((gr) => gr.id === inv.groupId);
@@ -331,7 +332,7 @@ export default function GroupsScreen() {
       showAppAlert('Decline invite', error);
       return;
     }
-    await fetchInboundGroupInvitesIntoStore();
+    await fetchInboundGroupInvitesIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
   };
 
   const onCancelOutboundInvite = async (kind: 'in_app' | 'email', id: string) => {
@@ -340,7 +341,7 @@ export default function GroupsScreen() {
       showAppAlert('Cancel invite', error);
       return;
     }
-    await fetchMySocialGroupsIntoStore();
+    await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
     recomputeGroupsFromYou();
   };
 
@@ -436,7 +437,7 @@ export default function GroupsScreen() {
             contentContainerStyle={{
               paddingHorizontal: gutter,
               paddingBottom: insets.bottom + 32,
-              paddingTop: 28,
+              paddingTop: 8,
             }}
             showsVerticalScrollIndicator={false}
           >

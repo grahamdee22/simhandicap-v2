@@ -20,6 +20,7 @@ import { IconCheckmark } from '../../src/components/SvgUiIcons';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { COURSE_SEEDS, courseMatchesSearch, getCourseById, ratingForCourse } from '../../src/lib/courses';
 import type { NetPickerGolfer } from '../../src/lib/netPickerGolfer';
+import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import { fetchMySocialGroupsIntoStore } from '../../src/lib/socialGroups';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import {
@@ -121,10 +122,13 @@ export default function CrewMatchCalculatorScreen() {
     useCallback(() => {
       if (!supabaseOn || !session?.user) return;
       void (async () => {
-        await fetchMySocialGroupsIntoStore();
+        await fetchMySocialGroupsIntoStore(
+          session.user.id,
+          googleOAuthAccessToken ?? undefined
+        );
         useAppStore.getState().recomputeGroupsFromYou();
       })();
-    }, [supabaseOn, session?.user?.id])
+    }, [supabaseOn, session?.user?.id, googleOAuthAccessToken])
   );
 
   useEffect(() => {

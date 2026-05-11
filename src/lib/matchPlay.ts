@@ -3,8 +3,24 @@
  * RLS governs visibility; callers must use an authenticated supabase session.
  */
 
+import Constants from 'expo-constants';
 import { canonicalPlatformId } from './constants';
 import { supabase } from './supabase';
+
+function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const extra = Constants.expoConfig?.extra as
+    | { supabaseUrl?: string; supabaseAnonKey?: string; supabasePublishableKey?: string }
+    | undefined;
+  return {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '',
+    supabaseAnonKey:
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '',
+  };
+}
 
 export const MATCH_STATUSES = [
   'pending',
@@ -236,10 +252,31 @@ function mapMatchRows(rows: unknown[] | null): DbMatchRow[] {
  * Matches where the current user is player 1 or 2 (incoming, active, history, etc.).
  * Ordered newest first.
  */
-export async function listMyMatches(userId?: string): Promise<MatchListResult> {
+export async function listMyMatches(userId?: string, accessToken?: string): Promise<MatchListResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
   const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
   if (!uid) return { data: null, error: 'Not signed in' };
+
+  if (userId && accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
+    const orFilter = `(player_1_id.eq.${userId},player_2_id.eq.${userId})`;
+    const url = `${supabaseUrl}/rest/v1/matches?select=*&or=${encodeURIComponent(orFilter)}&order=created_at.desc`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.warn('[matchPlay] listMyMatches', res.status, body);
+      return { data: null, error: body || res.statusText || 'Request failed' };
+    }
+    const parsed: unknown = await res.json();
+    const rows = Array.isArray(parsed) ? parsed : [];
+    return { data: mapMatchRows(rows as unknown[]), error: null };
+  }
 
   const { data, error } = await supabase
     .from('matches')
@@ -255,14 +292,40 @@ export async function listMyMatches(userId?: string): Promise<MatchListResult> {
 }
 
 /** Display names for all players referenced in the given match rows (for UI lists). */
-export async function fetchMatchPlayerDisplayNames(rows: DbMatchRow[]): Promise<Record<string, string>> {
-  if (!supabase) return {};
+export async function fetchMatchPlayerDisplayNames(
+  rows: DbMatchRow[],
+  accessToken?: string
+): Promise<Record<string, string>> {
   const ids = new Set<string>();
   for (const m of rows) {
     ids.add(m.player_1_id);
     if (m.player_2_id) ids.add(m.player_2_id);
   }
   if (ids.size === 0) return {};
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return {};
+    const idList = [...ids].join(',');
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=in.(${idList})&select=id,display_name`,
+      { headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.warn('[matchPlay] fetchMatchPlayerDisplayNames', res.status, body);
+      return {};
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) return {};
+    const map: Record<string, string> = {};
+    for (const row of data as { id: string; display_name?: string }[]) {
+      map[row.id] = row.display_name?.trim() || 'Golfer';
+    }
+    return map;
+  }
+
+  if (!supabase) return {};
   const { data, error } = await supabase
     .from('profiles')
     .select('id, display_name')
@@ -279,10 +342,35 @@ export async function fetchMatchPlayerDisplayNames(rows: DbMatchRow[]): Promise<
  * Open challenge feed: public listings waiting for an acceptor.
  * Newest first (brief: chronological, newest at top).
  */
-export async function listOpenFeedMatches(userId?: string): Promise<MatchListResult> {
+export async function listOpenFeedMatches(userId?: string, accessToken?: string): Promise<MatchListResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
   const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
   if (!uid) return { data: null, error: 'Not signed in' };
+
+  if (userId && accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
+    const url = `${supabaseUrl}/rest/v1/matches?select=*&is_open=eq.true&status=eq.open&order=created_at.desc`;
+    const res = await fetch(url, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.warn('[matchPlay] listOpenFeedMatches', res.status, body);
+      return { data: null, error: body || res.statusText || 'Request failed' };
+    }
+    const parsed: unknown = await res.json();
+    const rows = Array.isArray(parsed) ? parsed : [];
+    const mapped = mapMatchRows(rows as unknown[]);
+    const visible = mapped.filter((m) => {
+      const cs = m.challenge_status ?? 'active';
+      return cs === 'active' || cs === 'scheduled';
+    });
+    return { data: visible, error: null };
+  }
 
   const { data, error } = await supabase
     .from('matches')
@@ -306,8 +394,30 @@ export async function listOpenFeedMatches(userId?: string): Promise<MatchListRes
 /**
  * Single match by id (RLS: participant, open-feed row, or co-group completed).
  */
-export async function getMatchById(matchId: string): Promise<MatchSingleResult> {
+export async function getMatchById(matchId: string, accessToken?: string): Promise<MatchSingleResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
+    const q = `id=eq.${encodeURIComponent(matchId)}&select=*&limit=1`;
+    const res = await fetch(`${supabaseUrl}/rest/v1/matches?${q}`, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.warn('[matchPlay] getMatchById', res.status, body);
+      return { data: null, error: body || res.statusText || 'Request failed' };
+    }
+    const parsed: unknown = await res.json();
+    const rows = Array.isArray(parsed) ? parsed : [];
+    const row = rows.length > 0 ? rows[0] : null;
+    return { data: row ? normalizeMatchRow(row) : null, error: null };
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -324,8 +434,29 @@ export async function getMatchById(matchId: string): Promise<MatchSingleResult> 
 }
 
 /** All hole scores for a match (both players), hole_number ascending. */
-export async function listMatchHoles(matchId: string): Promise<MatchHoleListResult> {
+export async function listMatchHoles(matchId: string, accessToken?: string): Promise<MatchHoleListResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
+    const q = `match_id=eq.${encodeURIComponent(matchId)}&select=*&order=hole_number.asc`;
+    const res = await fetch(`${supabaseUrl}/rest/v1/match_holes?${q}`, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      console.warn('[matchPlay] listMatchHoles', res.status, body);
+      return { data: null, error: body || res.statusText || 'Request failed' };
+    }
+    const rows: unknown = await res.json();
+    if (!Array.isArray(rows)) return { data: null, error: 'Failed to fetch holes' };
+    return { data: rows.map((r) => asMatchHoleRow(r)), error: null };
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
