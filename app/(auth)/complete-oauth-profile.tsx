@@ -1,4 +1,6 @@
-import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import Constants from 'expo-constants';
+import { useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,16 +14,13 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useAuth } from '@/src/auth/AuthContext';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
-import { upsertMyProfile } from '@/src/lib/profiles';
-import { supabase } from '@/src/lib/supabase';
+import { useAppStore } from '@/src/store/useAppStore';
 
 export default function CompleteOauthProfileScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { refreshProfile, user } = useAuth();
   const [displayName, setDisplayName] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -31,30 +30,51 @@ export default function CompleteOauthProfileScreen() {
       showAppAlert('Display name', 'Enter how you want to appear in SimCap.');
       return;
     }
-    if (!user) {
+    const raw = await AsyncStorage.getItem('supabase.auth.token');
+    const storedSession = raw ? (JSON.parse(raw) as { access_token?: string; user?: { id?: string } }) : null;
+    const accessToken = storedSession?.access_token;
+    const userId = storedSession?.user?.id;
+    if (!accessToken || !userId) {
       showAppAlert('Session', 'You are not signed in.');
       return;
     }
     setBusy(true);
-    const { error: upErr } = await upsertMyProfile({ display_name: dn });
-    if (upErr) {
+    const extra = Constants.expoConfig?.extra as
+      | { supabaseUrl?: string; supabaseAnonKey?: string; supabasePublishableKey?: string }
+      | undefined;
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '';
+    const supabaseAnonKey =
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '';
+
+    const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${userId}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({ display_name: dn }),
+    });
+    if (!res.ok) {
       setBusy(false);
-      showAppAlert('Could not save', upErr);
+      let msg = res.statusText;
+      try {
+        const body = await res.text();
+        if (body) msg = body;
+      } catch {
+        /* ignore */
+      }
+      showAppAlert('Could not save', msg);
       return;
     }
-    if (supabase) {
-      const { error: metaErr } = await supabase.auth.updateUser({
-        data: { display_name: dn },
-      });
-      if (metaErr) {
-        setBusy(false);
-        showAppAlert('Could not save', metaErr.message);
-        return;
-      }
-    }
-    await refreshProfile();
+    useAppStore.getState().setDisplayName(dn);
     setBusy(false);
-    router.replace('/');
+    router.replace('/(tabs)' as Href);
   };
 
   return (

@@ -1,6 +1,7 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { Session, User } from '@supabase/supabase-js';
 import { usePathname, useRootNavigationState, useRouter, useSegments, type Href } from 'expo-router';
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
 import { applyProfileRowToStore, fetchMyProfile } from '../lib/profiles';
 import { fetchMyRoundsForUser } from '../lib/rounds';
@@ -82,8 +83,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const navReady = useRootNavigationState()?.key != null;
   const profileDisplayName = useAppStore((s) => s.displayName);
+  const hydrated = useAppStore((s) => s.hydrated);
   const needsOauthDisplayName =
-    !!session?.user && shouldPromptOauthDisplayName(session.user, profileDisplayName);
+    !!session?.user &&
+    hydrated &&
+    shouldPromptOauthDisplayName(session.user, profileDisplayName);
+
+  const hasRedirectedToCompleteOauth = useRef(false);
+
+  useEffect(() => {
+    hasRedirectedToCompleteOauth.current = false;
+  }, [session]);
 
   useEffect(() => {
     injectOAuthSession = (newSession) => {
@@ -182,7 +192,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const p = pathname.replace(/\/$/, '') || '/';
     const onPasswordReset = p.includes('reset-password');
     const onOAuthCallback = p.includes('/auth/callback');
-    const onCompleteOauth = p.includes('complete-oauth-profile');
+    const segs = segments as readonly string[];
+    const onCompleteOauth =
+      p.includes('complete-oauth-profile') || segs.includes('complete-oauth-profile');
 
     if (!session && !inAuth && !onOAuthCallback) {
       if (!onboardingSeen) {
@@ -192,7 +204,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } else if (!session && onCompleteOauth) {
       router.replace('/(auth)/sign-in');
-    } else if (session && needsOauthDisplayName && !onCompleteOauth) {
+    } else if (
+      session &&
+      needsOauthDisplayName &&
+      !onCompleteOauth &&
+      !inAuth &&
+      !hasRedirectedToCompleteOauth.current
+    ) {
+      hasRedirectedToCompleteOauth.current = true;
+      console.log('[guard] hydrated:', hydrated, 'needsOauthDisplayName:', needsOauthDisplayName, 'onCompleteOauth:', onCompleteOauth, 'pathname:', pathname);
       router.replace('/(auth)/complete-oauth-profile' as Href);
     } else if (session && inAuth && !onPasswordReset) {
       if (!needsOauthDisplayName && !onOAuthCallback) {
@@ -210,6 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     onboardingReady,
     onboardingSeen,
     needsOauthDisplayName,
+    hydrated,
   ]);
 
   const completeOnboarding = useCallback(async () => {
@@ -241,7 +262,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    if (!supabase) return;
+    const userId = session?.user?.id;
+    const wipeLocalSessionArtifacts = async () => {
+      useAppStore.getState().setDisplayName('');
+      try {
+        await AsyncStorage.removeItem('supabase.auth.token');
+      } catch {
+        /* ignore */
+      }
+      if (userId) {
+        try {
+          await AsyncStorage.removeItem(`simhandicap-u-${userId}`);
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        await AsyncStorage.removeItem('simhandicap-guest');
+      } catch {
+        /* ignore */
+      }
+    };
+
+    if (!supabase) {
+      await wipeLocalSessionArtifacts();
+      return;
+    }
     const SIGN_OUT_MS = 20000;
     try {
       await Promise.race([
@@ -259,7 +305,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn('[auth] signOut: local fallback failed', e2 instanceof Error ? e2.message : e2);
       }
     }
-  }, []);
+    await wipeLocalSessionArtifacts();
+  }, [session]);
 
   const refreshProfile = useCallback(async () => {
     if (!configured || !session) return;
