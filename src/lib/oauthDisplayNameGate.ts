@@ -20,6 +20,14 @@ export function shouldPromptOauthDisplayName(
   profileDisplayNameFromStore: string
 ): boolean {
   if (!userHasOAuthIdentity(user)) return false;
+
+  // Check store first
   const dn = profileDisplayNameFromStore.trim();
-  return dn === '' || dn === 'Golfer';
+  if (dn !== '' && dn !== 'Golfer') return false;
+
+  // Fallback: check user metadata display_name from OAuth provider
+  const metaDisplayName = (user?.user_metadata?.display_name as string | undefined)?.trim() ?? '';
+  if (metaDisplayName !== '' && metaDisplayName !== 'Golfer') return false;
+
+  return true;
 }

@@ -1,4 +1,8 @@
-import type { Provider } from '@supabase/supabase-js';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import type { Provider, Session } from '@supabase/supabase-js';
+import { router, type Href } from 'expo-router';
+import { injectOAuthSession } from '@/src/auth/AuthContext';
+import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import { supabase } from './supabase';
@@ -97,11 +101,71 @@ export async function signInWithOAuthProvider(provider: Provider): Promise<{ err
   }
 
   if (implicit.access_token && implicit.refresh_token) {
-    const { error: sessionErr } = await supabase.auth.setSession({
+    const client = supabase;
+    const { data: userData, error: userErr } = await client.auth.getUser(implicit.access_token);
+    if (userErr || !userData?.user) {
+      return { error: userErr?.message ?? 'Could not validate session token' };
+    }
+
+    const storageKey = 'supabase.auth.token';
+    const sessionData = JSON.stringify({
       access_token: implicit.access_token,
       refresh_token: implicit.refresh_token,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: userData.user,
     });
-    if (sessionErr) return { error: sessionErr.message };
+    await AsyncStorage.setItem(storageKey, sessionData);
+
+    const fakeSession = {
+      access_token: implicit.access_token,
+      refresh_token: implicit.refresh_token,
+      expires_at: Math.floor(Date.now() / 1000) + 3600,
+      expires_in: 3600,
+      token_type: 'bearer',
+      user: userData.user,
+    };
+    if (injectOAuthSession) {
+      injectOAuthSession(fakeSession as Session);
+    }
+
+    await client.auth.initialize();
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+
+    const extra = Constants.expoConfig?.extra as
+      | {
+          supabaseUrl?: string;
+          supabaseAnonKey?: string;
+          supabasePublishableKey?: string;
+        }
+      | undefined;
+
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '';
+    const supabaseAnonKey =
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '';
+
+    const profileRes = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${userData.user.id}&select=id&limit=1`,
+      {
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${implicit.access_token}`,
+        },
+      }
+    );
+    const profileRows = await profileRes.json();
+    const hasProfile = Array.isArray(profileRows) && profileRows.length > 0;
+
+    if (hasProfile) {
+      router.replace('/(tabs)' as Href);
+    } else {
+      router.replace('/(auth)/onboarding' as Href);
+    }
     return {};
   }
 

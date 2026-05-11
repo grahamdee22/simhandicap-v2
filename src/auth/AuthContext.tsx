@@ -14,6 +14,9 @@ import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { shouldPromptOauthDisplayName } from '../lib/oauthDisplayNameGate';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
 
+/** Set by `AuthProvider`; used after native OAuth writes session to AsyncStorage so the guard sees a session immediately. */
+export let injectOAuthSession: ((session: Session) => void) | null = null;
+
 type AuthContextValue = {
   configured: boolean;
   loading: boolean;
@@ -81,6 +84,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const profileDisplayName = useAppStore((s) => s.displayName);
   const needsOauthDisplayName =
     !!session?.user && shouldPromptOauthDisplayName(session.user, profileDisplayName);
+
+  useEffect(() => {
+    injectOAuthSession = (newSession) => {
+      setSession(newSession);
+    };
+    return () => {
+      injectOAuthSession = null;
+    };
+  }, []);
 
   useEffect(() => {
     if (Platform.OS === 'web') {
