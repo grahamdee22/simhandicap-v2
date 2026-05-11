@@ -314,7 +314,7 @@ export function MatchPlayHub({
       setFetchError(false);
 
       const fetchHubRows = async () => {
-        const [myRes, openRes] = await Promise.all([listMyMatches(), listOpenFeedMatches()]);
+        const [myRes, openRes] = await Promise.all([listMyMatches(userId), listOpenFeedMatches(userId)]);
         if (cancelled) return;
         if (myRes.error || openRes.error) {
           if (mergeSeenDelayTimerRef.current) {
@@ -387,7 +387,7 @@ export function MatchPlayHub({
       if (refetchMatchesTimerRef.current) clearTimeout(refetchMatchesTimerRef.current);
       refetchMatchesTimerRef.current = setTimeout(() => {
         refetchMatchesTimerRef.current = null;
-        void Promise.all([listMyMatches(), listOpenFeedMatches()]).then(([myRes, openRes]) => {
+        void Promise.all([listMyMatches(userId), listOpenFeedMatches(userId)]).then(([myRes, openRes]) => {
           if (!myRes.error && myRes.data) {
             setMyMatches(myRes.data);
             const { incomingDirect } = partitionHubData(myRes.data, userId);
@@ -482,8 +482,16 @@ export function MatchPlayHub({
     [router]
   );
 
+  const [unreadByMatchId, setUnreadByMatchId] = useState<Record<string, number>>({});
+
   const onOpenLiveScoring = useCallback(
     (m: DbMatchRow) => {
+      setUnreadByMatchId((prev) => {
+        if (!prev[m.id]) return prev;
+        const next = { ...prev };
+        delete next[m.id];
+        return next;
+      });
       router.push(`/(tabs)/match-score/${m.id}` as never);
     },
     [router]
@@ -576,7 +584,7 @@ export function MatchPlayHub({
       );
       showAppAlert('Challenge is live', 'Your Future Open Challenge is now active in the feed.', {
         onOk: () => {
-          void Promise.all([listMyMatches(), listOpenFeedMatches()]).then(async ([myRes, openRes]) => {
+          void Promise.all([listMyMatches(userId), listOpenFeedMatches(userId)]).then(async ([myRes, openRes]) => {
             if (myRes.error || openRes.error) return;
             const my = myRes.data ?? [];
             const open = openRes.data ?? [];
@@ -617,6 +625,34 @@ export function MatchPlayHub({
       );
     }
   }, []);
+
+  useEffect(() => {
+    if (!supabaseOn || !userId || !supabase) return;
+    const client = supabase;
+    const channel = client
+      .channel(`match-hub-chat:${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'match_messages',
+        },
+        (payload) => {
+          const row = payload.new as { match_id: string; user_id: string };
+          if (!row.match_id || !row.user_id || row.user_id === userId) return;
+          setUnreadByMatchId((prev) => ({
+            ...prev,
+            [row.match_id]: (prev[row.match_id] ?? 0) + 1,
+          }));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void client.removeChannel(channel);
+    };
+  }, [supabaseOn, userId]);
 
   if (!supabaseOn || !userId) {
     return (
@@ -793,6 +829,14 @@ export function MatchPlayHub({
         <Text style={styles.cardPeople} numberOfLines={2}>
           {peopleLine}
         </Text>
+        {isLiveScoring && unreadByMatchId[m.id] ? (
+          <View style={styles.chatBadge}>
+            <View style={styles.chatBadgeDot} />
+            <Text style={styles.chatBadgeTxt}>
+              {unreadByMatchId[m.id] > 9 ? '9+' : unreadByMatchId[m.id]}
+            </Text>
+          </View>
+        ) : null}
       </>
     );
 
@@ -1148,6 +1192,28 @@ const styles = StyleSheet.create({
   cardTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   cardMeta: { fontSize: 11, color: colors.muted, marginTop: 4, lineHeight: 16 },
   cardPeople: { fontSize: 11, color: colors.subtle, marginTop: 6, lineHeight: 15 },
+  chatBadge: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 999,
+    backgroundColor: colors.accentSoft,
+  },
+  chatBadgeDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 999,
+    backgroundColor: colors.sage,
+    marginRight: 4,
+  },
+  chatBadgeTxt: {
+    fontSize: 11,
+    color: colors.forestMid,
+    fontWeight: '600',
+  },
   cardTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',

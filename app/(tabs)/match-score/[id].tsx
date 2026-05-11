@@ -39,6 +39,7 @@ import {
 } from '../../../src/lib/matchStrokeMath';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
+import { MatchChat } from '../../../src/components/MatchChat';
 
 const GROSS_MIN = 1;
 const GROSS_MAX = 15;
@@ -732,6 +733,12 @@ export default function MatchScoreScreen() {
               <Text style={[styles.tdStrong, styles.tdCenter]}>{oppScoredHoles === 0 ? '—' : cumOppNet}</Text>
             </View>
           </View>
+
+          <MatchChat
+            matchId={matchId}
+            currentUserId={user.id}
+            opponentId={oppId}
+          />
         </ScrollView>
 
         <View style={styles.footer}>

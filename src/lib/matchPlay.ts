@@ -236,17 +236,15 @@ function mapMatchRows(rows: unknown[] | null): DbMatchRow[] {
  * Matches where the current user is player 1 or 2 (incoming, active, history, etc.).
  * Ordered newest first.
  */
-export async function listMyMatches(): Promise<MatchListResult> {
+export async function listMyMatches(userId?: string): Promise<MatchListResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { data: null, error: 'Not signed in' };
+  const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return { data: null, error: 'Not signed in' };
 
   const { data, error } = await supabase
     .from('matches')
     .select('*')
-    .or(`player_1_id.eq.${user.id},player_2_id.eq.${user.id}`)
+    .or(`player_1_id.eq.${uid},player_2_id.eq.${uid}`)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -281,12 +279,10 @@ export async function fetchMatchPlayerDisplayNames(rows: DbMatchRow[]): Promise<
  * Open challenge feed: public listings waiting for an acceptor.
  * Newest first (brief: chronological, newest at top).
  */
-export async function listOpenFeedMatches(): Promise<MatchListResult> {
+export async function listOpenFeedMatches(userId?: string): Promise<MatchListResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { data: null, error: 'Not signed in' };
+  const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return { data: null, error: 'Not signed in' };
 
   const { data, error } = await supabase
     .from('matches')
