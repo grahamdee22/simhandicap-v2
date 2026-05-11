@@ -5,6 +5,10 @@ import { injectOAuthSession } from '@/src/auth/AuthContext';
 import Constants from 'expo-constants';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
+import { applyProfileRowToStore, fetchMyProfile } from '@/src/lib/profiles';
+import { fetchMyRoundsForUser } from '@/src/lib/rounds';
+import { fetchInboundGroupInvitesIntoStore, fetchMySocialGroupsIntoStore } from '@/src/lib/socialGroups';
+import { rebindPersistToUser, useAppStore } from '@/src/store/useAppStore';
 import { supabase } from './supabase';
 
 void WebBrowser.maybeCompleteAuthSession();
@@ -130,8 +134,26 @@ export async function signInWithOAuthProvider(provider: Provider): Promise<{ err
       injectOAuthSession(fakeSession as Session);
     }
 
-    await client.auth.initialize();
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    // Sync data using access token directly (Supabase client has no in-memory session)
+    await rebindPersistToUser(userData.user.id);
+
+    const remoteRounds = await fetchMyRoundsForUser(userData.user.id, implicit.access_token!);
+    if (remoteRounds !== null) {
+      useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
+    }
+
+    const profile = await fetchMyProfile(userData.user.id, implicit.access_token!);
+    const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged } =
+      useAppStore.getState();
+    applyProfileRowToStore(profile, {
+      setDisplayName,
+      setPreferredLogPlatform,
+      syncGhinFromProfileIfChanged,
+    });
+
+    await fetchMySocialGroupsIntoStore(userData.user.id);
+    await fetchInboundGroupInvitesIntoStore(userData.user.id);
+    useAppStore.getState().recomputeGroupsFromYou();
 
     const extra = Constants.expoConfig?.extra as
       | {

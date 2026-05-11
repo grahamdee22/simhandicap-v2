@@ -68,22 +68,28 @@ function mapProfileToMember(
 }
 
 /** Load crews from Supabase and replace `groups` in the store (then caller may run recomputeGroupsFromYou). */
-export async function fetchMySocialGroupsIntoStore(): Promise<void> {
+export async function fetchMySocialGroupsIntoStore(userId?: string): Promise<void> {
   if (!supabase) {
     return;
   }
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    useAppStore.getState().setGroups([]);
-    return;
+  let uid: string;
+  if (userId) {
+    uid = userId;
+  } else {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      useAppStore.getState().setGroups([]);
+      return;
+    }
+    uid = user.id;
   }
 
   const { data: myMemberships, error: memErr } = await supabase
     .from('group_members')
     .select('group_id')
-    .eq('user_id', user.id);
+    .eq('user_id', uid);
 
   if (memErr) {
     console.warn('[socialGroups]', memErr.message);
@@ -197,7 +203,7 @@ export async function fetchMySocialGroupsIntoStore(): Promise<void> {
     const membersRaw = allMembers.filter((m) => m.group_id === gr.id);
     const members: GroupMember[] = membersRaw
       .map((m) =>
-        mapProfileToMember(m, profileById.get(m.user_id), user.id, roundsByUserId.get(m.user_id) ?? [])
+        mapProfileToMember(m, profileById.get(m.user_id), uid, roundsByUserId.get(m.user_id) ?? [])
       )
       .sort((a, b) => {
         const ai = a.index ?? 999;
@@ -281,17 +287,23 @@ export function attachSocialGroupsRealtimeSync(accessToken: string | undefined):
   };
 }
 
-export async function fetchInboundGroupInvitesIntoStore(): Promise<void> {
+export async function fetchInboundGroupInvitesIntoStore(userId?: string): Promise<void> {
   if (!supabase) {
     useAppStore.getState().setInboundGroupInvites([]);
     return;
   }
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    useAppStore.getState().setInboundGroupInvites([]);
-    return;
+  let uid: string;
+  if (userId) {
+    uid = userId;
+  } else {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) {
+      useAppStore.getState().setInboundGroupInvites([]);
+      return;
+    }
+    uid = user.id;
   }
 
   const { data, error } = await supabase
@@ -304,7 +316,7 @@ export async function fetchInboundGroupInvitesIntoStore(): Promise<void> {
       social_groups ( name )
     `
     )
-    .eq('invitee_user_id', user.id)
+    .eq('invitee_user_id', uid)
     .eq('status', 'pending');
 
   if (error) {

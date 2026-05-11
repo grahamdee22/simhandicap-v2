@@ -1,7 +1,9 @@
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Link, useRouter, type Href } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  DevSettings,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -17,6 +19,20 @@ import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
 import { OAuthSignInButtons } from '@/src/components/OAuthSignInButtons';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
+
+const clearAllStorage = async () => {
+  const keys = await AsyncStorage.getAllKeys();
+  const simKeys = keys.filter(
+    (k) => k.includes('simhandicap') || k === 'supabase.auth.token'
+  );
+  await AsyncStorage.multiRemove(simKeys);
+  console.log('[dev] cleared keys:', simKeys);
+  if (Platform.OS === 'web') {
+    if (typeof window !== 'undefined') window.location.reload();
+  } else {
+    DevSettings.reload();
+  }
+};
 
 export default function SignInScreen() {
   const insets = useSafeAreaInsets();
@@ -116,19 +132,31 @@ export default function SignInScreen() {
         </View>
 
         {__DEV__ ? (
-          <Pressable
-            style={({ pressed }) => [styles.devOnboardingBtn, pressed && styles.devOnboardingBtnPressed]}
-            onPress={() => {
-              void (async () => {
-                await resetOnboardingForDev();
-                router.replace('/(auth)/onboarding');
-              })();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Development only: clear onboarding flag and open onboarding"
-          >
-            <Text style={styles.devOnboardingTxt}>Dev: show onboarding</Text>
-          </Pressable>
+          <View style={styles.devActionsRow}>
+            <Pressable
+              style={({ pressed }) => [styles.devOnboardingBtn, pressed && styles.devOnboardingBtnPressed]}
+              onPress={() => {
+                void (async () => {
+                  await resetOnboardingForDev();
+                  router.replace('/(auth)/onboarding');
+                })();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Development only: clear onboarding flag and open onboarding"
+            >
+              <Text style={styles.devOnboardingTxt}>Dev: show onboarding</Text>
+            </Pressable>
+            <Pressable
+              style={({ pressed }) => [styles.devOnboardingBtn, pressed && styles.devOnboardingBtnPressed]}
+              onPress={() => {
+                void clearAllStorage();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Development only: clear SimCap AsyncStorage and reload"
+            >
+              <Text style={styles.devOnboardingTxt}>Dev: clear storage</Text>
+            </Pressable>
+          </View>
         ) : null}
       </ScrollView>
     </KeyboardAvoidingView>
@@ -204,8 +232,17 @@ const styles = StyleSheet.create({
   primaryDisabled: { opacity: 0.7 },
   primaryTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
   forgotRow: { marginTop: 16, alignItems: 'center' },
-  devOnboardingBtn: {
+  devActionsRow: {
     marginTop: 28,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'center',
+    alignSelf: 'center',
+    gap: 10,
+    maxWidth: '100%',
+  },
+  devOnboardingBtn: {
     alignSelf: 'center',
     paddingVertical: 10,
     paddingHorizontal: 14,

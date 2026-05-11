@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { PLATFORMS, type PlatformId } from './constants';
 import { supabase } from './supabase';
 
@@ -22,9 +23,89 @@ function parseNonNegInt(v: unknown): number {
   return Math.floor(n);
 }
 
+function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const extra = Constants.expoConfig?.extra as
+    | { supabaseUrl?: string; supabaseAnonKey?: string; supabasePublishableKey?: string }
+    | undefined;
+  return {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '',
+    supabaseAnonKey:
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '',
+  };
+}
+
+function mapProfileRowToUserProfileRow(data: {
+  id: string;
+  display_name: string;
+  preferred_platform: string | null;
+  ghin_index: number | string | null;
+  match_wins?: number | string | null;
+  match_losses?: number | string | null;
+  match_draws?: number | string | null;
+  match_forfeits?: number | string | null;
+}): UserProfileRow {
+  const rawGhin = data.ghin_index;
+  const ghin_index =
+    rawGhin === null || rawGhin === undefined || rawGhin === ''
+      ? null
+      : Number(rawGhin);
+  return {
+    id: data.id,
+    display_name: data.display_name,
+    preferred_platform: data.preferred_platform,
+    ghin_index: Number.isFinite(ghin_index) ? ghin_index : null,
+    match_wins: parseNonNegInt(data.match_wins),
+    match_losses: parseNonNegInt(data.match_losses),
+    match_draws: parseNonNegInt(data.match_draws),
+    match_forfeits: parseNonNegInt(data.match_forfeits),
+  };
+}
+
 /** Fetches the signed-in user's profile row (RLS scopes to auth.uid()). */
-export async function fetchMyProfile(): Promise<UserProfileRow | null> {
+export async function fetchMyProfile(
+  userId?: string,
+  accessToken?: string
+): Promise<UserProfileRow | null> {
   if (!supabase) return null;
+
+  if (userId && accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    const select =
+      'id,display_name,preferred_platform,ghin_index,match_wins,match_losses,match_draws,match_forfeits';
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(select)}`,
+      {
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+    if (!res.ok) {
+      console.warn('[profiles] fetch', res.status, await res.text().catch(() => ''));
+      return null;
+    }
+    const parsed: unknown = await res.json();
+    const rows = Array.isArray(parsed) ? parsed : null;
+    if (!rows?.length) return null;
+    const row = rows[0] as {
+      id: string;
+      display_name: string;
+      preferred_platform: string | null;
+      ghin_index: number | string | null;
+      match_wins?: number | string | null;
+      match_losses?: number | string | null;
+      match_draws?: number | string | null;
+      match_forfeits?: number | string | null;
+    };
+    return mapProfileRowToUserProfileRow(row);
+  }
+
   const {
     data: { user },
     error: userErr,
@@ -44,31 +125,18 @@ export async function fetchMyProfile(): Promise<UserProfileRow | null> {
     return null;
   }
   if (!data) return null;
-  const row = data as {
-    id: string;
-    display_name: string;
-    preferred_platform: string | null;
-    ghin_index: number | string | null;
-    match_wins?: number | string | null;
-    match_losses?: number | string | null;
-    match_draws?: number | string | null;
-    match_forfeits?: number | string | null;
-  };
-  const rawGhin = row.ghin_index;
-  const ghin_index =
-    rawGhin === null || rawGhin === undefined || rawGhin === ''
-      ? null
-      : Number(rawGhin);
-  return {
-    id: row.id,
-    display_name: row.display_name,
-    preferred_platform: row.preferred_platform,
-    ghin_index: Number.isFinite(ghin_index) ? ghin_index : null,
-    match_wins: parseNonNegInt(row.match_wins),
-    match_losses: parseNonNegInt(row.match_losses),
-    match_draws: parseNonNegInt(row.match_draws),
-    match_forfeits: parseNonNegInt(row.match_forfeits),
-  };
+  return mapProfileRowToUserProfileRow(
+    data as {
+      id: string;
+      display_name: string;
+      preferred_platform: string | null;
+      ghin_index: number | string | null;
+      match_wins?: number | string | null;
+      match_losses?: number | string | null;
+      match_draws?: number | string | null;
+      match_forfeits?: number | string | null;
+    }
+  );
 }
 
 export type ProfilePatch = {

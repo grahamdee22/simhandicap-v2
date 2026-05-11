@@ -1,3 +1,4 @@
+import Constants from 'expo-constants';
 import { PLATFORMS, type PlatformId } from './constants';
 import type { Mulligans, PinDay, PuttingMode, Wind } from './handicap';
 import { supabase } from './supabase';
@@ -111,6 +112,21 @@ export function dbRowToSimRound(row: DbRoundRow): SimRound {
   return base;
 }
 
+function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const extra = Constants.expoConfig?.extra as
+    | { supabaseUrl?: string; supabaseAnonKey?: string; supabasePublishableKey?: string }
+    | undefined;
+  return {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '',
+    supabaseAnonKey:
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '',
+  };
+}
+
 type RoundDbFields = Omit<SimRound, 'id'>;
 
 function roundToDbInsert(userId: string, r: RoundDbFields) {
@@ -143,8 +159,33 @@ function roundToDbInsert(userId: string, r: RoundDbFields) {
  * Load all rounds for the signed-in user (oldest first for handicap math).
  * Returns null if unconfigured, not signed in, or fetch failed (caller keeps existing store state).
  */
-export async function fetchMyRoundsForUser(): Promise<SimRound[] | null> {
+export async function fetchMyRoundsForUser(
+  userId?: string,
+  accessToken?: string
+): Promise<SimRound[] | null> {
   if (!supabase) return null;
+
+  if (userId && accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return null;
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/rounds?user_id=eq.${encodeURIComponent(userId)}&order=played_at.asc&select=*`,
+      {
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+        },
+      }
+    );
+    if (!res.ok) {
+      console.warn('[rounds] fetch', res.status, await res.text().catch(() => ''));
+      return null;
+    }
+    const rows: unknown = await res.json();
+    if (!Array.isArray(rows)) return null;
+    return rows.map((row) => dbRowToSimRound(row as DbRoundRow));
+  }
+
   const {
     data: { user },
   } = await supabase.auth.getUser();
