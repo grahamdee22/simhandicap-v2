@@ -21,12 +21,14 @@ export function shouldPromptOauthDisplayName(
 ): boolean {
   if (!userHasOAuthIdentity(user)) return false;
 
-  // Check store first
+  // Check store first (any non-placeholder name is acceptable, including email-shaped names)
   const dn = profileDisplayNameFromStore.trim();
+  if (dn.includes('@')) return false;
   if (dn !== '' && dn !== 'Golfer') return false;
 
   // Fallback: check user metadata display_name from OAuth provider
   const metaDisplayName = (user?.user_metadata?.display_name as string | undefined)?.trim() ?? '';
+  if (metaDisplayName.includes('@')) return false;
   if (metaDisplayName !== '' && metaDisplayName !== 'Golfer') return false;
 
   return true;

@@ -1,8 +1,9 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Provider, Session } from '@supabase/supabase-js';
+import type { Provider, Session, User } from '@supabase/supabase-js';
 import { router, type Href } from 'expo-router';
 import { injectOAuthSession } from '@/src/auth/AuthContext';
 import Constants from 'expo-constants';
+import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import { applyProfileRowToStore, fetchMyProfile } from '@/src/lib/profiles';
@@ -64,6 +65,191 @@ export function parseOAuthCallbackUrl(href: string): {
   }
 }
 
+/**
+ * Native (Google implicit + Apple ID token): persist session, inject auth state, sync store, navigate.
+ * Matches the working Google OAuth post-token flow (no in-memory Supabase session until storage + inject).
+ */
+async function persistNativeOAuthSessionAndNavigate(
+  accessToken: string,
+  refreshToken: string,
+  user: User,
+  options?: { appleDebugLogs?: boolean }
+): Promise<{ error?: string }> {
+  const client = supabase!;
+  const storageKey = 'supabase.auth.token';
+  const sessionData = JSON.stringify({
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    expires_in: 3600,
+    token_type: 'bearer',
+    user,
+  });
+  await AsyncStorage.setItem(storageKey, sessionData);
+
+  const fakeSession = {
+    access_token: accessToken,
+    refresh_token: refreshToken,
+    expires_at: Math.floor(Date.now() / 1000) + 3600,
+    expires_in: 3600,
+    token_type: 'bearer',
+    user,
+  };
+  if (injectOAuthSession) {
+    injectOAuthSession(fakeSession as Session);
+  }
+
+  await rebindPersistToUser(user.id);
+
+  const extra = Constants.expoConfig?.extra as
+    | {
+        supabaseUrl?: string;
+        supabaseAnonKey?: string;
+        supabasePublishableKey?: string;
+      }
+    | undefined;
+
+  const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '';
+  const supabaseAnonKey =
+    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+    process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+    extra?.supabaseAnonKey ??
+    extra?.supabasePublishableKey ??
+    '';
+
+  const remoteRounds = await fetchMyRoundsForUser(user.id, accessToken);
+  if (options?.appleDebugLogs) {
+    console.log('[apple] remoteRounds:', remoteRounds?.length ?? 'null');
+  }
+  if (remoteRounds !== null) {
+    useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
+  }
+
+  const profile = await fetchMyProfile(user.id, accessToken);
+  if (options?.appleDebugLogs) {
+    console.log('[apple] profile display_name:', profile?.display_name ?? 'null');
+  }
+  const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged } = useAppStore.getState();
+  applyProfileRowToStore(profile, {
+    setDisplayName,
+    setPreferredLogPlatform,
+    syncGhinFromProfileIfChanged,
+  });
+
+  const currentDisplayName = useAppStore.getState().displayName;
+  if (!currentDisplayName || currentDisplayName === 'Golfer' || currentDisplayName.includes('@')) {
+    const emailPrefix = (user.email ?? '').split('@')[0];
+    if (emailPrefix) {
+      useAppStore.getState().setDisplayName(emailPrefix);
+      if (supabaseUrl && supabaseAnonKey) {
+        await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+          method: 'PATCH',
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({ display_name: emailPrefix }),
+        });
+      }
+    }
+  }
+
+  await fetchMySocialGroupsIntoStore(user.id);
+  await fetchInboundGroupInvitesIntoStore(user.id);
+  useAppStore.getState().recomputeGroupsFromYou();
+
+  const profileRes = await fetch(
+    `${supabaseUrl}/rest/v1/profiles?id=eq.${user.id}&select=id&limit=1`,
+    {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    }
+  );
+  const profileRows = await profileRes.json();
+  const hasProfile = Array.isArray(profileRows) && profileRows.length > 0;
+
+  if (hasProfile) {
+    router.replace('/(tabs)' as Href);
+  } else {
+    router.replace('/(auth)/onboarding' as Href);
+  }
+  return {};
+}
+
+export async function signInWithApple(): Promise<{ error?: string }> {
+  if (!supabase) return { error: 'Supabase is not configured' };
+  if (Platform.OS !== 'ios') {
+    return { error: 'Apple Sign In is only available on iOS' };
+  }
+
+  try {
+    const available = await AppleAuthentication.isAvailableAsync();
+    if (!available) {
+      return { error: 'Apple Sign In is not available on this device' };
+    }
+
+    const credential = await AppleAuthentication.signInAsync({
+      requestedScopes: [
+        AppleAuthentication.AppleAuthenticationScope.FULL_NAME,
+        AppleAuthentication.AppleAuthenticationScope.EMAIL,
+      ],
+    });
+    const identityToken = credential.identityToken;
+    console.log('[apple] credential received, identityToken present:', !!identityToken);
+    if (!identityToken) {
+      return { error: 'Apple did not return an identity token' };
+    }
+
+    let data: Awaited<ReturnType<typeof supabase.auth.signInWithIdToken>>['data'];
+    let error: Awaited<ReturnType<typeof supabase.auth.signInWithIdToken>>['error'];
+    try {
+      const result = await Promise.race([
+        supabase.auth.signInWithIdToken({ provider: 'apple', token: identityToken }),
+        new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timeout')), 10000)),
+      ]);
+      data = result.data;
+      error = result.error;
+    } catch {
+      console.log('[apple] timed out');
+      return { error: 'Apple Sign In timed out' };
+    }
+
+    console.log(
+      '[apple] signInWithIdToken result - user:',
+      data?.session?.user?.email,
+      'error:',
+      error
+    );
+    if (error) {
+      return { error: error.message };
+    }
+    const session = data.session;
+    if (!session?.access_token || !session.user) {
+      return { error: 'Apple sign-in did not return a session' };
+    }
+    const accessToken = session.access_token;
+    const refreshToken = session.refresh_token;
+    if (!refreshToken) {
+      return { error: 'Apple sign-in did not return a refresh token' };
+    }
+    console.log('[apple] access_token present:', !!accessToken);
+
+    return persistNativeOAuthSessionAndNavigate(accessToken, refreshToken, session.user, {
+      appleDebugLogs: true,
+    });
+  } catch (e) {
+    const code = (e as { code?: string })?.code;
+    if (code === 'ERR_REQUEST_CANCELED') {
+      return {};
+    }
+    return { error: e instanceof Error ? e.message : 'Apple Sign In failed' };
+  }
+}
+
 export async function signInWithOAuthProvider(provider: Provider): Promise<{ error?: string }> {
   if (!supabase) return { error: 'Supabase is not configured' };
   const redirectTo = getOAuthRedirectUri();
@@ -77,6 +263,10 @@ export async function signInWithOAuthProvider(provider: Provider): Promise<{ err
     if (error) return { error: error.message };
     if (data.url) window.location.assign(data.url);
     return {};
+  }
+
+  if (provider !== 'google') {
+    return { error: 'Use Apple Sign In on iOS' };
   }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -111,84 +301,11 @@ export async function signInWithOAuthProvider(provider: Provider): Promise<{ err
       return { error: userErr?.message ?? 'Could not validate session token' };
     }
 
-    const storageKey = 'supabase.auth.token';
-    const sessionData = JSON.stringify({
-      access_token: implicit.access_token,
-      refresh_token: implicit.refresh_token,
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      expires_in: 3600,
-      token_type: 'bearer',
-      user: userData.user,
-    });
-    await AsyncStorage.setItem(storageKey, sessionData);
-
-    const fakeSession = {
-      access_token: implicit.access_token,
-      refresh_token: implicit.refresh_token,
-      expires_at: Math.floor(Date.now() / 1000) + 3600,
-      expires_in: 3600,
-      token_type: 'bearer',
-      user: userData.user,
-    };
-    if (injectOAuthSession) {
-      injectOAuthSession(fakeSession as Session);
-    }
-
-    // Sync data using access token directly (Supabase client has no in-memory session)
-    await rebindPersistToUser(userData.user.id);
-
-    const remoteRounds = await fetchMyRoundsForUser(userData.user.id, implicit.access_token!);
-    if (remoteRounds !== null) {
-      useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
-    }
-
-    const profile = await fetchMyProfile(userData.user.id, implicit.access_token!);
-    const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged } =
-      useAppStore.getState();
-    applyProfileRowToStore(profile, {
-      setDisplayName,
-      setPreferredLogPlatform,
-      syncGhinFromProfileIfChanged,
-    });
-
-    await fetchMySocialGroupsIntoStore(userData.user.id);
-    await fetchInboundGroupInvitesIntoStore(userData.user.id);
-    useAppStore.getState().recomputeGroupsFromYou();
-
-    const extra = Constants.expoConfig?.extra as
-      | {
-          supabaseUrl?: string;
-          supabaseAnonKey?: string;
-          supabasePublishableKey?: string;
-        }
-      | undefined;
-
-    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '';
-    const supabaseAnonKey =
-      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
-      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
-      extra?.supabaseAnonKey ??
-      extra?.supabasePublishableKey ??
-      '';
-
-    const profileRes = await fetch(
-      `${supabaseUrl}/rest/v1/profiles?id=eq.${userData.user.id}&select=id&limit=1`,
-      {
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${implicit.access_token}`,
-        },
-      }
+    return persistNativeOAuthSessionAndNavigate(
+      implicit.access_token,
+      implicit.refresh_token,
+      userData.user
     );
-    const profileRows = await profileRes.json();
-    const hasProfile = Array.isArray(profileRows) && profileRows.length > 0;
-
-    if (hasProfile) {
-      router.replace('/(tabs)' as Href);
-    } else {
-      router.replace('/(auth)/onboarding' as Href);
-    }
-    return {};
   }
 
   if (parsed.code) {

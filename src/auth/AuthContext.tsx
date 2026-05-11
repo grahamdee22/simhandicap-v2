@@ -211,6 +211,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (signOutRedirectTimer.current) return;
       signOutRedirectTimer.current = setTimeout(() => {
         signOutRedirectTimer.current = null;
+        useAppStore.getState().setDisplayName('');
         if (!onboardingSeen) {
           router.replace('/(auth)/onboarding');
         } else {
@@ -283,7 +284,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = useCallback(async () => {
     const userId = session?.user?.id;
     const wipeLocalSessionArtifacts = async () => {
-      useAppStore.getState().setDisplayName('');
       try {
         await AsyncStorage.removeItem('supabase.auth.token');
       } catch {

@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
-import { signInWithOAuthProvider } from '@/src/lib/oauthSignIn';
+import { signInWithApple, signInWithOAuthProvider } from '@/src/lib/oauthSignIn';
 
 type Props = {
   /** Shown in the divider between OAuth and email/password (e.g. "or use email"). */
@@ -13,9 +13,18 @@ type Props = {
 export function OAuthSignInButtons({ dividerLabel }: Props) {
   const [busy, setBusy] = useState<'apple' | 'google' | null>(null);
 
-  const run = async (provider: 'apple' | 'google') => {
-    setBusy(provider);
-    const { error } = await signInWithOAuthProvider(provider);
+  const runApple = async () => {
+    setBusy('apple');
+    const { error } = await signInWithApple();
+    setBusy(null);
+    if (error) {
+      showAppAlert('Sign in', error);
+    }
+  };
+
+  const runGoogle = async () => {
+    setBusy('google');
+    const { error } = await signInWithOAuthProvider('google');
     setBusy(null);
     if (error) {
       showAppAlert('Sign in', error);
@@ -24,32 +33,34 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
 
   return (
     <View style={styles.block}>
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Continue with Apple"
-        disabled={busy !== null}
-        onPress={() => void run('apple')}
-        style={({ pressed }) => [
-          styles.oauthBtn,
-          busy !== null && styles.oauthBtnDisabled,
-          pressed && busy === null && styles.oauthBtnPressed,
-        ]}
-      >
-        {busy === 'apple' ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Ionicons name="logo-apple" size={22} color="#fff" style={styles.icon} />
-            <Text style={styles.oauthTxt}>Continue with Apple</Text>
-          </>
-        )}
-      </Pressable>
+      {Platform.OS === 'ios' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Continue with Apple"
+          disabled={busy !== null}
+          onPress={() => void runApple()}
+          style={({ pressed }) => [
+            styles.oauthBtn,
+            busy !== null && styles.oauthBtnDisabled,
+            pressed && busy === null && styles.oauthBtnPressed,
+          ]}
+        >
+          {busy === 'apple' ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <>
+              <Ionicons name="logo-apple" size={22} color="#fff" style={styles.icon} />
+              <Text style={styles.oauthTxt}>Continue with Apple</Text>
+            </>
+          )}
+        </Pressable>
+      ) : null}
 
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Continue with Google"
         disabled={busy !== null}
-        onPress={() => void run('google')}
+        onPress={() => void runGoogle()}
         style={({ pressed }) => [
           styles.oauthBtn,
           busy !== null && styles.oauthBtnDisabled,
