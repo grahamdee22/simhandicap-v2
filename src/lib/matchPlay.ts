@@ -378,6 +378,42 @@ export async function fetchMatchPlayerDisplayNames(
   return map;
 }
 
+/** Display names + GHIN for match participants (REST + Bearer for any JWT, including Supabase session). */
+export async function fetchMatchParticipantProfiles(
+  rows: DbMatchRow[],
+  accessToken: string
+): Promise<{ displayNames: Record<string, string>; ghinById: Record<string, number> }> {
+  const ids = new Set<string>();
+  for (const m of rows) {
+    ids.add(m.player_1_id);
+    if (m.player_2_id) ids.add(m.player_2_id);
+  }
+  if (ids.size === 0) return { displayNames: {}, ghinById: {} };
+
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+  if (!supabaseUrl || !supabaseAnonKey) return { displayNames: {}, ghinById: {} };
+  const idList = [...ids].join(',');
+  const res = await fetch(
+    `${supabaseUrl}/rest/v1/profiles?id=in.(${idList})&select=id,display_name,ghin_index`,
+    { headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    console.warn('[matchPlay] fetchMatchParticipantProfiles', res.status, body);
+    return { displayNames: {}, ghinById: {} };
+  }
+  const data = await res.json();
+  if (!Array.isArray(data)) return { displayNames: {}, ghinById: {} };
+  const displayNames: Record<string, string> = {};
+  const ghinById: Record<string, number> = {};
+  for (const row of data as { id: string; display_name?: string; ghin_index?: number | string | null }[]) {
+    displayNames[row.id] = row.display_name?.trim() || 'Golfer';
+    const g = row.ghin_index != null ? Number(row.ghin_index) : NaN;
+    ghinById[row.id] = Number.isFinite(g) ? g : 0;
+  }
+  return { displayNames, ghinById };
+}
+
 /**
  * Open challenge feed: public listings waiting for an acceptor.
  * Newest first (brief: chronological, newest at top).

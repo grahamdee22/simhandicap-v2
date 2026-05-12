@@ -934,7 +934,7 @@ export default function MatchCreateScreen() {
                       }}
                     >
                       <Text style={[styles.openModeBtnTxt, openChallengeMode === 'now' && styles.openModeBtnTxtOn]}>
-                        Post Open Challenge
+                        Now
                       </Text>
                     </Pressable>
                     <Pressable
@@ -942,7 +942,7 @@ export default function MatchCreateScreen() {
                       onPress={() => setOpenChallengeMode('future')}
                     >
                       <Text style={[styles.openModeBtnTxt, openChallengeMode === 'future' && styles.openModeBtnTxtOn]}>
-                        Future Open Challenge
+                        Later
                       </Text>
                     </Pressable>
                   </View>
@@ -1290,13 +1290,13 @@ export default function MatchCreateScreen() {
                         setDevFutureTwoMinuteMode(false);
                       }}
                     >
-                      <Text style={[styles.openModeBtnTxt, styles.openModeBtnTxtOn]}>Post Open Challenge</Text>
+                      <Text style={[styles.openModeBtnTxt, styles.openModeBtnTxtOn]}>Now</Text>
                     </Pressable>
                     <Pressable
                       style={styles.openModeBtn}
                       onPress={() => setOpenChallengeMode('future')}
                     >
-                      <Text style={styles.openModeBtnTxt}>Future Open Challenge</Text>
+                      <Text style={styles.openModeBtnTxt}>Later</Text>
                     </Pressable>
                   </View>
                 </>

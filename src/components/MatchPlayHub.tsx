@@ -337,6 +337,7 @@ export function MatchPlayHub({
     setFetchError(false);
 
     const fetchHubRows = async () => {
+      const client = supabase;
       const [myRes, openRes] = await Promise.all([
         listMyMatches(userId, googleOAuthAccessToken ?? undefined),
         listOpenFeedMatches(userId, googleOAuthAccessToken ?? undefined),
@@ -364,7 +365,9 @@ export function MatchPlayHub({
       const { incomingDirect } = partitionHubData(my, userId);
       onIncomingDirectCount(incomingDirect.length);
       const nameRows = uniqById([...my, ...open]);
-      const nm = await fetchMatchPlayerDisplayNames(nameRows, googleOAuthAccessToken ?? undefined);
+      const sessionTok = client ? (await client.auth.getSession()).data.session?.access_token : undefined;
+      const nameBearer = googleOAuthAccessToken ?? sessionTok ?? undefined;
+      const nm = await fetchMatchPlayerDisplayNames(nameRows, nameBearer ?? undefined);
       if (!cancelled) setNames(nm);
       setLoading(false);
     };
@@ -552,6 +555,24 @@ export function MatchPlayHub({
     setOpenFeed((prev) => prev.filter((row) => row.id !== m.id));
   }, [googleOAuthAccessToken]);
 
+  const onWithdrawPendingDirectChallenge = useCallback(async (m: DbMatchRow) => {
+    const ok = await confirmDestructive(
+      'Withdraw challenge?',
+      'This removes the challenge before your opponent accepts. This cannot be undone.',
+      'Withdraw'
+    );
+    if (!ok) return;
+    setCancelOpenBusyId(m.id);
+    const res = await deleteMatchById(m.id, googleOAuthAccessToken ?? undefined);
+    setCancelOpenBusyId(null);
+    if (!res.ok) {
+      showAppAlert('Could not withdraw', res.error ?? 'Unknown error');
+      return;
+    }
+    setMyMatches((prev) => prev.filter((row) => row.id !== m.id));
+    setOpenFeed((prev) => prev.filter((row) => row.id !== m.id));
+  }, [googleOAuthAccessToken]);
+
   const onUploadAwaitingPhoto = useCallback(async (m: DbMatchRow) => {
     if (!userId) return;
     setAwaitingPhotoBusyId(m.id);
@@ -616,7 +637,9 @@ export function MatchPlayHub({
             const { incomingDirect } = partitionHubData(my, userId);
             onIncomingDirectCount(incomingDirect.length);
             const nameRows = uniqById([...my, ...open]);
-            const nm = await fetchMatchPlayerDisplayNames(nameRows, googleOAuthAccessToken ?? undefined);
+            const sessionTok = supabase ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
+            const nameBearer = googleOAuthAccessToken ?? sessionTok ?? undefined;
+            const nm = await fetchMatchPlayerDisplayNames(nameRows, nameBearer ?? undefined);
             setNames(nm);
           });
         },
@@ -809,6 +832,13 @@ export function MatchPlayHub({
       m.status === 'open' &&
       m.player_1_id === uid &&
       m.player_2_id == null;
+    const isMyDirectAwaitingOpponent =
+      listKind === 'hub' &&
+      !m.is_open &&
+      m.status === 'pending' &&
+      m.player_1_id === uid &&
+      m.player_2_id != null;
+    const showChallengerTrash = isMyOpenPostedCancelable || isMyDirectAwaitingOpponent;
     const isMyAwaitingPhoto =
       isMyOpenPostedCancelable &&
       challengeLifecycle(m) === 'awaiting_photo' &&
@@ -967,16 +997,20 @@ export function MatchPlayHub({
 
     return (
       <View key={m.id} style={styles.card}>
-        {isMyOpenPostedCancelable ? (
+        {showChallengerTrash ? (
           <View style={styles.cardTopRow}>
             <View style={styles.cardBodyFlex}>{cardInner}</View>
             <Pressable
-              onPress={() => void onCancelOpenPosted(m)}
+              onPress={() =>
+                void (isMyOpenPostedCancelable ? onCancelOpenPosted(m) : onWithdrawPendingDirectChallenge(m))
+              }
               disabled={cancelOpenBusyId === m.id}
               style={({ pressed }) => [styles.groupDeleteBtn, pressed && styles.groupDeleteBtnPressed]}
               hitSlop={10}
               accessibilityRole="button"
-              accessibilityLabel="Cancel open challenge"
+              accessibilityLabel={
+                isMyOpenPostedCancelable ? 'Cancel open challenge' : 'Withdraw direct challenge'
+              }
             >
               {cancelOpenBusyId === m.id ? (
                 <ActivityIndicator size="small" color={colors.subtle} />

@@ -18,6 +18,7 @@ import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '@/src/lib/googleOAuthAccessToken';
 import {
   abandonMatch,
+  fetchMatchParticipantProfiles,
   fetchMatchPlayerDisplayNames,
   getMatchById,
   listMatchHoles,
@@ -131,9 +132,21 @@ export default function MatchScoreScreen() {
     if (hRes.data) setHoles(hRes.data);
     const p1 = m.player_1_id;
     const p2 = m.player_2_id;
-    const token = googleOAuthAccessToken ?? undefined;
-    const nameMapFromToken = token ? await fetchMatchPlayerDisplayNames([m], token) : {};
-    if (supabase) {
+
+    const sessionRes = supabase ? await supabase.auth.getSession() : null;
+    const nameBearer =
+      googleOAuthAccessToken ?? sessionRes?.data?.session?.access_token ?? undefined;
+
+    if (nameBearer) {
+      const { displayNames, ghinById } = await fetchMatchParticipantProfiles([m], nameBearer);
+      if (!mounted.current) return;
+      setNames({
+        p1: displayNames[p1] ?? 'Player 1',
+        p2: displayNames[p2] ?? 'Player 2',
+      });
+      setGhin1(ghinById[p1] ?? 0);
+      setGhin2(ghinById[p2] ?? 0);
+    } else if (supabase) {
       const { data: profs } = await supabase
         .from('profiles')
         .select('id, display_name, ghin_index')
@@ -151,18 +164,16 @@ export default function MatchScoreScreen() {
           ghin: Number.isFinite(g) ? g : 0,
         };
       }
+      const nameMapFallback = await fetchMatchPlayerDisplayNames([m]);
       setNames({
-        p1: nameMapFromToken[p1] ?? map[p1]?.dn ?? 'Player 1',
-        p2: nameMapFromToken[p2] ?? map[p2]?.dn ?? 'Player 2',
+        p1: nameMapFallback[p1] ?? map[p1]?.dn ?? 'Player 1',
+        p2: nameMapFallback[p2] ?? map[p2]?.dn ?? 'Player 2',
       });
       setGhin1(map[p1]?.ghin ?? 0);
       setGhin2(map[p2]?.ghin ?? 0);
-    } else if (token) {
+    } else {
       if (!mounted.current) return;
-      setNames({
-        p1: nameMapFromToken[p1] ?? 'Player 1',
-        p2: nameMapFromToken[p2] ?? 'Player 2',
-      });
+      setNames({ p1: 'Player 1', p2: 'Player 2' });
       setGhin1(0);
       setGhin2(0);
     }

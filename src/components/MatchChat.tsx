@@ -5,6 +5,7 @@ import {
   Alert,
   Keyboard,
   Linking,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -399,6 +400,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
           placeholderTextColor={colors.subtle}
           editable={!sending && !messageLimitReached}
           multiline
+          scrollEnabled
         />
         <Pressable
           onPress={() => void handleSend(input)}
@@ -564,7 +566,7 @@ const styles = StyleSheet.create({
   },
   inputRow: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
+    alignItems: 'center',
     marginTop: 8,
   },
   presetBtn: {
@@ -583,16 +585,19 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 36,
+    minHeight: 40,
     maxHeight: 88,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingHorizontal: 12,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
     fontSize: 14,
+    lineHeight: 18,
     color: colors.ink,
     backgroundColor: colors.bg,
+    textAlignVertical: 'center',
+    ...(Platform.OS === 'android' ? { includeFontPadding: false } : {}),
   },
   sendBtn: {
     marginLeft: 6,
