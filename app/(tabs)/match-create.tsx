@@ -48,6 +48,7 @@ import {
   hasBlockingDirectMatchWithOpponent,
   MAX_ACTIVE_DIRECT_CHALLENGES,
 } from '../../src/lib/matchDirectChallenges';
+import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import { getMatchById, insertMatch, listMyMatches, updateMatchById } from '../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../src/lib/matchPlayStorage';
 import { useResponsive } from '../../src/lib/responsive';
@@ -276,7 +277,7 @@ export default function MatchCreateScreen() {
     let cancelled = false;
     void (async () => {
       try {
-        const sourceRes = await getMatchById(rid);
+        const sourceRes = await getMatchById(rid, googleOAuthAccessToken ?? undefined);
         if (cancelled) return;
         if (sourceRes.error || !sourceRes.data) {
           lastRematchHydratedRef.current = rid;
@@ -299,7 +300,7 @@ export default function MatchCreateScreen() {
           return;
         }
 
-        const myRes = await listMyMatches();
+        const myRes = await listMyMatches(user.id, googleOAuthAccessToken ?? undefined);
         if (cancelled) return;
         if (myRes.error || !myRes.data) {
           showAppAlert('Rematch', myRes.error ?? 'Could not verify your matches.');
@@ -439,7 +440,7 @@ export default function MatchCreateScreen() {
       cancelled = true;
       setRematchHydrating(false);
     };
-  }, [rematchFromParam, supabaseOn, user?.id, router]);
+  }, [rematchFromParam, supabaseOn, user?.id, router, googleOAuthAccessToken]);
 
   const opponents = useMemo(
     () => (user?.id ? collectOpponents(groups, user.id) : []),
@@ -640,7 +641,7 @@ export default function MatchCreateScreen() {
       }
       const uid = user?.id;
       if (!uid) return;
-      const myRes = await listMyMatches();
+      const myRes = await listMyMatches(uid, googleOAuthAccessToken ?? undefined);
       if (myRes.error || myRes.data == null) {
         showAppAlert('Could not verify open challenges', myRes.error ?? 'Something went wrong.');
         return;
@@ -658,13 +659,13 @@ export default function MatchCreateScreen() {
       setChallengeKind('open');
       setOpenChallengeMode('now');
     },
-    [user?.id]
+    [user?.id, googleOAuthAccessToken]
   );
 
   const goNext = useCallback(async () => {
     if (!canContinue) return;
     if (challengeKind === 'direct' && opponent && screenStep === 1 && user?.id) {
-      const res = await listMyMatches();
+      const res = await listMyMatches(user.id, googleOAuthAccessToken ?? undefined);
       if (res.error || res.data == null) {
         showAppAlert('Could not verify your matches', res.error ?? 'Something went wrong.');
         return;
@@ -685,7 +686,7 @@ export default function MatchCreateScreen() {
       }
     }
     if (stepIdx < totalSteps - 1) setStepIdx((s) => s + 1);
-  }, [canContinue, stepIdx, totalSteps, challengeKind, opponent, screenStep, user?.id]);
+  }, [canContinue, stepIdx, totalSteps, challengeKind, opponent, screenStep, user?.id, googleOAuthAccessToken]);
 
   const goBackStep = useCallback(() => {
     if (stepIdx > 0) setStepIdx((s) => s - 1);
@@ -709,7 +710,7 @@ export default function MatchCreateScreen() {
     });
 
     if (challengeKind === 'direct' && opponent) {
-      const res = await listMyMatches();
+      const res = await listMyMatches(user.id, googleOAuthAccessToken ?? undefined);
       if (res.error || res.data == null) {
         showAppAlert('Could not verify your matches', res.error ?? 'Something went wrong.');
         return;
@@ -740,27 +741,31 @@ export default function MatchCreateScreen() {
         ? new Date(Date.now() + 2 * 60 * 1000)
         : clampScheduledDate(scheduledForDraft)
       : null;
-    const ins = await insertMatch({
-      player_2_id: challengeKind === 'open' ? null : opponent!.userId,
-      is_open: challengeKind === 'open',
-      course_name: course.name,
-      player_1_course_rating: tee.rating,
-      player_1_course_slope: tee.slope,
-      player_1_tee: tee.teeName,
-      putting_mode: putting,
-      pin_placement: pin,
-      wind,
-      mulligans,
-      holes: holesChoice === '18' ? 18 : 9,
-      nine_selection: holesChoice === '18' ? null : holesChoice === 'front' ? 'front' : 'back',
-      status: challengeKind === 'open' ? 'open' : 'pending',
-      player_1_settings_photo_url: null,
-      scheduled_for: resolvedScheduledFor?.toISOString() ?? null,
-      challenge_status: challengeKind === 'open' ? (isFutureOpen ? 'scheduled' : 'active') : null,
-      rematch_from: challengeKind === 'direct' && rematchSourceMatchId ? rematchSourceMatchId : null,
-      player_1_ghin_index_at_post: idxSnapshot != null && Number.isFinite(idxSnapshot) ? idxSnapshot : null,
-      player_1_platform: platform,
-    });
+    const ins = await insertMatch(
+      {
+        player_2_id: challengeKind === 'open' ? null : opponent!.userId,
+        is_open: challengeKind === 'open',
+        course_name: course.name,
+        player_1_course_rating: tee.rating,
+        player_1_course_slope: tee.slope,
+        player_1_tee: tee.teeName,
+        putting_mode: putting,
+        pin_placement: pin,
+        wind,
+        mulligans,
+        holes: holesChoice === '18' ? 18 : 9,
+        nine_selection: holesChoice === '18' ? null : holesChoice === 'front' ? 'front' : 'back',
+        status: challengeKind === 'open' ? 'open' : 'pending',
+        player_1_settings_photo_url: null,
+        scheduled_for: resolvedScheduledFor?.toISOString() ?? null,
+        challenge_status: challengeKind === 'open' ? (isFutureOpen ? 'scheduled' : 'active') : null,
+        rematch_from: challengeKind === 'direct' && rematchSourceMatchId ? rematchSourceMatchId : null,
+        player_1_ghin_index_at_post: idxSnapshot != null && Number.isFinite(idxSnapshot) ? idxSnapshot : null,
+        player_1_platform: platform,
+      },
+      user.id,
+      googleOAuthAccessToken ?? undefined
+    );
     if (ins.error || !ins.data) {
       setSubmitBusy(false);
       showAppAlert('Could not create match', ins.error ?? 'Unknown error');
@@ -818,6 +823,7 @@ export default function MatchCreateScreen() {
     scheduledForDraft,
     rematchSourceMatchId,
     router,
+    googleOAuthAccessToken,
   ]);
 
   if (!supabaseOn || !user) {

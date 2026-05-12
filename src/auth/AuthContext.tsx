@@ -11,8 +11,9 @@ import {
   fetchMySocialGroupsIntoStore,
 } from '../lib/socialGroups';
 import { clearOnboardingSeen, getOnboardingSeen, setOnboardingSeen } from '../lib/onboardingStorage';
-import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { clearGoogleOAuthAccessToken, googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
+import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { mapEmailPasswordSignInError } from '../lib/emailPasswordSignInErrors';
 import { shouldPromptOauthDisplayName } from '../lib/oauthDisplayNameGate';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
 
@@ -271,7 +272,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signIn = useCallback(async (email: string, password: string) => {
     if (!supabase) return { error: 'Supabase is not configured' };
     const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    return error ? { error: error.message } : {};
+    return error ? { error: mapEmailPasswordSignInError(error) } : {};
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, displayName: string) => {

@@ -565,16 +565,28 @@ export async function setMatchHoleReaction(params: {
 
 /**
  * Create a match as the signed-in user (always `player_1_id`).
+ * Pass `userId` + `accessToken` for native Google OAuth when the Supabase client session is not hydrated.
  */
-export async function insertMatch(input: InsertMatchInput): Promise<MatchSingleResult> {
-  if (!supabase) return { data: null, error: 'Supabase is not configured' };
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return { data: null, error: 'Not signed in' };
+export async function insertMatch(
+  input: InsertMatchInput,
+  userId?: string,
+  accessToken?: string
+): Promise<MatchSingleResult> {
+  let player1Id: string;
+  if (accessToken) {
+    if (!userId) return { data: null, error: 'Not signed in' };
+    player1Id = userId;
+  } else {
+    if (!supabase) return { data: null, error: 'Supabase is not configured' };
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { data: null, error: 'Not signed in' };
+    player1Id = user.id;
+  }
 
   const payload = {
-    player_1_id: user.id,
+    player_1_id: player1Id,
     player_2_id: input.player_2_id ?? null,
     is_open: input.is_open,
     course_name: input.course_name,
@@ -609,6 +621,44 @@ export async function insertMatch(input: InsertMatchInput): Promise<MatchSingleR
     scheduled_for: input.scheduled_for ?? null,
     challenge_status: input.challenge_status ?? null,
   };
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
+    const res = await fetch(`${supabaseUrl}/rest/v1/matches`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify([payload]),
+    });
+    const rawText = await res.text().catch(() => '');
+    if (!res.ok) {
+      let msg = rawText || res.statusText || 'Request failed';
+      try {
+        const j = JSON.parse(rawText) as { message?: string };
+        if (j?.message) msg = j.message;
+      } catch {
+        /* use msg */
+      }
+      console.warn('[matchPlay] insertMatch', msg);
+      return { data: null, error: msg };
+    }
+    let rows: unknown;
+    try {
+      rows = rawText ? JSON.parse(rawText) : null;
+    } catch {
+      return { data: null, error: 'Invalid response' };
+    }
+    const row = Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+    if (!row) return { data: null, error: 'Could not create match' };
+    return { data: normalizeMatchRow(row), error: null };
+  }
+
+  if (!supabase) return { data: null, error: 'Supabase is not configured' };
 
   const { data, error } = await supabase.from('matches').insert(payload).select('*').single();
 

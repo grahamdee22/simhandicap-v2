@@ -637,10 +637,49 @@ export async function insertSocialMatchFromRound(round: SimRound, displayName: s
  * Creates a crew via `create_social_group` RPC (migration 013): avoids RLS recursion from
  * `social_groups` policies that scan `group_members` during client-side INSERT checks.
  */
-export async function createSocialGroup(name: string): Promise<{ id: string } | { error: string }> {
-  if (!supabase) return { error: 'Supabase is not configured' };
+export async function createSocialGroup(
+  name: string,
+  accessToken?: string
+): Promise<{ id: string } | { error: string }> {
   const trimmed = name.trim();
   if (!trimmed) return { error: 'Enter a group name' };
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { error: 'Supabase is not configured' };
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/create_social_group`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_name: trimmed }),
+    });
+    const rawText = await res.text().catch(() => '');
+    if (!res.ok) {
+      let msg = rawText || res.statusText || 'Request failed';
+      try {
+        const j = JSON.parse(rawText) as { message?: string };
+        if (j?.message) msg = j.message;
+      } catch {
+        /* use msg */
+      }
+      return { error: msg };
+    }
+    let groupId: string | null = null;
+    try {
+      const parsed: unknown = rawText ? JSON.parse(rawText) : null;
+      if (typeof parsed === 'string' && parsed.length > 0) groupId = parsed;
+      else if (Array.isArray(parsed) && typeof parsed[0] === 'string') groupId = parsed[0];
+    } catch {
+      return { error: 'Could not create group' };
+    }
+    if (!groupId) return { error: 'Could not create group' };
+    return { id: groupId };
+  }
+
+  if (!supabase) return { error: 'Supabase is not configured' };
 
   const {
     data: { user },

@@ -194,7 +194,7 @@ export default function GroupsScreen() {
     if (supabaseOn) {
       setCreateBusy(true);
       try {
-        const res = await createSocialGroup(n);
+        const res = await createSocialGroup(n, googleOAuthAccessToken ?? undefined);
         if ('error' in res) {
           showAppAlert('Create group', res.error);
           return;
@@ -431,116 +431,114 @@ export default function GroupsScreen() {
 
   if (groups.length === 0) {
     return (
-      <View style={[styles.page, { paddingTop: insets.top }]}>
+      <View style={styles.page}>
         <ContentWidth bg={colors.surface} style={styles.contentWidthOuter} contentStyle={styles.contentWidthInner}>
-          <ScrollView
-            contentContainerStyle={{
-              paddingHorizontal: gutter,
-              paddingBottom: insets.bottom + 32,
-              paddingTop: 8,
-            }}
-            showsVerticalScrollIndicator={false}
-          >
-            <Text style={styles.emptyTitle}>Social</Text>
-            {inboundInviteCards.length > 0 ? (
-              <View style={{ gap: 10, marginBottom: 18 }}>{inboundInviteCards}</View>
-            ) : null}
-            <View style={styles.socialMatchPlaySection}>
-              <MatchPlayHub
-                gutter={0}
-                userId={user?.id}
-                supabaseOn={supabaseOn}
-                onIncomingDirectCount={onIncomingDirectMatchCount}
-                onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
-                onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
-              />
-            </View>
-            <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
-              <View style={styles.sectionHeaderRow}>
-                <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
-                  My Groups
-                </Text>
-                <Pressable
-                  style={styles.infoBtn}
-                  onPress={() => setSocialSectionInfo('groups')}
-                  hitSlop={6}
-                  accessibilityRole="button"
-                  accessibilityLabel="About My Groups"
-                >
-                  <Text style={styles.infoBtnTxt}>ⓘ</Text>
-                </Pressable>
-              </View>
-            </View>
-            <Text style={styles.emptyLead}>
-              Crews you create or join show up here. Each tab is a group — with a live leaderboard and invites.
-            </Text>
-            <Text style={styles.emptyMuted}>
-              You don’t have any groups yet. Create one to get started, then invite friends from the Social tab once
-              they’re on SimHandicap.
-            </Text>
-            {listRefreshing ? (
-              <View style={styles.inlineLoader}>
-                <ActivityIndicator color={colors.header} />
-              </View>
-            ) : null}
-            <Pressable style={styles.emptyCta} onPress={onCreate}>
-              <IconPlus size={18} color="#fff" />
-              <Text style={styles.emptyCtaTxt}>Create your first group</Text>
-            </Pressable>
-          </ScrollView>
-        </ContentWidth>
-
-        <Modal visible={createOpen} animationType="fade" transparent>
-          <Pressable style={styles.modalBackdrop} onPress={() => !createBusy && setCreateOpen(false)}>
-            <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.modalTitle}>New group</Text>
-              <TextInput
-                style={styles.modalInput}
-                placeholder="Group name"
-                placeholderTextColor={colors.subtle}
-                value={newName}
-                onChangeText={setNewName}
-                autoFocus
-                editable={!createBusy}
-              />
-              <View style={styles.modalActions}>
-                <Pressable onPress={() => !createBusy && setCreateOpen(false)} style={styles.modalBtn}>
-                  <Text style={styles.modalBtnTxt}>Cancel</Text>
-                </Pressable>
-                <Pressable
-                  onPress={() => void submitCreate()}
-                  disabled={createBusy}
-                  style={[styles.modalBtn, styles.modalBtnPrimary, createBusy && styles.modalBtnDisabled]}
-                >
-                  {createBusy ? (
-                    <ActivityIndicator color="#fff" />
-                  ) : (
-                    <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Create</Text>
-                  )}
-                </Pressable>
-              </View>
-            </Pressable>
-          </Pressable>
-        </Modal>
-
-        <Modal
-          visible={socialSectionInfo != null}
-          animationType={Platform.OS === 'web' ? 'none' : 'fade'}
-          transparent
-          onRequestClose={() => setSocialSectionInfo(null)}
-        >
-          <View style={styles.infoExplainRoot}>
-            <Pressable style={styles.infoExplainBackdrop} onPress={() => setSocialSectionInfo(null)} />
-            <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
-              {socialSectionInfo != null ? (
-                <>
-                  <Text style={styles.infoExplainTitle}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].title}</Text>
-                  <Text style={styles.infoExplainBody}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].body}</Text>
-                </>
+          <View style={styles.root}>
+            <ScrollView
+              style={styles.scroll}
+              contentContainerStyle={{ paddingTop: 22, paddingBottom: insets.bottom + 16 }}
+              showsVerticalScrollIndicator={false}
+            >
+              {inboundInviteCards.length > 0 ? (
+                <View style={{ marginHorizontal: gutter, marginTop: 0, gap: 10 }}>{inboundInviteCards}</View>
               ) : null}
-            </View>
+              <View style={styles.socialMatchPlaySection}>
+                <MatchPlayHub
+                  gutter={gutter}
+                  userId={user?.id}
+                  supabaseOn={supabaseOn}
+                  onIncomingDirectCount={onIncomingDirectMatchCount}
+                  onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
+                  onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
+                />
+              </View>
+              <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
+                <View style={styles.sectionHeaderRow}>
+                  <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
+                    My Groups
+                  </Text>
+                  <Pressable
+                    style={styles.infoBtn}
+                    onPress={() => setSocialSectionInfo('groups')}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="About My Groups"
+                  >
+                    <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                  </Pressable>
+                </View>
+              </View>
+              <Text style={[styles.emptyLead, { marginHorizontal: gutter }]}>
+                Crews you create or join show up here. Each tab is a group — with a live leaderboard and invites.
+              </Text>
+              <Text style={[styles.emptyMuted, { marginHorizontal: gutter }]}>
+                You don’t have any groups yet. Create one to get started, then invite friends from the Social tab once
+                they’re on SimHandicap.
+              </Text>
+              {listRefreshing ? (
+                <View style={[styles.inlineLoader, { marginHorizontal: gutter }]}>
+                  <ActivityIndicator color={colors.header} />
+                </View>
+              ) : null}
+              <Pressable style={[styles.emptyCta, { marginHorizontal: gutter }]} onPress={onCreate}>
+                <IconPlus size={18} color="#fff" />
+                <Text style={styles.emptyCtaTxt}>Create your first group</Text>
+              </Pressable>
+            </ScrollView>
+
+            <Modal visible={createOpen} animationType="fade" transparent>
+              <Pressable style={styles.modalBackdrop} onPress={() => !createBusy && setCreateOpen(false)}>
+                <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
+                  <Text style={styles.modalTitle}>New group</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Group name"
+                    placeholderTextColor={colors.subtle}
+                    value={newName}
+                    onChangeText={setNewName}
+                    autoFocus
+                    editable={!createBusy}
+                  />
+                  <View style={styles.modalActions}>
+                    <Pressable onPress={() => !createBusy && setCreateOpen(false)} style={styles.modalBtn}>
+                      <Text style={styles.modalBtnTxt}>Cancel</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void submitCreate()}
+                      disabled={createBusy}
+                      style={[styles.modalBtn, styles.modalBtnPrimary, createBusy && styles.modalBtnDisabled]}
+                    >
+                      {createBusy ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Create</Text>
+                      )}
+                    </Pressable>
+                  </View>
+                </Pressable>
+              </Pressable>
+            </Modal>
+
+            <Modal
+              visible={socialSectionInfo != null}
+              animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+              transparent
+              onRequestClose={() => setSocialSectionInfo(null)}
+            >
+              <View style={styles.infoExplainRoot}>
+                <Pressable style={styles.infoExplainBackdrop} onPress={() => setSocialSectionInfo(null)} />
+                <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
+                  {socialSectionInfo != null ? (
+                    <>
+                      <Text style={styles.infoExplainTitle}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].title}</Text>
+                      <Text style={styles.infoExplainBody}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].body}</Text>
+                    </>
+                  ) : null}
+                </View>
+              </View>
+            </Modal>
           </View>
-        </Modal>
+        </ContentWidth>
       </View>
     );
   }
@@ -912,7 +910,6 @@ const styles = StyleSheet.create({
   contentWidthInner: { flex: 1, minHeight: 0, width: '100%' },
   root: { flex: 1, minHeight: 0, backgroundColor: colors.surface, width: '100%' },
   scroll: { flex: 1, minHeight: 0, width: '100%' },
-  emptyTitle: { fontSize: 24, fontWeight: '700', color: colors.ink, marginBottom: 22 },
   emptyLead: { fontSize: 15, color: colors.muted, lineHeight: 22, marginBottom: 12 },
   emptyMuted: { fontSize: 13, color: colors.subtle, lineHeight: 19, marginBottom: 24 },
   emptyCta: {
@@ -921,10 +918,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     backgroundColor: colors.header,
-    paddingVertical: 14,
+    marginTop: 8,
+    marginBottom: 14,
+    paddingVertical: 12,
     borderRadius: 12,
   },
-  emptyCtaTxt: { fontSize: 16, fontWeight: '700', color: '#fff' },
+  emptyCtaTxt: { fontSize: 15, fontWeight: '700', color: '#fff' },
   inlineLoader: { alignItems: 'center', marginBottom: 16 },
   membersEmpty: { fontSize: 13, color: colors.muted, lineHeight: 19 },
   modalBtnDisabled: { opacity: 0.7 },
