@@ -32,7 +32,7 @@ import {
   uniqueCourseNamesFromOpenFeed,
   type OpenFeedFilterState,
 } from '../lib/openFeedFilters';
-import { googleOAuthAccessToken } from '../lib/oauthSignIn';
+import { googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
 import { supabase } from '../lib/supabase';
 import { OpenFeedFilterPanel } from './OpenFeedFilterPanel';
 type Props = {
@@ -370,7 +370,7 @@ export function MatchPlayHub({
     };
 
     void (async () => {
-      const proc = await processFutureOpenChallenges();
+      const proc = await processFutureOpenChallenges(googleOAuthAccessToken ?? undefined);
       if (!cancelled && proc.ok && proc.readyForUid) {
         showAppAlert(
           'Future open challenge ready',
@@ -390,7 +390,7 @@ export function MatchPlayHub({
     return () => {
       cancelled = true;
     };
-  }, [isFocused, supabaseOn, userId, onIncomingDirectCount, onOutgoingAcceptedUnseenCount]);
+  }, [isFocused, supabaseOn, userId, onIncomingDirectCount, onOutgoingAcceptedUnseenCount, googleOAuthAccessToken]);
 
   useEffect(() => {
     const client = supabase;
@@ -521,7 +521,7 @@ export function MatchPlayHub({
       );
       if (!ok) return;
       setDeclineBusyId(m.id);
-      const res = await updateMatchById(m.id, { status: 'declined' });
+      const res = await updateMatchById(m.id, { status: 'declined' }, googleOAuthAccessToken ?? undefined);
       setDeclineBusyId(null);
       if (res.error) {
         showAppAlert('Could not decline', res.error);
@@ -531,7 +531,7 @@ export function MatchPlayHub({
         prev.map((row) => (row.id === m.id ? { ...row, status: 'declined' as const } : row))
       );
     },
-    [names]
+    [names, googleOAuthAccessToken]
   );
 
   const onCancelOpenPosted = useCallback(async (m: DbMatchRow) => {
@@ -542,7 +542,7 @@ export function MatchPlayHub({
     );
     if (!ok) return;
     setCancelOpenBusyId(m.id);
-    const res = await deleteMatchById(m.id);
+    const res = await deleteMatchById(m.id, googleOAuthAccessToken ?? undefined);
     setCancelOpenBusyId(null);
     if (!res.ok) {
       showAppAlert('Could not cancel', res.error ?? 'Unknown error');
@@ -550,7 +550,7 @@ export function MatchPlayHub({
     }
     setMyMatches((prev) => prev.filter((row) => row.id !== m.id));
     setOpenFeed((prev) => prev.filter((row) => row.id !== m.id));
-  }, []);
+  }, [googleOAuthAccessToken]);
 
   const onUploadAwaitingPhoto = useCallback(async (m: DbMatchRow) => {
     if (!userId) return;
@@ -569,15 +569,20 @@ export function MatchPlayHub({
         userId,
         localUri: result.assets[0].uri,
         mimeType: result.assets[0].mimeType ?? undefined,
+        accessToken: googleOAuthAccessToken ?? undefined,
       });
       if ('error' in up) {
         showAppAlert('Upload failed', up.error);
         return;
       }
-      const upd = await updateMatchById(m.id, {
-        player_1_settings_photo_url: up.signedUrl,
-        challenge_status: 'active',
-      });
+      const upd = await updateMatchById(
+        m.id,
+        {
+          player_1_settings_photo_url: up.signedUrl,
+          challenge_status: 'active',
+        },
+        googleOAuthAccessToken ?? undefined
+      );
       if (upd.error) {
         showAppAlert('Could not go live', upd.error);
         return;
@@ -619,12 +624,12 @@ export function MatchPlayHub({
     } finally {
       setAwaitingPhotoBusyId(null);
     }
-  }, [onIncomingDirectCount, userId]);
+  }, [onIncomingDirectCount, userId, googleOAuthAccessToken]);
 
   const onDevRunFutureLifecycleNow = useCallback(async () => {
     if (!__DEV__) return;
     setFutureLifecycleBusy(true);
-    const proc = await processFutureOpenChallenges();
+    const proc = await processFutureOpenChallenges(googleOAuthAccessToken ?? undefined);
     setFutureLifecycleBusy(false);
     if (!proc.ok) {
       showAppAlert('Future lifecycle check failed', proc.error ?? 'Unknown error');
@@ -641,7 +646,7 @@ export function MatchPlayHub({
         `Activated: ${proc.activatedCount} · Expired: ${proc.expiredCount}`
       );
     }
-  }, []);
+  }, [googleOAuthAccessToken]);
 
   useEffect(() => {
     if (!supabaseOn || !userId || !supabase) return;

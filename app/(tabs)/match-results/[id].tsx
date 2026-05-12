@@ -19,15 +19,17 @@ import {
   MAX_ACTIVE_DIRECT_CHALLENGES,
 } from '../../../src/lib/matchDirectChallenges';
 import {
+  fetchMatchPlayerDisplayNames,
   getMatchById,
   listMatchHoles,
   listMyMatches,
   type DbMatchHoleRow,
   type DbMatchRow,
 } from '../../../src/lib/matchPlay';
+import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { grossMapsForPlayers, matchHoleNumbers } from '../../../src/lib/matchStrokeMath';
 import { useResponsive } from '../../../src/lib/responsive';
-import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
+import { isSupabaseConfigured } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 type IndexRoundUi = 'off' | 'loading' | 'prompt' | 'saving' | 'saved' | 'skipped';
@@ -68,7 +70,7 @@ export default function MatchResultsScreen() {
     }
     setLoading(true);
     setErr(null);
-    const res = await getMatchById(matchId);
+    const res = await getMatchById(matchId, googleOAuthAccessToken ?? undefined);
     if (res.error || !res.data) {
       setErr(res.error ?? 'Could not load match.');
       setMatch(null);
@@ -78,21 +80,17 @@ export default function MatchResultsScreen() {
     }
     const m = res.data;
     setMatch(m);
-    const holesRes = await listMatchHoles(matchId);
+    const holesRes = await listMatchHoles(matchId, googleOAuthAccessToken ?? undefined);
     setHolesRows(holesRes.data ?? []);
-    if (supabase && m.player_2_id) {
-      const { data: profs } = await supabase
-        .from('profiles')
-        .select('id, display_name')
-        .in('id', [m.player_1_id, m.player_2_id]);
-      const map: Record<string, string> = {};
-      for (const row of (profs ?? []) as { id: string; display_name?: string }[]) {
-        map[row.id] = row.display_name?.trim() || 'Golfer';
-      }
-      setNames({ p1: map[m.player_1_id] ?? 'Player 1', p2: map[m.player_2_id] ?? 'Player 2' });
+    if (m.player_2_id) {
+      const nm = await fetchMatchPlayerDisplayNames([m], googleOAuthAccessToken ?? undefined);
+      setNames({
+        p1: nm[m.player_1_id] ?? 'Player 1',
+        p2: nm[m.player_2_id] ?? 'Player 2',
+      });
     }
     setLoading(false);
-  }, [matchId, supabaseOn]);
+  }, [matchId, supabaseOn, googleOAuthAccessToken]);
 
   useFocusEffect(
     useCallback(() => {
@@ -133,7 +131,7 @@ export default function MatchResultsScreen() {
   const onRematch = useCallback(async () => {
     if (!match?.player_2_id || !userId || !matchId) return;
     setRematchBusy(true);
-    const res = await listMyMatches();
+    const res = await listMyMatches(userId, googleOAuthAccessToken ?? undefined);
     setRematchBusy(false);
     if (res.error || !res.data) {
       showAppAlert('Rematch', res.error ?? 'Could not verify your matches.');
@@ -171,7 +169,7 @@ export default function MatchResultsScreen() {
       return;
     }
     router.push(`/(tabs)/match-create?rematchFrom=${matchId}` as never);
-  }, [match, matchId, names.p1, names.p2, router, userId]);
+  }, [match, matchId, names.p1, names.p2, router, userId, googleOAuthAccessToken]);
 
   const onSaveToIndex = useCallback(async () => {
     if (!match || !userId || !matchId) return;

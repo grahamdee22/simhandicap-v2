@@ -22,6 +22,45 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
   };
 }
 
+function restErrorMessage(rawText: string, statusText: string): string {
+  let msg = rawText || statusText || 'Request failed';
+  try {
+    const j = JSON.parse(rawText) as { message?: string };
+    if (j?.message) msg = j.message;
+  } catch {
+    /* keep msg */
+  }
+  return msg;
+}
+
+/** PostgREST RPC via REST (native Google OAuth when the JS client has no session). */
+async function restRpcPost(
+  accessToken: string,
+  rpcName: string,
+  body: Record<string, unknown>
+): Promise<{ json: unknown; error: string | null }> {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+  if (!supabaseUrl || !supabaseAnonKey) return { json: null, error: 'Supabase is not configured' };
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/${rpcName}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const rawText = await res.text().catch(() => '');
+  if (!res.ok) return { json: null, error: restErrorMessage(rawText, res.statusText) };
+  const t = rawText.trim();
+  if (!t) return { json: null, error: null };
+  try {
+    return { json: JSON.parse(t) as unknown, error: null };
+  } catch {
+    return { json: rawText, error: null };
+  }
+}
+
 export const MATCH_STATUSES = [
   'pending',
   'open',
@@ -254,8 +293,6 @@ function mapMatchRows(rows: unknown[] | null): DbMatchRow[] {
  */
 export async function listMyMatches(userId?: string, accessToken?: string): Promise<MatchListResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
-  const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
-  if (!uid) return { data: null, error: 'Not signed in' };
 
   if (userId && accessToken) {
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
@@ -277,6 +314,9 @@ export async function listMyMatches(userId?: string, accessToken?: string): Prom
     const rows = Array.isArray(parsed) ? parsed : [];
     return { data: mapMatchRows(rows as unknown[]), error: null };
   }
+
+  const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return { data: null, error: 'Not signed in' };
 
   const { data, error } = await supabase
     .from('matches')
@@ -344,10 +384,8 @@ export async function fetchMatchPlayerDisplayNames(
  */
 export async function listOpenFeedMatches(userId?: string, accessToken?: string): Promise<MatchListResult> {
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
-  const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
-  if (!uid) return { data: null, error: 'Not signed in' };
 
-  if (userId && accessToken) {
+  if (accessToken) {
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
     if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
     const url = `${supabaseUrl}/rest/v1/matches?select=*&is_open=eq.true&status=eq.open&order=created_at.desc`;
@@ -371,6 +409,9 @@ export async function listOpenFeedMatches(userId?: string, accessToken?: string)
     });
     return { data: visible, error: null };
   }
+
+  const uid = userId ?? (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return { data: null, error: 'Not signed in' };
 
   const { data, error } = await supabase
     .from('matches')
@@ -480,7 +521,93 @@ export async function upsertMatchHoleScore(params: {
   matchId: string;
   holeNumber: number;
   grossScore: number;
+  /** Required with `accessToken` (native Google OAuth). */
+  userId?: string;
+  accessToken?: string;
 }): Promise<MatchHoleSingleResult> {
+  const accessToken = params.accessToken;
+  if (accessToken) {
+    const uid = params.userId;
+    if (!uid) return { data: null, error: 'Not signed in' };
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
+    const selQ = `match_holes?match_id=eq.${encodeURIComponent(params.matchId)}&player_id=eq.${encodeURIComponent(uid)}&hole_number=eq.${params.holeNumber}&select=id&limit=1`;
+    const selRes = await fetch(`${supabaseUrl}/rest/v1/${selQ}`, {
+      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${accessToken}` },
+    });
+    const selText = await selRes.text().catch(() => '');
+    if (!selRes.ok) {
+      console.warn('[matchPlay] upsertMatchHoleScore select', selRes.status, selText);
+      return { data: null, error: restErrorMessage(selText, selRes.statusText) };
+    }
+    let existingId: string | null = null;
+    try {
+      const rows = JSON.parse(selText) as unknown;
+      if (Array.isArray(rows) && rows[0] && typeof (rows[0] as { id?: string }).id === 'string') {
+        existingId = (rows[0] as { id: string }).id;
+      }
+    } catch {
+      return { data: null, error: 'Invalid response' };
+    }
+
+    if (existingId) {
+      const patchRes = await fetch(`${supabaseUrl}/rest/v1/match_holes?id=eq.${encodeURIComponent(existingId)}`, {
+        method: 'PATCH',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ gross_score: params.grossScore }),
+      });
+      const patchText = await patchRes.text().catch(() => '');
+      if (!patchRes.ok) {
+        console.warn('[matchPlay] upsertMatchHoleScore update', patchRes.status, patchText);
+        return { data: null, error: restErrorMessage(patchText, patchRes.statusText) };
+      }
+      try {
+        const rows = JSON.parse(patchText) as unknown;
+        const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+        if (!row) return { data: null, error: 'Could not update hole' };
+        return { data: asMatchHoleRow(row), error: null };
+      } catch {
+        return { data: null, error: 'Invalid response' };
+      }
+    }
+
+    const insRes = await fetch(`${supabaseUrl}/rest/v1/match_holes`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify([
+        {
+          match_id: params.matchId,
+          player_id: uid,
+          hole_number: params.holeNumber,
+          gross_score: params.grossScore,
+        },
+      ]),
+    });
+    const insText = await insRes.text().catch(() => '');
+    if (!insRes.ok) {
+      console.warn('[matchPlay] upsertMatchHoleScore insert', insRes.status, insText);
+      return { data: null, error: restErrorMessage(insText, insRes.statusText) };
+    }
+    try {
+      const rows = JSON.parse(insText) as unknown;
+      const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+      if (!row) return { data: null, error: 'Could not save hole' };
+      return { data: asMatchHoleRow(row), error: null };
+    } catch {
+      return { data: null, error: 'Invalid response' };
+    }
+  }
+
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
   const {
     data: { user },
@@ -536,11 +663,31 @@ export async function upsertMatchHoleScore(params: {
 export type SetMatchHoleReactionResult = { ok: boolean; error: string | null };
 
 /** Lock one emoji on the opponent’s hole row after they have posted that hole (RPC; active/waiting only). */
-export async function setMatchHoleReaction(params: {
-  matchId: string;
-  holeNumber: number;
-  emoji: string;
-}): Promise<SetMatchHoleReactionResult> {
+export async function setMatchHoleReaction(
+  params: {
+    matchId: string;
+    holeNumber: number;
+    emoji: string;
+  },
+  accessToken?: string
+): Promise<SetMatchHoleReactionResult> {
+  if (accessToken) {
+    const { json, error } = await restRpcPost(accessToken, 'set_match_hole_reaction', {
+      p_match_id: params.matchId,
+      p_hole_number: params.holeNumber,
+      p_emoji: params.emoji,
+    });
+    if (error) {
+      console.warn('[matchPlay] setMatchHoleReaction', error);
+      return { ok: false, error };
+    }
+    const payload = json as { ok?: boolean; error?: string } | null;
+    if (!payload?.ok) {
+      return { ok: false, error: payload?.error ?? 'Could not save reaction' };
+    }
+    return { ok: true, error: null };
+  }
+
   if (!supabase) return { ok: false, error: 'Supabase is not configured' };
   const {
     data: { user },
@@ -675,8 +822,37 @@ export async function insertMatch(
  */
 export async function updateMatchById(
   matchId: string,
-  patch: MatchUpdatePatch
+  patch: MatchUpdatePatch,
+  accessToken?: string
 ): Promise<MatchSingleResult> {
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
+    const res = await fetch(`${supabaseUrl}/rest/v1/matches?id=eq.${encodeURIComponent(matchId)}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify(patch),
+    });
+    const rawText = await res.text().catch(() => '');
+    if (!res.ok) {
+      console.warn('[matchPlay] updateMatchById', res.status, rawText);
+      return { data: null, error: restErrorMessage(rawText, res.statusText) };
+    }
+    try {
+      const rows = JSON.parse(rawText) as unknown;
+      const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
+      if (!row) return { data: null, error: 'Could not update match' };
+      return { data: normalizeMatchRow(row), error: null };
+    } catch {
+      return { data: null, error: 'Invalid response' };
+    }
+  }
+
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
   const {
     data: { user },
@@ -698,7 +874,29 @@ export async function updateMatchById(
 }
 
 /** Remove a match row (RLS: e.g. poster deleting an unclaimed open challenge). */
-export async function deleteMatchById(matchId: string): Promise<{ ok: boolean; error: string | null }> {
+export async function deleteMatchById(
+  matchId: string,
+  accessToken?: string
+): Promise<{ ok: boolean; error: string | null }> {
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { ok: false, error: 'Supabase is not configured' };
+    const res = await fetch(`${supabaseUrl}/rest/v1/matches?id=eq.${encodeURIComponent(matchId)}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        Prefer: 'return=minimal',
+      },
+    });
+    if (!res.ok) {
+      const rawText = await res.text().catch(() => '');
+      console.warn('[matchPlay] deleteMatchById', res.status, rawText);
+      return { ok: false, error: restErrorMessage(rawText, res.statusText) };
+    }
+    return { ok: true, error: null };
+  }
+
   if (!supabase) return { ok: false, error: 'Supabase is not configured' };
   const {
     data: { user },
@@ -719,7 +917,20 @@ export type AbandonMatchResult = { ok: boolean; error: string | null };
  * Abandon an active/waiting stroke match (RPC): `status` → abandoned, `abandoned_by_id` → caller,
  * increments caller `match_losses` + `match_forfeits` only.
  */
-export async function abandonMatch(matchId: string): Promise<AbandonMatchResult> {
+export async function abandonMatch(matchId: string, accessToken?: string): Promise<AbandonMatchResult> {
+  if (accessToken) {
+    const { json, error } = await restRpcPost(accessToken, 'abandon_match', { p_match_id: matchId });
+    if (error) {
+      console.warn('[matchPlay] abandonMatch', error);
+      return { ok: false, error };
+    }
+    const payload = json as { ok?: boolean; error?: string } | null;
+    if (!payload?.ok) {
+      return { ok: false, error: payload?.error ?? 'Could not abandon match' };
+    }
+    return { ok: true, error: null };
+  }
+
   if (!supabase) return { ok: false, error: 'Supabase is not configured' };
   const {
     data: { user },
@@ -749,7 +960,36 @@ export type ProcessFutureOpenChallengesResult = {
 };
 
 /** Runs server-side lifecycle transitions for future open challenges. */
-export async function processFutureOpenChallenges(): Promise<ProcessFutureOpenChallengesResult> {
+export async function processFutureOpenChallenges(
+  accessToken?: string
+): Promise<ProcessFutureOpenChallengesResult> {
+  if (accessToken) {
+    const { json, error } = await restRpcPost(accessToken, 'process_future_open_challenges', {});
+    if (error) {
+      console.warn('[matchPlay] processFutureOpenChallenges', error);
+      return { ok: false, activatedCount: 0, expiredCount: 0, readyForUid: false, error };
+    }
+    const payload = json as
+      | { ok?: boolean; activated_count?: number; expired_count?: number; ready_for_uid?: boolean; error?: string }
+      | null;
+    if (!payload?.ok) {
+      return {
+        ok: false,
+        activatedCount: 0,
+        expiredCount: 0,
+        readyForUid: false,
+        error: payload?.error ?? 'Could not process future challenges',
+      };
+    }
+    return {
+      ok: true,
+      activatedCount: Number(payload.activated_count ?? 0),
+      expiredCount: Number(payload.expired_count ?? 0),
+      readyForUid: !!payload.ready_for_uid,
+      error: null,
+    };
+  }
+
   if (!supabase) {
     return { ok: false, activatedCount: 0, expiredCount: 0, readyForUid: false, error: 'Supabase is not configured' };
   }
@@ -785,26 +1025,44 @@ export async function processFutureOpenChallenges(): Promise<ProcessFutureOpenCh
 }
 
 /** Atomically claims an open challenge (RPC); concurrent acceptors get `Challenge already taken`. */
-export async function acceptOpenChallenge(params: {
-  matchId: string;
-  player2Tee: string;
-  player2CourseRating: number;
-  player2CourseSlope: number;
-  player2SettingsPhotoUrl: string | null;
-}): Promise<AcceptOpenChallengeResult> {
+export async function acceptOpenChallenge(
+  params: {
+    matchId: string;
+    player2Tee: string;
+    player2CourseRating: number;
+    player2CourseSlope: number;
+    player2SettingsPhotoUrl: string | null;
+  },
+  accessToken?: string
+): Promise<AcceptOpenChallengeResult> {
+  const body = {
+    p_match_id: params.matchId,
+    p_player_2_tee: params.player2Tee,
+    p_player_2_course_rating: params.player2CourseRating,
+    p_player_2_course_slope: params.player2CourseSlope,
+    p_player_2_settings_photo_url: params.player2SettingsPhotoUrl ?? '',
+  };
+
+  if (accessToken) {
+    const { json, error } = await restRpcPost(accessToken, 'accept_open_challenge', body);
+    if (error) {
+      console.warn('[matchPlay] acceptOpenChallenge', error);
+      return { ok: false, error };
+    }
+    const payload = json as { ok?: boolean; error?: string } | null;
+    if (!payload?.ok) {
+      return { ok: false, error: payload?.error ?? 'Could not accept challenge' };
+    }
+    return { ok: true, error: null };
+  }
+
   if (!supabase) return { ok: false, error: 'Supabase is not configured' };
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: 'Not signed in' };
 
-  const { data, error } = await supabase.rpc('accept_open_challenge', {
-    p_match_id: params.matchId,
-    p_player_2_tee: params.player2Tee,
-    p_player_2_course_rating: params.player2CourseRating,
-    p_player_2_course_slope: params.player2CourseSlope,
-    p_player_2_settings_photo_url: params.player2SettingsPhotoUrl ?? '',
-  });
+  const { data, error } = await supabase.rpc('accept_open_challenge', body);
   if (error) {
     console.warn('[matchPlay] acceptOpenChallenge', error.message);
     return { ok: false, error: error.message };

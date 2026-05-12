@@ -41,15 +41,17 @@ import {
   type Wind,
 } from '../../../src/lib/handicap';
 import {
+  fetchMatchPlayerDisplayNames,
   getMatchById,
   updateMatchById,
   type DbMatchRow,
   type MatchUpdatePatch,
 } from '../../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../../src/lib/matchPlayStorage';
+import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { settingsScreenshotPickerOptions } from '../../../src/lib/settingsScreenshotPicker';
 import { useResponsive } from '../../../src/lib/responsive';
-import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
+import { isSupabaseConfigured } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 const STEPS = 4;
@@ -224,7 +226,7 @@ export default function MatchAcceptScreen() {
     setRematchAcceptLocked(false);
 
     void (async () => {
-      const res = await getMatchById(matchId);
+      const res = await getMatchById(matchId, googleOAuthAccessToken ?? undefined);
       if (cancelled) return;
       if (res.error || !res.data) {
         setLoadErr(res.error ?? 'Could not load this match.');
@@ -242,7 +244,7 @@ export default function MatchAcceptScreen() {
 
       const rematchId = displayMatch.rematch_from?.trim();
       if (rematchId) {
-        const srcRes = await getMatchById(rematchId);
+        const srcRes = await getMatchById(rematchId, googleOAuthAccessToken ?? undefined);
         if (!cancelled && srcRes.data && srcRes.data.status === 'complete') {
           const src = srcRes.data;
           const uid = user.id;
@@ -262,7 +264,7 @@ export default function MatchAcceptScreen() {
               prefs.mulligans = src.mulligans;
             }
             if (Object.keys(prefs).length > 0) {
-              const prefUpd = await updateMatchById(displayMatch.id, prefs);
+              const prefUpd = await updateMatchById(displayMatch.id, prefs, googleOAuthAccessToken ?? undefined);
               if (!cancelled && !prefUpd.error && prefUpd.data) {
                 displayMatch = prefUpd.data;
               }
@@ -320,16 +322,10 @@ export default function MatchAcceptScreen() {
 
       if (cancelled) return;
       setMatch(displayMatch);
-      if (supabase) {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('display_name')
-          .eq('id', displayMatch.player_1_id)
-          .maybeSingle();
-        if (!cancelled && prof && typeof (prof as { display_name?: string }).display_name === 'string') {
-          const dn = (prof as { display_name: string }).display_name?.trim();
-          if (dn) setChallengerName(dn);
-        }
+      if (!cancelled) {
+        const nm = await fetchMatchPlayerDisplayNames([displayMatch], googleOAuthAccessToken ?? undefined);
+        const dn = nm[displayMatch.player_1_id]?.trim();
+        if (dn) setChallengerName(dn);
       }
       setLoadingMatch(false);
     })();
@@ -337,7 +333,7 @@ export default function MatchAcceptScreen() {
     return () => {
       cancelled = true;
     };
-  }, [supabaseOn, user?.id, matchId]);
+  }, [supabaseOn, user?.id, matchId, googleOAuthAccessToken]);
 
   useEffect(() => {
     setP1SettingsImageError(false);
@@ -480,6 +476,7 @@ export default function MatchAcceptScreen() {
         userId: user.id,
         localUri: photoUri,
         mimeType: settingsImage?.mimeType ?? undefined,
+        accessToken: googleOAuthAccessToken ?? undefined,
       });
       if ('error' in up) {
         setSubmitBusy(false);
@@ -489,13 +486,17 @@ export default function MatchAcceptScreen() {
       photoUrl = up.signedUrl;
     }
 
-    const upd = await updateMatchById(matchId, {
-      player_2_tee: teeResolved.teeName,
-      player_2_course_rating: teeResolved.rating,
-      player_2_course_slope: teeResolved.slope,
-      player_2_settings_photo_url: photoUrl,
-      status: 'active',
-    });
+    const upd = await updateMatchById(
+      matchId,
+      {
+        player_2_tee: teeResolved.teeName,
+        player_2_course_rating: teeResolved.rating,
+        player_2_course_slope: teeResolved.slope,
+        player_2_settings_photo_url: photoUrl,
+        status: 'active',
+      },
+      googleOAuthAccessToken ?? undefined
+    );
     setSubmitBusy(false);
     if (upd.error || !upd.data) {
       showAppAlert('Could not accept match', upd.error ?? 'Unknown error');
@@ -510,6 +511,7 @@ export default function MatchAcceptScreen() {
     settingsImage,
     devSkipSettingsPhoto,
     router,
+    googleOAuthAccessToken,
   ]);
 
   const stepTitle = (n: number) => {

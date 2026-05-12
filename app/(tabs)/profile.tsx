@@ -11,6 +11,7 @@ import { showAppAlert } from '../../src/lib/alertCompat';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { formatDifferentialDisplay, formatHandicapIndexDisplay } from '../../src/lib/handicap';
 import { applyProfileRowToStore, fetchMyProfile, upsertMyProfile } from '../../src/lib/profiles';
+import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useResponsive } from '../../src/lib/responsive';
 import {
@@ -67,7 +68,7 @@ export default function ProfileScreen() {
       if (!signedIn) return;
       let cancelled = false;
       void (async () => {
-        const p = await fetchMyProfile();
+        const p = await fetchMyProfile(user?.id, googleOAuthAccessToken ?? undefined);
         if (cancelled) return;
         if (p) {
           const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged: syncGhin } =
@@ -98,7 +99,7 @@ export default function ProfileScreen() {
       return () => {
         cancelled = true;
       };
-    }, [signedIn])
+    }, [signedIn, user?.id, googleOAuthAccessToken])
   );
 
   const chartGeom = useMemo(
@@ -122,7 +123,11 @@ export default function ProfileScreen() {
     setGhinDraft(rounded.toFixed(1));
     if (signedIn) {
       setSavingField('ghin');
-      const { error } = await upsertMyProfile({ ghin_index: rounded });
+      const { error } = await upsertMyProfile(
+        { ghin_index: rounded },
+        user?.id,
+        googleOAuthAccessToken ?? undefined
+      );
       setSavingField(null);
       if (error) showAppAlert('Profile', error);
     }
@@ -148,7 +153,11 @@ export default function ProfileScreen() {
     setEditing(false);
     if (signedIn) {
       setSavingField('name');
-      const { error } = await upsertMyProfile({ display_name: n });
+      const { error } = await upsertMyProfile(
+        { display_name: n },
+        user?.id,
+        googleOAuthAccessToken ?? undefined
+      );
       setSavingField(null);
       if (error) showAppAlert('Profile', error);
     }
@@ -158,7 +167,11 @@ export default function ProfileScreen() {
     setPreferredLogPlatform(p);
     if (signedIn) {
       setSavingField('platform');
-      const { error } = await upsertMyProfile({ preferred_platform: p });
+      const { error } = await upsertMyProfile(
+        { preferred_platform: p },
+        user?.id,
+        googleOAuthAccessToken ?? undefined
+      );
       setSavingField(null);
       if (error) showAppAlert('Profile', error);
     }

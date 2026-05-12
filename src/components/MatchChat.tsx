@@ -171,21 +171,57 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
 
   const handleSend = async (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || sending || messageLimitReached || !supabaseOn || !supabase) return;
+    if (!trimmed || sending || messageLimitReached || !supabaseOn) return;
     setSending(true);
     try {
-      const { error } = await supabase.from('match_messages').insert({
-        match_id: matchId,
-        user_id: currentUserId,
-        message: trimmed.slice(0, 500),
-      });
-      if (error) {
-        if (error.message.toLowerCase().includes('count')) {
-          Alert.alert('Chat', 'Message limit reached for this match.');
-        } else {
-          Alert.alert('Chat', error.message);
+      const restTok = googleOAuthAccessToken ?? undefined;
+      if (restTok) {
+        const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+        if (!supabaseUrl || !supabaseAnonKey) {
+          Alert.alert('Chat', 'Supabase is not configured.');
+          return;
         }
-        return;
+        const res = await fetch(`${supabaseUrl}/rest/v1/match_messages`, {
+          method: 'POST',
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${restTok}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify([
+            {
+              match_id: matchId,
+              user_id: currentUserId,
+              message: trimmed.slice(0, 500),
+            },
+          ]),
+        });
+        if (!res.ok) {
+          const body = await res.text().catch(() => '');
+          const lower = body.toLowerCase();
+          if (lower.includes('count')) {
+            Alert.alert('Chat', 'Message limit reached for this match.');
+          } else {
+            Alert.alert('Chat', body || res.statusText || 'Could not send.');
+          }
+          return;
+        }
+      } else {
+        if (!supabase) return;
+        const { error } = await supabase.from('match_messages').insert({
+          match_id: matchId,
+          user_id: currentUserId,
+          message: trimmed.slice(0, 500),
+        });
+        if (error) {
+          if (error.message.toLowerCase().includes('count')) {
+            Alert.alert('Chat', 'Message limit reached for this match.');
+          } else {
+            Alert.alert('Chat', error.message);
+          }
+          return;
+        }
       }
       setInput('');
       setPresetOpen(false);

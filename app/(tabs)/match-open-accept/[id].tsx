@@ -38,10 +38,17 @@ import {
   type PuttingMode,
   type Wind,
 } from '../../../src/lib/handicap';
-import { acceptOpenChallenge, getMatchById, updateMatchById, type DbMatchRow } from '../../../src/lib/matchPlay';
+import {
+  acceptOpenChallenge,
+  fetchMatchPlayerDisplayNames,
+  getMatchById,
+  updateMatchById,
+  type DbMatchRow,
+} from '../../../src/lib/matchPlay';
 import { uploadMatchSettingsScreenshot } from '../../../src/lib/matchPlayStorage';
+import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { useResponsive } from '../../../src/lib/responsive';
-import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
+import { isSupabaseConfigured } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 const WIZARD_STEPS = 3;
@@ -210,7 +217,7 @@ export default function MatchOpenAcceptScreen() {
     setLoadErr(null);
 
     void (async () => {
-      const res = await getMatchById(matchId);
+      const res = await getMatchById(matchId, googleOAuthAccessToken ?? undefined);
       if (cancelled) return;
       if (res.error || !res.data) {
         setLoadErr(res.error ?? 'Could not load this match.');
@@ -245,16 +252,10 @@ export default function MatchOpenAcceptScreen() {
       console.log('[match-open-accept] player_1_settings_photo_url', m.player_1_settings_photo_url);
       setMatch(m);
       setIsOwnChallenge(m.player_1_id === user.id);
-      if (supabase) {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('display_name')
-          .eq('id', m.player_1_id)
-          .maybeSingle();
-        if (!cancelled && prof && typeof (prof as { display_name?: string }).display_name === 'string') {
-          const dn = (prof as { display_name: string }).display_name?.trim();
-          if (dn) setPosterName(dn);
-        }
+      const names = await fetchMatchPlayerDisplayNames([m], googleOAuthAccessToken ?? undefined);
+      if (!cancelled) {
+        const dn = names[m.player_1_id]?.trim();
+        if (dn) setPosterName(dn);
       }
       setLoadingMatch(false);
     })();
@@ -262,7 +263,7 @@ export default function MatchOpenAcceptScreen() {
     return () => {
       cancelled = true;
     };
-  }, [supabaseOn, user?.id, matchId]);
+  }, [supabaseOn, user?.id, matchId, googleOAuthAccessToken]);
 
   useEffect(() => {
     setP1SettingsImageError(false);
@@ -363,7 +364,7 @@ export default function MatchOpenAcceptScreen() {
   const onBeginAccept = useCallback(async () => {
     if (!matchId || confirmBusy || isOwnChallenge) return;
     setConfirmBusy(true);
-    const res = await getMatchById(matchId);
+    const res = await getMatchById(matchId, googleOAuthAccessToken ?? undefined);
     setConfirmBusy(false);
     const m = res.data;
     if (res.error || !m) {
@@ -388,7 +389,7 @@ export default function MatchOpenAcceptScreen() {
     setMatch(m);
     setPhase('wizard');
     setWizardStep(0);
-  }, [matchId, confirmBusy, isOwnChallenge, router]);
+  }, [matchId, confirmBusy, isOwnChallenge, router, googleOAuthAccessToken]);
 
   const onConfirmAccept = useCallback(async () => {
     if (!user || !match || !teeResolved || !matchId) return;
@@ -401,13 +402,16 @@ export default function MatchOpenAcceptScreen() {
 
     // Claim the open challenge first so this user is `player_2_id`, then upload (storage RLS
     // requires a participant on `matches`), then persist the signed screenshot URL.
-    const rpc = await acceptOpenChallenge({
-      matchId,
-      player2Tee: teeResolved.teeName,
-      player2CourseRating: teeResolved.rating,
-      player2CourseSlope: teeResolved.slope,
-      player2SettingsPhotoUrl: null,
-    });
+    const rpc = await acceptOpenChallenge(
+      {
+        matchId,
+        player2Tee: teeResolved.teeName,
+        player2CourseRating: teeResolved.rating,
+        player2CourseSlope: teeResolved.slope,
+        player2SettingsPhotoUrl: null,
+      },
+      googleOAuthAccessToken ?? undefined
+    );
     if (!rpc.ok) {
       setSubmitBusy(false);
       const msg = rpc.error ?? 'Unknown error';
@@ -422,6 +426,7 @@ export default function MatchOpenAcceptScreen() {
         userId: user.id,
         localUri: photoUri,
         mimeType: settingsImage?.mimeType ?? undefined,
+        accessToken: googleOAuthAccessToken ?? undefined,
       });
       console.log('[match-open-accept] uploadMatchSettingsScreenshot result', up);
       if ('error' in up) {
@@ -433,7 +438,7 @@ export default function MatchOpenAcceptScreen() {
         router.replace('/(tabs)/groups' as never);
         return;
       }
-      const upd = await updateMatchById(matchId, { player_2_settings_photo_url: up.signedUrl });
+      const upd = await updateMatchById(matchId, { player_2_settings_photo_url: up.signedUrl }, googleOAuthAccessToken ?? undefined);
       if (upd.error) {
         console.warn('[match-open-accept] update photo url', upd.error);
       }
@@ -441,7 +446,7 @@ export default function MatchOpenAcceptScreen() {
 
     setSubmitBusy(false);
     router.replace('/(tabs)/groups' as never);
-  }, [user, match, teeResolved, matchId, settingsImage, devSkipSettingsPhoto, router]);
+  }, [user, match, teeResolved, matchId, settingsImage, devSkipSettingsPhoto, router, googleOAuthAccessToken]);
 
   const wizardStepTitle = (n: number) => {
     switch (n) {

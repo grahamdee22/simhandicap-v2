@@ -262,7 +262,7 @@ export default function GroupsScreen() {
     }
     if (supabaseOn) {
       setInviteBusy(true);
-      const { error, result } = await sendGroupInvite(g.id, email);
+      const { error, result } = await sendGroupInvite(g.id, email, googleOAuthAccessToken ?? undefined);
       setInviteBusy(false);
       if (error) {
         showAppAlert('Invite', error);
@@ -309,7 +309,7 @@ export default function GroupsScreen() {
 
   const onAcceptInboundInvite = async (inv: { id: string; groupId: string }) => {
     setInboundBusy(true);
-    const { error } = await respondToGroupInvite(inv.id, true);
+    const { error } = await respondToGroupInvite(inv.id, true, googleOAuthAccessToken ?? undefined);
     setInboundBusy(false);
     if (error) {
       showAppAlert('Accept invite', error);
@@ -326,7 +326,7 @@ export default function GroupsScreen() {
 
   const onDeclineInboundInvite = async (inviteId: string) => {
     setInboundBusy(true);
-    const { error } = await respondToGroupInvite(inviteId, false);
+    const { error } = await respondToGroupInvite(inviteId, false, googleOAuthAccessToken ?? undefined);
     setInboundBusy(false);
     if (error) {
       showAppAlert('Decline invite', error);
@@ -336,7 +336,7 @@ export default function GroupsScreen() {
   };
 
   const onCancelOutboundInvite = async (kind: 'in_app' | 'email', id: string) => {
-    const { error } = await cancelOutboundGroupInvite(kind, id);
+    const { error } = await cancelOutboundGroupInvite(kind, id, googleOAuthAccessToken ?? undefined);
     if (error) {
       showAppAlert('Cancel invite', error);
       return;
@@ -363,7 +363,7 @@ export default function GroupsScreen() {
     try {
       console.warn('[groups] onDeleteGroup:start', { deletedId, delIdx, tab });
       const res = await Promise.race([
-        deleteSocialGroupAsCreator(deletedId),
+        deleteSocialGroupAsCreator(deletedId, googleOAuthAccessToken ?? undefined),
         new Promise<{ error: string }>((resolve) =>
           setTimeout(
             () =>

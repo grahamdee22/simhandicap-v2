@@ -207,10 +207,46 @@ export async function fetchMyRoundsForUser(
 
 export async function insertRoundInSupabase(
   userId: string,
-  round: RoundDbFields
+  round: RoundDbFields,
+  accessToken?: string
 ): Promise<{ id: string } | { error: string }> {
-  if (!supabase) return { error: 'Supabase not configured' };
   const payload = roundToDbInsert(userId, round);
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { error: 'Supabase not configured' };
+    const res = await fetch(`${supabaseUrl}/rest/v1/rounds`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+      },
+      body: JSON.stringify([payload]),
+    });
+    const rawText = await res.text().catch(() => '');
+    if (!res.ok) {
+      let msg = rawText || res.statusText || 'Insert failed';
+      try {
+        const j = JSON.parse(rawText) as { message?: string };
+        if (j?.message) msg = j.message;
+      } catch {
+        /* keep msg */
+      }
+      return { error: msg };
+    }
+    try {
+      const rows = JSON.parse(rawText) as unknown;
+      const row = Array.isArray(rows) && rows[0] ? (rows[0] as { id?: string }) : null;
+      if (!row?.id) return { error: 'Insert failed' };
+      return { id: row.id };
+    } catch {
+      return { error: 'Invalid response' };
+    }
+  }
+
+  if (!supabase) return { error: 'Supabase not configured' };
   const { data, error } = await supabase.from('rounds').insert(payload).select('id').single();
   if (error || !data?.id) {
     return { error: error?.message ?? 'Insert failed' };
@@ -218,13 +254,10 @@ export async function insertRoundInSupabase(
   return { id: data.id as string };
 }
 
-export async function updateRoundInSupabase(round: SimRound): Promise<string | null> {
-  if (!supabase) return 'Supabase not configured';
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return 'Not signed in';
-
+export async function updateRoundInSupabase(
+  round: SimRound,
+  accessToken?: string
+): Promise<string | null> {
   const updateBody = {
     course_id: round.courseId,
     course_name: round.courseName,
@@ -248,13 +281,83 @@ export async function updateRoundInSupabase(round: SimRound): Promise<string | n
     simcap_index_at_time: round.simcapIndexAtTime ?? null,
   };
 
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return 'Supabase not configured';
+    const res = await fetch(`${supabaseUrl}/rest/v1/rounds?id=eq.${encodeURIComponent(round.id)}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify(updateBody),
+    });
+    if (!res.ok) {
+      const raw = await res.text().catch(() => '');
+      let msg = raw || res.statusText || 'Update failed';
+      try {
+        const j = JSON.parse(raw) as { message?: string };
+        if (j?.message) msg = j.message;
+      } catch {
+        /* keep msg */
+      }
+      return msg;
+    }
+    return null;
+  }
+
+  if (!supabase) return 'Supabase not configured';
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return 'Not signed in';
+
   const { error } = await supabase.from('rounds').update(updateBody).eq('id', round.id).eq('user_id', user.id);
 
   if (error) return error.message;
   return null;
 }
 
-export async function deleteRoundInSupabase(roundId: string): Promise<string | null> {
+export async function deleteRoundInSupabase(
+  roundId: string,
+  accessToken?: string
+): Promise<string | null> {
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return 'Supabase not configured';
+    const res = await fetch(`${supabaseUrl}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        Prefer: 'return=representation',
+      },
+    });
+    const rawText = await res.text().catch(() => '');
+    if (!res.ok) {
+      let msg = rawText || res.statusText || 'Delete failed';
+      try {
+        const j = JSON.parse(rawText) as { message?: string };
+        if (j?.message) msg = j.message;
+      } catch {
+        /* keep msg */
+      }
+      return msg;
+    }
+    try {
+      const deleted = JSON.parse(rawText) as unknown;
+      const rows = Array.isArray(deleted) ? deleted : [];
+      if (rows.length === 0) {
+        return 'No round was deleted (not found, wrong account, or RLS blocked the delete)';
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  }
+
   if (!supabase) return 'Supabase not configured';
   const {
     data: { user },

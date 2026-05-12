@@ -146,7 +146,54 @@ export type ProfilePatch = {
 };
 
 /** Upserts the current user's profile (RLS: only own id). Merges with existing row so partial updates never break NOT NULL on insert. */
-export async function upsertMyProfile(patch: ProfilePatch): Promise<{ error?: string }> {
+export async function upsertMyProfile(
+  patch: ProfilePatch,
+  userId?: string,
+  accessToken?: string
+): Promise<{ error?: string }> {
+  if (accessToken) {
+    if (!userId) return { error: 'Not signed in' };
+    const existing = await fetchMyProfile(userId, accessToken);
+    const display_name =
+      patch.display_name !== undefined ? patch.display_name : (existing?.display_name ?? 'Golfer');
+    const preferred_platform =
+      patch.preferred_platform !== undefined
+        ? patch.preferred_platform
+        : (existing?.preferred_platform ?? null);
+    const ghin_index =
+      patch.ghin_index !== undefined ? patch.ghin_index : (existing?.ghin_index ?? null);
+
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { error: 'Supabase is not configured' };
+    const res = await fetch(`${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, {
+      method: 'PATCH',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify({
+        display_name,
+        preferred_platform,
+        ghin_index,
+        updated_at: new Date().toISOString(),
+      }),
+    });
+    if (!res.ok) {
+      const raw = await res.text().catch(() => '');
+      let msg = raw || res.statusText || 'Update failed';
+      try {
+        const j = JSON.parse(raw) as { message?: string };
+        if (j?.message) msg = j.message;
+      } catch {
+        /* keep msg */
+      }
+      return { error: msg };
+    }
+    return {};
+  }
+
   if (!supabase) return { error: 'Supabase is not configured' };
   const {
     data: { user },

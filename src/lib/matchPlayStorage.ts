@@ -13,11 +13,42 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
+import { createClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 
 const BUCKET = 'match-settings';
 /** Signed URL TTL stored in DB so challengers/opponents can view without separate download API. */
 const SIGNED_URL_SEC = 60 * 60 * 24 * 365;
+
+function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
+  const extra = Constants.expoConfig?.extra as
+    | { supabaseUrl?: string; supabaseAnonKey?: string; supabasePublishableKey?: string }
+    | undefined;
+  return {
+    supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL ?? extra?.supabaseUrl ?? '',
+    supabaseAnonKey:
+      process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ??
+      process.env.EXPO_PUBLIC_SUPABASE_KEY ??
+      extra?.supabaseAnonKey ??
+      extra?.supabasePublishableKey ??
+      '',
+  };
+}
+
+/** Storage API calls with a user JWT when the singleton Supabase client has no session (native Google OAuth). */
+function storageClientForAccessToken(accessToken: string) {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+  if (!supabaseUrl || !supabaseAnonKey) return null;
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    global: { headers: { Authorization: `Bearer ${accessToken}` } },
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+  });
+}
 
 function extFromMime(mime: string | null | undefined): string {
   if (!mime) return 'jpg';
@@ -83,8 +114,13 @@ export async function uploadMatchSettingsScreenshot(params: {
   userId: string;
   localUri: string;
   mimeType?: string | null;
+  /** Native Google OAuth: JWT for Storage + PostgREST (singleton client may have no session). */
+  accessToken?: string;
 }): Promise<{ signedUrl: string; path: string } | { error: string }> {
-  if (!supabase) return { error: 'Supabase is not configured' };
+  const storage = params.accessToken
+    ? storageClientForAccessToken(params.accessToken)
+    : supabase;
+  if (!storage) return { error: 'Supabase is not configured' };
 
   const ext = extFromMime(params.mimeType);
   const path = `${params.matchId}/${params.userId}/settings.${ext}`;
@@ -99,7 +135,7 @@ export async function uploadMatchSettingsScreenshot(params: {
   try {
     const body = await readLocalImageBytes(params.localUri);
     console.log('[matchPlayStorage] upload body byteLength', body.byteLength);
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, body, {
+    const { error: upErr } = await storage.storage.from(BUCKET).upload(path, body, {
       upsert: true,
       contentType,
     });
@@ -108,7 +144,7 @@ export async function uploadMatchSettingsScreenshot(params: {
       return { error: upErr.message };
     }
 
-    const { data: signed, error: signErr } = await supabase.storage
+    const { data: signed, error: signErr } = await storage.storage
       .from(BUCKET)
       .createSignedUrl(path, SIGNED_URL_SEC);
     if (signErr || !signed?.signedUrl) {

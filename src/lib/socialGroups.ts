@@ -34,6 +34,44 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
   };
 }
 
+function restErrorMessage(rawText: string, statusText: string): string {
+  let msg = rawText || statusText || 'Request failed';
+  try {
+    const j = JSON.parse(rawText) as { message?: string };
+    if (j?.message) msg = j.message;
+  } catch {
+    /* keep msg */
+  }
+  return msg;
+}
+
+async function restRpcPost(
+  accessToken: string,
+  rpcName: string,
+  body: Record<string, unknown>
+): Promise<{ json: unknown; error: string | null }> {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+  if (!supabaseUrl || !supabaseAnonKey) return { json: null, error: 'Supabase is not configured' };
+  const res = await fetch(`${supabaseUrl}/rest/v1/rpc/${rpcName}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(body),
+  });
+  const rawText = await res.text().catch(() => '');
+  if (!res.ok) return { json: null, error: restErrorMessage(rawText, res.statusText) };
+  const t = rawText.trim();
+  if (!t) return { json: null, error: null };
+  try {
+    return { json: JSON.parse(t) as unknown, error: null };
+  } catch {
+    return { json: rawText, error: null };
+  }
+}
+
 async function restSelectRows(accessToken: string, pathAndQuery: string): Promise<unknown[]> {
   const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
   if (!supabaseUrl || !supabaseAnonKey) return [];
@@ -226,6 +264,10 @@ function isSocialGroupMatchesSchemaError(error: { message?: string; code?: strin
     m.includes('social_group_matches') &&
     (m.includes('schema cache') || m.includes('Could not find the table'))
   );
+}
+
+function isSocialGroupMatchesSchemaErrorMessage(body: string): boolean {
+  return isSocialGroupMatchesSchemaError({ message: body });
 }
 
 function mapProfileToMember(
@@ -598,19 +640,19 @@ export async function fetchGroupMatchesFromSupabase(groupId: string): Promise<He
   }
 }
 
-export async function insertSocialMatchFromRound(round: SimRound, displayName: string): Promise<void> {
-  if (!supabase || !round.h2hGroupId || socialGroupMatchesKnownUnavailable) return;
+export async function insertSocialMatchFromRound(
+  round: SimRound,
+  displayName: string,
+  userId?: string,
+  accessToken?: string
+): Promise<void> {
+  if (!round.h2hGroupId || socialGroupMatchesKnownUnavailable) return;
   const h = headToHeadFromLoggedRound(round, displayName);
   if (!h) return;
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return;
-
-  const { error } = await supabase.from('social_group_matches').insert({
+  const row = {
     group_id: round.h2hGroupId,
-    created_by: user.id,
+    created_by: userId ?? '',
     course_name: h.courseName,
     played_at: h.playedAt,
     left_name: h.left.name,
@@ -622,6 +664,43 @@ export async function insertSocialMatchFromRound(round: SimRound, displayName: s
     right_net: h.right.net,
     right_won: h.right.won,
     conditions_line: h.conditionsLine,
+  };
+
+  if (accessToken) {
+    if (!userId) return;
+    row.created_by = userId;
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return;
+    const res = await fetch(`${supabaseUrl}/rest/v1/social_group_matches`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=minimal',
+      },
+      body: JSON.stringify([row]),
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => '');
+      if (isSocialGroupMatchesSchemaErrorMessage(body)) {
+        socialGroupMatchesKnownUnavailable = true;
+        return;
+      }
+      console.warn('[socialGroups] insert match', res.status, body);
+    }
+    return;
+  }
+
+  if (!supabase) return;
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const { error } = await supabase.from('social_group_matches').insert({
+    ...row,
+    created_by: user.id,
   });
 
   if (error) {
@@ -710,7 +789,27 @@ export async function createSocialGroup(
  * Uses RPC `delete_social_group_as_creator` (migration 018): client `DELETE` + CASCADE under member RLS can
  * hang or recurse; the definer function performs one delete as owner so cascades bypass child-table RLS.
  */
-export async function deleteSocialGroupAsCreator(groupId: string): Promise<{ ok: true } | { error: string }> {
+export async function deleteSocialGroupAsCreator(
+  groupId: string,
+  accessToken?: string
+): Promise<{ ok: true } | { error: string }> {
+  if (accessToken) {
+    const { json, error } = await restRpcPost(accessToken, 'delete_social_group_as_creator', {
+      p_group_id: groupId,
+    });
+    if (error) {
+      console.warn('[socialGroups] deleteSocialGroupAsCreator:rpc_error', error);
+      return { error };
+    }
+    const deleted = json === true;
+    if (!deleted) {
+      return {
+        error: 'Could not delete this group. You may not be the creator, or it was already removed.',
+      };
+    }
+    return { ok: true };
+  }
+
   if (!supabase) {
     console.warn('[socialGroups] deleteSocialGroupAsCreator: no supabase client');
     return { error: 'Supabase is not configured' };
@@ -777,8 +876,32 @@ export type SendGroupInviteResult = {
  */
 export async function sendGroupInvite(
   groupId: string,
-  email: string
+  email: string,
+  accessToken?: string
 ): Promise<{ error?: string; result?: SendGroupInviteResult }> {
+  if (accessToken) {
+    const { json, error } = await restRpcPost(accessToken, 'send_group_invite', {
+      p_group_id: groupId,
+      p_email: email.trim(),
+    });
+    if (error) return { error };
+    const row = json as { kind?: string; email?: string; duplicate?: boolean } | null;
+    if (!row?.kind || typeof row.email !== 'string') {
+      return { error: 'Unexpected server response' };
+    }
+    const k = row.kind;
+    if (k === 'already_member') {
+      return { result: { kind: 'already_member', email: row.email } };
+    }
+    if (k === 'in_app') {
+      return { result: { kind: 'in_app', email: row.email, duplicate: row.duplicate === true } };
+    }
+    if (k === 'email') {
+      return { result: { kind: 'email', email: row.email, duplicate: row.duplicate === true } };
+    }
+    return { error: 'Unknown invite type' };
+  }
+
   if (!supabase) return { error: 'Supabase is not configured' };
   const {
     data: { user },
@@ -813,8 +936,17 @@ export async function sendGroupInvite(
 
 export async function respondToGroupInvite(
   inviteId: string,
-  accept: boolean
+  accept: boolean,
+  accessToken?: string
 ): Promise<{ error?: string }> {
+  if (accessToken) {
+    const { error } = await restRpcPost(accessToken, 'respond_group_invite', {
+      p_invite_id: inviteId,
+      p_accept: accept,
+    });
+    return error ? { error } : {};
+  }
+
   if (!supabase) return { error: 'Supabase is not configured' };
   const { error } = await supabase.rpc('respond_group_invite', {
     p_invite_id: inviteId,
@@ -826,8 +958,17 @@ export async function respondToGroupInvite(
 
 export async function cancelOutboundGroupInvite(
   kind: 'in_app' | 'email',
-  id: string
+  id: string,
+  accessToken?: string
 ): Promise<{ error?: string }> {
+  if (accessToken) {
+    const { error } = await restRpcPost(accessToken, 'cancel_outbound_group_invite', {
+      p_kind: kind,
+      p_id: id,
+    });
+    return error ? { error } : {};
+  }
+
   if (!supabase) return { error: 'Supabase is not configured' };
   const { error } = await supabase.rpc('cancel_outbound_group_invite', {
     p_kind: kind,

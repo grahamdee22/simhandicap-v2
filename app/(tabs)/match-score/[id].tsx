@@ -294,19 +294,23 @@ export default function MatchScoreScreen() {
       let winner_id: string | null = null;
       if (totalNet1 < totalNet2) winner_id = m.player_1_id;
       else if (totalNet2 < totalNet1) winner_id = m.player_2_id;
-      const res = await updateMatchById(m.id, {
-        status: 'complete',
-        player_1_net_score: totalNet1,
-        player_2_net_score: totalNet2,
-        winner_id,
-        player_1_finished: true,
-        player_2_finished: true,
-      });
+      const res = await updateMatchById(
+        m.id,
+        {
+          status: 'complete',
+          player_1_net_score: totalNet1,
+          player_2_net_score: totalNet2,
+          winner_id,
+          player_1_finished: true,
+          player_2_finished: true,
+        },
+        googleOAuthAccessToken ?? undefined
+      );
       if (!res.error && res.data?.status === 'complete') {
         router.replace(`/(tabs)/match-results/${m.id}` as never);
       }
     },
-    [strokeCtx, course, router]
+    [strokeCtx, course, router, googleOAuthAccessToken]
   );
 
   const onSubmitHole = useCallback(async () => {
@@ -326,6 +330,8 @@ export default function MatchScoreScreen() {
       matchId,
       holeNumber: currentHole,
       grossScore: gross,
+      userId: user.id,
+      accessToken: googleOAuthAccessToken ?? undefined,
     });
     setSubmitBusy(false);
     if (res.error) {
@@ -349,6 +355,7 @@ export default function MatchScoreScreen() {
     holes,
     tryFinalize,
     refreshAll,
+    googleOAuthAccessToken,
   ]);
 
   const onPickHoleReaction = useCallback(
@@ -364,11 +371,14 @@ export default function MatchScoreScreen() {
       setOptimisticSentReactionByHole((prev) => ({ ...prev, [holeNum]: emoji }));
 
       try {
-        const res = await setMatchHoleReaction({
-          matchId,
-          holeNumber: holeNum,
-          emoji,
-        });
+        const res = await setMatchHoleReaction(
+          {
+            matchId,
+            holeNumber: holeNum,
+            emoji,
+          },
+          googleOAuthAccessToken ?? undefined
+        );
         if (!res.ok) {
           setOptimisticSentReactionByHole((prev) => {
             const { [holeNum]: _, ...rest } = prev;
@@ -382,7 +392,7 @@ export default function MatchScoreScreen() {
         reactionRpcInFlightByHoleRef.current.delete(holeNum);
       }
     },
-    [matchId, user?.id, oppId, holes, amPlayer1, refreshAll]
+    [matchId, user?.id, oppId, holes, amPlayer1, refreshAll, googleOAuthAccessToken]
   );
 
   const onAbandonMatch = useCallback(async () => {
@@ -394,14 +404,14 @@ export default function MatchScoreScreen() {
     );
     if (!ok) return;
     setAbandonBusy(true);
-    const res = await abandonMatch(matchId);
+    const res = await abandonMatch(matchId, googleOAuthAccessToken ?? undefined);
     setAbandonBusy(false);
     if (!res.ok) {
       showAppAlert('Could not abandon match', res.error ?? 'Unknown error');
       return;
     }
     router.replace('/(tabs)/groups' as never);
-  }, [matchId, abandonBusy, router]);
+  }, [matchId, abandonBusy, router, googleOAuthAccessToken]);
 
   useLayoutEffect(() => {
     navigation.setOptions({

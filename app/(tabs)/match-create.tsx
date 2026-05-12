@@ -779,6 +779,7 @@ export default function MatchCreateScreen() {
         userId: user.id,
         localUri: photoUri,
         mimeType: settingsImage?.mimeType ?? undefined,
+        accessToken: googleOAuthAccessToken ?? undefined,
       });
       if ('error' in up) {
         setSubmitBusy(false);
@@ -793,7 +794,7 @@ export default function MatchCreateScreen() {
         router.replace('/(tabs)/groups' as never);
         return;
       }
-      const upd = await updateMatchById(matchId, { player_1_settings_photo_url: up.signedUrl });
+      const upd = await updateMatchById(matchId, { player_1_settings_photo_url: up.signedUrl }, googleOAuthAccessToken ?? undefined);
       if (upd.error) {
         console.warn('[match-create] update photo url', upd.error);
       }

@@ -21,6 +21,7 @@ import {
 } from '../lib/rounds';
 import type { GhinSnapshot } from '../lib/realVsSim';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
+import { googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
 
 export type SimRound = {
   id: string;
@@ -384,17 +385,29 @@ export const useAppStore = create<AppState>()(
         };
 
         let id = newId();
-        if (supabase) {
+        let cloudUid: string | null = null;
+        const restTok = googleOAuthAccessToken;
+        if (restTok) {
+          try {
+            const raw = await AsyncStorage.getItem('supabase.auth.token');
+            const session = raw ? (JSON.parse(raw) as { user?: { id?: string } }) : null;
+            cloudUid = session?.user?.id ?? null;
+          } catch {
+            cloudUid = null;
+          }
+        }
+        if (!cloudUid && supabase) {
           const {
             data: { user },
           } = await supabase.auth.getUser();
-          if (user) {
-            const ins = await insertRoundInSupabase(user.id, withoutId);
-            if ('error' in ins) {
-              throw new Error(ins.error);
-            }
-            id = ins.id;
+          cloudUid = user?.id ?? null;
+        }
+        if (supabase && cloudUid) {
+          const ins = await insertRoundInSupabase(cloudUid, withoutId, restTok ?? undefined);
+          if ('error' in ins) {
+            throw new Error(ins.error);
           }
+          id = ins.id;
         }
 
         const round: SimRound = { ...withoutId, id };
@@ -408,7 +421,7 @@ export const useAppStore = create<AppState>()(
         if (isSupabaseConfigured() && round.h2hGroupId) {
           const dn = get().displayName;
           void import('../lib/socialGroups').then(({ insertSocialMatchFromRound }) => {
-            void insertSocialMatchFromRound(round, dn);
+            void insertSocialMatchFromRound(round, dn, cloudUid ?? undefined, restTok ?? undefined);
           });
         }
         return round;
@@ -425,12 +438,18 @@ export const useAppStore = create<AppState>()(
         if (!updated) return;
 
         if (isCloudRoundId(roundId) && supabase) {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (user) {
-            const errMsg = await updateRoundInSupabase(updated);
+          const restTok = googleOAuthAccessToken;
+          if (restTok) {
+            const errMsg = await updateRoundInSupabase(updated, restTok);
             if (errMsg) throw new Error(errMsg);
+          } else {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (user) {
+              const errMsg = await updateRoundInSupabase(updated);
+              if (errMsg) throw new Error(errMsg);
+            }
           }
         }
 
@@ -442,12 +461,18 @@ export const useAppStore = create<AppState>()(
 
       deleteRound: async (roundId) => {
         if (isCloudRoundId(roundId) && supabase) {
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (user) {
-            const errMsg = await deleteRoundInSupabase(roundId);
+          const restTok = googleOAuthAccessToken;
+          if (restTok) {
+            const errMsg = await deleteRoundInSupabase(roundId, restTok);
             if (errMsg) throw new Error(errMsg);
+          } else {
+            const {
+              data: { user },
+            } = await supabase.auth.getUser();
+            if (user) {
+              const errMsg = await deleteRoundInSupabase(roundId);
+              if (errMsg) throw new Error(errMsg);
+            }
           }
         }
 
