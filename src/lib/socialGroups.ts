@@ -91,7 +91,7 @@ async function restSelectRows(accessToken: string, pathAndQuery: string): Promis
 }
 
 const ROUNDS_SELECT_FOR_SOCIAL =
-  'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time';
+  'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,differential_version,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time';
 
 function applyLoadedSocialGroupData(
   uid: string,
@@ -402,7 +402,7 @@ export async function fetchMySocialGroupsIntoStore(userId?: string, accessToken?
     const { data: rr, error: rErr } = await supabase
       .from('rounds')
       .select(
-        'id, user_id, course_id, course_name, platform, gross_score, hole_scores, putting_mode, pin_placement, wind, mulligans, difficulty_modifier, differential, raw_differential, course_rating, slope, tee_name, played_at, created_at, h2h_group_id, h2h_opponent_member_id, h2h_opponent_display_name, simcap_index_at_time'
+        'id, user_id, course_id, course_name, platform, gross_score, hole_scores, putting_mode, pin_placement, wind, mulligans, difficulty_modifier, differential, differential_version, raw_differential, course_rating, slope, tee_name, played_at, created_at, h2h_group_id, h2h_opponent_member_id, h2h_opponent_display_name, simcap_index_at_time'
       )
       .in('user_id', userIds)
       .order('played_at', { ascending: true });

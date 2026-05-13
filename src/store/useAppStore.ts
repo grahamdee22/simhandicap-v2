@@ -4,7 +4,8 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import { Platform } from 'react-native';
 import type { PlatformId } from '../lib/constants';
 import {
-  adjustedDifferential,
+  adjustedDifferentialForVersion,
+  CURRENT_DIFFERENTIAL_VERSION,
   grossFromHoles,
   handicapIndexFromDifferentials,
   type Mulligans,
@@ -12,7 +13,7 @@ import {
   type PuttingMode,
   type Wind,
 } from '../lib/handicap';
-import { COURSE_SEEDS, getCourseById, ratingForCourse, type CourseSeed } from '../lib/courses';
+import { getCourseById, ratingForCourse } from '../lib/courses';
 import {
   deleteRoundInSupabase,
   insertRoundInSupabase,
@@ -41,6 +42,8 @@ export type SimRound = {
   rawDiff: number;
   adjustedDiff: number;
   difficultyModifier: number;
+  /** Differential formula version used when this round was logged. */
+  differentialVersion?: number | null;
   indexAfter: number | null;
   indexDelta: number | null;
   /** Sim index (same as home screen `currentIndexFromRounds`) at save time; absent/null for legacy rounds. */
@@ -152,7 +155,7 @@ type AppState = {
   hydrate: () => Promise<void>;
   setDisplayName: (name: string) => void;
   setPreferredLogPlatform: (platform: PlatformId) => void;
-  /** Replace rounds from Supabase (or server); recomputes differentials and index fields. */
+  /** Replace rounds from Supabase (or server); preserves stored differentials and recomputes only index fields. */
   replaceRoundsFromRemote: (rounds: SimRound[]) => void;
   addRound: (input: NewRoundInput) => Promise<SimRound>;
   updateRound: (roundId: string, patch: Partial<SimRound>) => Promise<void>;
@@ -176,9 +179,11 @@ function computeRoundMathFromRatingSlope(
   putting: PuttingMode,
   pin: PinDay,
   wind: Wind,
-  mulligans: Mulligans
+  mulligans: Mulligans,
+  differentialVersion = CURRENT_DIFFERENTIAL_VERSION
 ) {
-  const { raw, adjusted, modifier } = adjustedDifferential(
+  const { raw, adjusted, modifier } = adjustedDifferentialForVersion(
+    differentialVersion,
     gross,
     courseRating,
     slope,
@@ -187,20 +192,14 @@ function computeRoundMathFromRatingSlope(
     wind,
     mulligans
   );
-  return { courseRating, slope, rawDiff: raw, adjustedDiff: adjusted, difficultyModifier: modifier };
-}
-
-function computeRoundMath(
-  course: CourseSeed,
-  platform: PlatformId,
-  gross: number,
-  putting: PuttingMode,
-  pin: PinDay,
-  wind: Wind,
-  mulligans: Mulligans
-) {
-  const { rating, slope } = ratingForCourse(course, platform);
-  return computeRoundMathFromRatingSlope(gross, rating, slope, putting, pin, wind, mulligans);
+  return {
+    courseRating,
+    slope,
+    rawDiff: raw,
+    adjustedDiff: adjusted,
+    difficultyModifier: modifier,
+    differentialVersion,
+  };
 }
 
 function indexBeforeNewRound(sortedRounds: SimRound[]): number | null {
@@ -281,27 +280,14 @@ function recalcAllRounds(rounds: SimRound[]): SimRound[] {
   const sorted = [...rounds].sort(compareRoundsByPlayedAtAsc);
   const diffsSoFar: number[] = [];
   const out: SimRound[] = [];
-  const fallbackCourse = COURSE_SEEDS[0];
   for (const r of sorted) {
-    const course = getCourseById(r.courseId) ?? fallbackCourse;
-    const fromHoles = grossFromHoles(r.holeScores);
-    const gross = fromHoles != null ? fromHoles : r.grossScore;
-    const baseline = ratingForCourse(course, r.platform);
-    const cr =
-      typeof r.courseRating === 'number' && Number.isFinite(r.courseRating) && r.courseRating > 50
-        ? r.courseRating
-        : baseline.rating;
-    const sl =
-      typeof r.slope === 'number' && Number.isFinite(r.slope) && r.slope > 0 ? r.slope : baseline.slope;
-    const math = computeRoundMathFromRatingSlope(gross, cr, sl, r.putting, r.pin, r.wind, r.mulligans);
-    diffsSoFar.push(math.adjustedDiff);
+    const storedAdjustedDiff =
+      typeof r.adjustedDiff === 'number' && Number.isFinite(r.adjustedDiff) ? r.adjustedDiff : 0;
+    diffsSoFar.push(storedAdjustedDiff);
     const before = handicapIndexFromDifferentials(diffsSoFar.slice(0, -1));
     const after = handicapIndexFromDifferentials(diffsSoFar);
     out.push({
       ...r,
-      grossScore: gross,
-      courseName: r.courseName || course.name,
-      ...math,
       indexAfter: after,
       indexDelta: before != null && after != null ? round1(after - before) : null,
       simcapIndexAtTime: r.simcapIndexAtTime ?? null,
@@ -368,7 +354,8 @@ export const useAppStore = create<AppState>()(
           input.putting,
           input.pin,
           input.wind,
-          input.mulligans
+          input.mulligans,
+          CURRENT_DIFFERENTIAL_VERSION
         );
         const trialDiffs = [...sorted.map((r) => r.adjustedDiff), math.adjustedDiff];
         const after = handicapIndexFromDifferentials(trialDiffs);
@@ -430,9 +417,26 @@ export const useAppStore = create<AppState>()(
       updateRound: async (roundId, patch) => {
         const s = get();
         const indexAtSave = currentIndexFromRounds(s.rounds);
-        const rounds = s.rounds.map((r) =>
-          r.id === roundId ? { ...r, ...patch, simcapIndexAtTime: indexAtSave } : r
-        );
+        const rounds = s.rounds.map((r) => {
+          if (r.id !== roundId) return r;
+          const next: SimRound = { ...r, ...patch, simcapIndexAtTime: indexAtSave };
+          const effectiveGross = grossFromHoles(next.holeScores) ?? next.grossScore;
+          const effectiveVersion = next.differentialVersion ?? r.differentialVersion ?? CURRENT_DIFFERENTIAL_VERSION;
+          return {
+            ...next,
+            grossScore: effectiveGross,
+            ...computeRoundMathFromRatingSlope(
+              effectiveGross,
+              next.courseRating,
+              next.slope,
+              next.putting,
+              next.pin,
+              next.wind,
+              next.mulligans,
+              effectiveVersion
+            ),
+          };
+        });
         const full = recalcAllRounds(rounds);
         const updated = full.find((r) => r.id === roundId);
         if (!updated) return;

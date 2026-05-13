@@ -8,6 +8,12 @@ export type PinDay = 'thu' | 'fri' | 'sat' | 'sun';
 export type Wind = 'off' | 'light' | 'strong';
 export type Mulligans = 'on' | 'off';
 
+/**
+ * Version marker stored with each logged round so future formula changes only affect new rounds.
+ * Historical rounds keep the differential version they were logged with.
+ */
+export const CURRENT_DIFFERENTIAL_VERSION = 1;
+
 /** Putting multipliers (higher → higher adjusted diff for same gross). Order: putt_all < gimme < auto_2putt. */
 const PUTTING: Record<PuttingMode, number> = {
   putt_all: 1.0,
@@ -79,6 +85,31 @@ export function rawDifferential(ags: number, courseRating: number, slope: number
 }
 
 /** `courseRating` / `slope` are the WHS values for the tee played (from course data or custom entry). */
+export function adjustedDifferentialForVersion(
+  version: number,
+  ags: number,
+  courseRating: number,
+  slope: number,
+  putting: PuttingMode,
+  pin: PinDay,
+  wind: Wind,
+  mulligans: Mulligans
+): { raw: number; adjusted: number; modifier: number } {
+  switch (version) {
+    case 1:
+    default: {
+      const modifier = difficultyProduct(putting, pin, wind, mulligans);
+      const raw = rawDifferential(ags, courseRating, slope);
+      return {
+        raw: round1(raw),
+        adjusted: round1(raw * modifier),
+        modifier: round2(modifier),
+      };
+    }
+  }
+}
+
+/** Uses the latest differential algorithm for new rounds and previews. */
 export function adjustedDifferential(
   ags: number,
   courseRating: number,
@@ -88,13 +119,16 @@ export function adjustedDifferential(
   wind: Wind,
   mulligans: Mulligans
 ): { raw: number; adjusted: number; modifier: number } {
-  const modifier = difficultyProduct(putting, pin, wind, mulligans);
-  const raw = rawDifferential(ags, courseRating, slope);
-  return {
-    raw: round1(raw),
-    adjusted: round1(raw * modifier),
-    modifier: round2(modifier),
-  };
+  return adjustedDifferentialForVersion(
+    CURRENT_DIFFERENTIAL_VERSION,
+    ags,
+    courseRating,
+    slope,
+    putting,
+    pin,
+    wind,
+    mulligans
+  );
 }
 
 export function round1(n: number): number {

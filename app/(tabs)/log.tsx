@@ -9,7 +9,8 @@ import { DatePlayedField } from '../../src/components/DatePlayedField';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { useResponsive } from '../../src/lib/responsive';
 import {
-  adjustedDifferential,
+  adjustedDifferentialForVersion,
+  CURRENT_DIFFERENTIAL_VERSION,
   difficultyProduct,
   formatDifferentialDisplay,
   round1,
@@ -271,9 +272,19 @@ export default function LogRoundScreen() {
 
   const effectiveGross = grossScore;
 
+  const previewDifferentialVersion = existing?.differentialVersion ?? CURRENT_DIFFERENTIAL_VERSION;
   const preview = useMemo(() => {
-    return adjustedDifferential(effectiveGross, rating, slope, putting, pin, wind, mulligans);
-  }, [effectiveGross, rating, slope, putting, pin, wind, mulligans]);
+    return adjustedDifferentialForVersion(
+      previewDifferentialVersion,
+      effectiveGross,
+      rating,
+      slope,
+      putting,
+      pin,
+      wind,
+      mulligans
+    );
+  }, [previewDifferentialVersion, effectiveGross, rating, slope, putting, pin, wind, mulligans]);
   const adjustedDisplay = formatDifferentialDisplay(preview.adjusted);
 
   const modifier = difficultyProduct(putting, pin, wind, mulligans);

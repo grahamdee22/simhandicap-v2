@@ -1,6 +1,12 @@
 import Constants from 'expo-constants';
 import { PLATFORMS, type PlatformId } from './constants';
-import type { Mulligans, PinDay, PuttingMode, Wind } from './handicap';
+import {
+  CURRENT_DIFFERENTIAL_VERSION,
+  type Mulligans,
+  type PinDay,
+  type PuttingMode,
+  type Wind,
+} from './handicap';
 import { supabase } from './supabase';
 import type { SimRound } from '../store/useAppStore';
 
@@ -65,6 +71,7 @@ export type DbRoundRow = {
   mulligans: string;
   difficulty_modifier: number;
   differential: number;
+  differential_version: number | null;
   raw_differential: number | null;
   course_rating: number;
   slope: number;
@@ -79,6 +86,12 @@ export type DbRoundRow = {
 
 export function dbRowToSimRound(row: DbRoundRow): SimRound {
   const holeScores = normalizeHoleScores(row.hole_scores);
+  const differentialVersion =
+    row.differential_version != null &&
+    Number.isInteger(Number(row.differential_version)) &&
+    Number(row.differential_version) > 0
+      ? Number(row.differential_version)
+      : CURRENT_DIFFERENTIAL_VERSION;
   const base: SimRound = {
     id: row.id,
     courseId: row.course_id,
@@ -97,6 +110,7 @@ export function dbRowToSimRound(row: DbRoundRow): SimRound {
     rawDiff: row.raw_differential ?? 0,
     adjustedDiff: row.differential,
     difficultyModifier: row.difficulty_modifier,
+    differentialVersion,
     indexAfter: null,
     indexDelta: null,
     simcapIndexAtTime:
@@ -143,6 +157,7 @@ function roundToDbInsert(userId: string, r: RoundDbFields) {
     mulligans: r.mulligans,
     difficulty_modifier: r.difficultyModifier,
     differential: r.adjustedDiff,
+    differential_version: r.differentialVersion ?? CURRENT_DIFFERENTIAL_VERSION,
     raw_differential: r.rawDiff,
     course_rating: r.courseRating,
     slope: r.slope,
@@ -270,6 +285,7 @@ export async function updateRoundInSupabase(
     mulligans: round.mulligans,
     difficulty_modifier: round.difficultyModifier,
     differential: round.adjustedDiff,
+    differential_version: round.differentialVersion ?? CURRENT_DIFFERENTIAL_VERSION,
     raw_differential: round.rawDiff,
     course_rating: round.courseRating,
     slope: round.slope,
