@@ -671,7 +671,7 @@ export default function LogRoundScreen() {
           <Text style={styles.saveTxt}>{existing ? 'Save changes' : 'Save round'}</Text>
         </Pressable>
         <Text style={styles.saveHint}>
-          Saves to this device, opens Round analysis, and updates your sim index, home chart, and profile.
+          Saves to your SimCap account, opens Round analysis, and updates your sim index, home chart, and profile.
         </Text>
         </ScrollView>
       </View>

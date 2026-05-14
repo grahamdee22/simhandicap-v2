@@ -204,7 +204,7 @@ export default function ProfileScreen() {
       >
         <Text style={[styles.sub, isWide && styles.subLg]}>
           {signedIn
-            ? 'Rounds stay on this device per account; your name, preferred sim, and GHIN sync to your profile.'
+            ? 'Rounds, profile, and settings sync to your SimCap account in the cloud.'
             : 'Rounds and display name are stored on this device.'}
         </Text>
 
