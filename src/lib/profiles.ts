@@ -4,6 +4,7 @@ import { supabase } from './supabase';
 
 export type UserProfileRow = {
   id: string;
+  simcap_id: string;
   display_name: string;
   preferred_platform: string | null;
   ghin_index: number | null;
@@ -40,6 +41,7 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
 
 function mapProfileRowToUserProfileRow(data: {
   id: string;
+  simcap_id: string;
   display_name: string;
   preferred_platform: string | null;
   ghin_index: number | string | null;
@@ -55,6 +57,7 @@ function mapProfileRowToUserProfileRow(data: {
       : Number(rawGhin);
   return {
     id: data.id,
+    simcap_id: data.simcap_id,
     display_name: data.display_name,
     preferred_platform: data.preferred_platform,
     ghin_index: Number.isFinite(ghin_index) ? ghin_index : null,
@@ -76,7 +79,7 @@ export async function fetchMyProfile(
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
     if (!supabaseUrl || !supabaseAnonKey) return null;
     const select =
-      'id,display_name,preferred_platform,ghin_index,match_wins,match_losses,match_draws,match_forfeits';
+      'id,simcap_id,display_name,preferred_platform,ghin_index,match_wins,match_losses,match_draws,match_forfeits';
     const res = await fetch(
       `${supabaseUrl}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}&select=${encodeURIComponent(select)}`,
       {
@@ -95,6 +98,7 @@ export async function fetchMyProfile(
     if (!rows?.length) return null;
     const row = rows[0] as {
       id: string;
+      simcap_id: string;
       display_name: string;
       preferred_platform: string | null;
       ghin_index: number | string | null;
@@ -115,7 +119,7 @@ export async function fetchMyProfile(
   const { data, error } = await supabase
     .from('profiles')
     .select(
-      'id, display_name, preferred_platform, ghin_index, match_wins, match_losses, match_draws, match_forfeits'
+      'id, simcap_id, display_name, preferred_platform, ghin_index, match_wins, match_losses, match_draws, match_forfeits'
     )
     .eq('id', user.id)
     .maybeSingle();
@@ -128,6 +132,7 @@ export async function fetchMyProfile(
   return mapProfileRowToUserProfileRow(
     data as {
       id: string;
+      simcap_id: string;
       display_name: string;
       preferred_platform: string | null;
       ghin_index: number | string | null;

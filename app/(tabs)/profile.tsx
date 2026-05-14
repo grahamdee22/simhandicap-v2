@@ -47,6 +47,7 @@ export default function ProfileScreen() {
   const [ghinDraft, setGhinDraft] = useState('');
   const [chartW, setChartW] = useState(0);
   const [savingField, setSavingField] = useState<'name' | 'ghin' | 'platform' | 'signout' | null>(null);
+  const [simcapId, setSimcapId] = useState<string | null>(null);
   const [matchPlayRecord, setMatchPlayRecord] = useState<{
     wins: number;
     losses: number;
@@ -84,8 +85,10 @@ export default function ProfileScreen() {
             draws: p.match_draws,
             forfeits: p.match_forfeits,
           });
+          setSimcapId(p.simcap_id);
         } else {
           setMatchPlayRecord(null);
+          setSimcapId(null);
         }
         const snaps = useAppStore.getState().ghinSnapshots;
         const fromServer =
@@ -101,6 +104,10 @@ export default function ProfileScreen() {
       };
     }, [signedIn, user?.id, googleOAuthAccessToken])
   );
+
+  useEffect(() => {
+    if (!signedIn) setSimcapId(null);
+  }, [signedIn]);
 
   const chartGeom = useMemo(
     () => buildDualIndexChartPoints(rounds, ghinSnapshots),
@@ -200,6 +207,18 @@ export default function ProfileScreen() {
             ? 'Rounds stay on this device per account; your name, preferred sim, and GHIN sync to your profile.'
             : 'Rounds and display name are stored on this device.'}
         </Text>
+
+        {signedIn ? (
+          <View style={[styles.card, styles.simcapHeroCard]}>
+            <Text style={styles.simcapHeroLabel}>SimCap ID</Text>
+            <Text selectable={!!simcapId} style={styles.simcapHeroValue}>
+              {simcapId ?? 'Loading...'}
+            </Text>
+            <Text style={styles.simcapHeroHint}>
+              Tap and hold to copy. Share this ID for match challenges and player identity.
+            </Text>
+          </View>
+        ) : null}
 
         <View style={styles.card}>
           <Pressable
@@ -501,6 +520,32 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 0.5,
     borderColor: colors.border,
+  },
+  simcapHeroCard: {
+    backgroundColor: colors.forestDeep,
+    borderColor: colors.sage,
+    paddingVertical: 18,
+  },
+  simcapHeroLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: colors.sage,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  simcapHeroValue: {
+    fontSize: 30,
+    fontWeight: '700',
+    color: '#fff',
+    marginTop: 10,
+    letterSpacing: 2.5,
+    fontVariant: ['tabular-nums'],
+  },
+  simcapHeroHint: {
+    fontSize: 13,
+    color: '#d8f3e8',
+    marginTop: 10,
+    lineHeight: 18,
   },
   lbl: { fontSize: 10, fontWeight: '600', color: colors.subtle, textTransform: 'uppercase', letterSpacing: 0.5 },
   cardLead: { fontSize: 17, fontWeight: '600', color: colors.ink, marginTop: 8 },
