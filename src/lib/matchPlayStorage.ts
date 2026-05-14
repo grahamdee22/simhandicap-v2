@@ -12,6 +12,7 @@
  */
 
 import * as FileSystem from 'expo-file-system/legacy';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
 import { createClient } from '@supabase/supabase-js';
@@ -20,6 +21,19 @@ import { supabase } from './supabase';
 const BUCKET = 'match-settings';
 /** Signed URL TTL stored in DB so challengers/opponents can view without separate download API. */
 const SIGNED_URL_SEC = 60 * 60 * 24 * 365;
+const STORAGE_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
+const TARGET_UPLOAD_BYTES = STORAGE_FILE_SIZE_LIMIT_BYTES - 128 * 1024;
+const IMAGE_PROCESSING_FAILED_MESSAGE = 'Could not process that photo. Please choose a different screenshot.';
+const IMAGE_TOO_LARGE_MESSAGE =
+  'That photo is still too large after compression. Please choose a smaller screenshot.';
+const JPEG_UPLOAD_PRESETS = [
+  { maxDimension: 2200, compress: 0.82 },
+  { maxDimension: 1800, compress: 0.72 },
+  { maxDimension: 1440, compress: 0.62 },
+  { maxDimension: 1280, compress: 0.52 },
+  { maxDimension: 1080, compress: 0.42 },
+  { maxDimension: 900, compress: 0.34 },
+] as const;
 
 function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
   const extra = Constants.expoConfig?.extra as
@@ -50,11 +64,31 @@ function storageClientForAccessToken(accessToken: string) {
   });
 }
 
-function extFromMime(mime: string | null | undefined): string {
-  if (!mime) return 'jpg';
-  if (mime.includes('png')) return 'png';
-  if (mime.includes('webp')) return 'webp';
-  return 'jpg';
+function resizeActionsForMaxDimension(width: number, height: number, maxDimension: number) {
+  const originalMaxDimension = Math.max(width, height);
+  if (!Number.isFinite(originalMaxDimension) || originalMaxDimension <= 0) {
+    return [];
+  }
+  if (originalMaxDimension <= maxDimension) {
+    return [];
+  }
+  return width >= height ? [{ resize: { width: maxDimension } }] : [{ resize: { height: maxDimension } }];
+}
+
+function friendlyUploadErrorMessage(message: string, mimeType?: string | null): string {
+  const lower = message.toLowerCase();
+  if (
+    lower.includes('image/heic') ||
+    lower.includes('image/heif') ||
+    lower.includes('mime type not supported') ||
+    lower.includes('unsupported image format')
+  ) {
+    return IMAGE_PROCESSING_FAILED_MESSAGE;
+  }
+  if (lower.includes('object exceeded maximum allowed size') || lower.includes('payload too large')) {
+    return IMAGE_TOO_LARGE_MESSAGE;
+  }
+  return message;
 }
 
 function base64ToArrayBuffer(base64: string): ArrayBuffer {
@@ -109,6 +143,39 @@ async function readLocalImageBytes(uri: string): Promise<ArrayBuffer> {
   return buf;
 }
 
+async function prepareImageForUpload(localUri: string): Promise<{
+  body: ArrayBuffer;
+  contentType: 'image/jpeg';
+  ext: 'jpg';
+}> {
+  const probe = await ImageManipulator.manipulateAsync(localUri, [], {
+    compress: 1,
+    format: ImageManipulator.SaveFormat.JPEG,
+  });
+
+  for (const preset of JPEG_UPLOAD_PRESETS) {
+    const result = await ImageManipulator.manipulateAsync(
+      localUri,
+      resizeActionsForMaxDimension(probe.width, probe.height, preset.maxDimension),
+      {
+        compress: preset.compress,
+        format: ImageManipulator.SaveFormat.JPEG,
+      }
+    );
+    const body = await readLocalImageBytes(result.uri);
+    console.log('[matchPlayStorage] prepared image byteLength', body.byteLength, preset);
+    if (body.byteLength <= TARGET_UPLOAD_BYTES) {
+      return {
+        body,
+        contentType: 'image/jpeg',
+        ext: 'jpg',
+      };
+    }
+  }
+
+  throw new Error(IMAGE_TOO_LARGE_MESSAGE);
+}
+
 export async function uploadMatchSettingsScreenshot(params: {
   matchId: string;
   userId: string;
@@ -121,27 +188,20 @@ export async function uploadMatchSettingsScreenshot(params: {
     ? storageClientForAccessToken(params.accessToken)
     : supabase;
   if (!storage) return { error: 'Supabase is not configured' };
-
-  const ext = extFromMime(params.mimeType);
+  const ext = 'jpg';
   const path = `${params.matchId}/${params.userId}/settings.${ext}`;
-  const contentType = params.mimeType?.startsWith('image/')
-    ? params.mimeType
-    : ext === 'png'
-      ? 'image/png'
-      : ext === 'webp'
-        ? 'image/webp'
-        : 'image/jpeg';
 
   try {
-    const body = await readLocalImageBytes(params.localUri);
+    const prepared = await prepareImageForUpload(params.localUri);
+    const body = prepared.body;
     console.log('[matchPlayStorage] upload body byteLength', body.byteLength);
     const { error: upErr } = await storage.storage.from(BUCKET).upload(path, body, {
       upsert: true,
-      contentType,
+      contentType: prepared.contentType,
     });
     if (upErr) {
       console.warn('[matchPlayStorage] upload', upErr.message);
-      return { error: upErr.message };
+      return { error: friendlyUploadErrorMessage(upErr.message, params.mimeType) };
     }
 
     const { data: signed, error: signErr } = await storage.storage
@@ -155,7 +215,8 @@ export async function uploadMatchSettingsScreenshot(params: {
     return { signedUrl: signed.signedUrl, path };
   } catch (e) {
     console.log('[matchPlayStorage] catch', e);
-    const msg = e instanceof Error ? e.message : 'Upload failed';
+    const msg =
+      e instanceof Error && e.message ? friendlyUploadErrorMessage(e.message, params.mimeType) : 'Upload failed';
     console.warn('[matchPlayStorage]', msg);
     return { error: msg };
   }

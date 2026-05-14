@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Linking,
   Modal,
   Platform,
@@ -816,67 +817,80 @@ export default function GroupsScreen() {
 
           <Modal visible={inviteOpen} animationType="fade" transparent>
             <Pressable style={styles.modalBackdrop} onPress={() => !inviteBusy && closeInvite()}>
-              <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-                {invitePhase === 'form' ? (
-                  <>
-                    <Text style={styles.modalTitle}>Invite to group</Text>
-                    <Text style={styles.modalSub}>
-                      If they already use SimCap, they’ll get an in-app invite. Otherwise we’ll record the invite and open
-                      your email app with a signup message for{' '}
-                      <Text style={styles.modalSubStrong}>{g.name}</Text>.
-                    </Text>
-                    <TextInput
-                      style={styles.modalInput}
-                      placeholder="Email address"
-                      placeholderTextColor={colors.subtle}
-                      value={inviteEmail}
-                      onChangeText={setInviteEmail}
-                      keyboardType="email-address"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                      autoComplete="email"
-                      autoFocus
-                      editable={!inviteBusy}
-                    />
-                    <View style={styles.modalActions}>
-                      <Pressable onPress={() => !inviteBusy && closeInvite()} style={styles.modalBtn}>
-                        <Text style={styles.modalBtnTxt}>Cancel</Text>
-                      </Pressable>
-                      <Pressable
-                        onPress={() => void submitInvite()}
-                        disabled={inviteBusy}
-                        style={[styles.modalBtn, styles.modalBtnPrimary, inviteBusy && styles.modalBtnDisabled]}
-                      >
-                        {inviteBusy ? (
-                          <ActivityIndicator color="#fff" />
-                        ) : (
-                          <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Send invite</Text>
-                        )}
-                      </Pressable>
-                    </View>
-                  </>
-                ) : (
-                  <>
-                    <Text style={styles.modalTitle}>Invite sent</Text>
-                    <Text style={styles.modalSuccessBody}>{inviteSuccessDetail}</Text>
-                    <View style={styles.modalActionsCol}>
-                      <Pressable
-                        onPress={() => {
-                          setInvitePhase('form');
-                          setInviteEmail('');
-                          setInviteSuccessDetail('');
-                        }}
-                        style={[styles.modalBtn, styles.modalBtnGhost]}
-                      >
-                        <Text style={styles.modalBtnGhostTxt}>Invite someone else</Text>
-                      </Pressable>
-                      <Pressable onPress={closeInvite} style={[styles.modalBtn, styles.modalBtnPrimary]}>
-                        <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Done</Text>
-                      </Pressable>
-                    </View>
-                  </>
-                )}
-              </Pressable>
+              <KeyboardAvoidingView
+                style={styles.modalKeyboardAvoid}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Math.max(insets.bottom, 12)}
+              >
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
+                    {invitePhase === 'form' ? (
+                      <>
+                        <Text style={styles.modalTitle}>Invite to group</Text>
+                        <Text style={styles.modalSub}>
+                          If they already use SimCap, they’ll get an in-app invite. Otherwise we’ll record the invite and open
+                          your email app with a signup message for{' '}
+                          <Text style={styles.modalSubStrong}>{g.name}</Text>.
+                        </Text>
+                        <TextInput
+                          style={styles.modalInput}
+                          placeholder="Email address"
+                          placeholderTextColor={colors.subtle}
+                          value={inviteEmail}
+                          onChangeText={setInviteEmail}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          autoComplete="email"
+                          autoFocus
+                          editable={!inviteBusy}
+                        />
+                        <View style={styles.modalActions}>
+                          <Pressable onPress={() => !inviteBusy && closeInvite()} style={styles.modalBtn}>
+                            <Text style={styles.modalBtnTxt}>Cancel</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => void submitInvite()}
+                            disabled={inviteBusy}
+                            style={[styles.modalBtn, styles.modalBtnPrimary, inviteBusy && styles.modalBtnDisabled]}
+                          >
+                            {inviteBusy ? (
+                              <ActivityIndicator color="#fff" />
+                            ) : (
+                              <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Send invite</Text>
+                            )}
+                          </Pressable>
+                        </View>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.modalTitle}>Invite sent</Text>
+                        <Text style={styles.modalSuccessBody}>{inviteSuccessDetail}</Text>
+                        <View style={styles.modalActionsCol}>
+                          <Pressable
+                            onPress={() => {
+                              setInvitePhase('form');
+                              setInviteEmail('');
+                              setInviteSuccessDetail('');
+                            }}
+                            style={[styles.modalBtn, styles.modalBtnGhost]}
+                          >
+                            <Text style={styles.modalBtnGhostTxt}>Invite someone else</Text>
+                          </Pressable>
+                          <Pressable onPress={closeInvite} style={[styles.modalBtn, styles.modalBtnPrimary]}>
+                            <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Done</Text>
+                          </Pressable>
+                        </View>
+                      </>
+                    )}
+                  </Pressable>
+                </ScrollView>
+              </KeyboardAvoidingView>
             </Pressable>
           </Modal>
 
@@ -1083,6 +1097,16 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.45)',
     justifyContent: 'center',
     padding: 24,
+  },
+  modalKeyboardAvoid: {
+    width: '100%',
+  },
+  modalScroll: {
+    width: '100%',
+  },
+  modalScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
   },
   modalBox: {
     backgroundColor: colors.surface,

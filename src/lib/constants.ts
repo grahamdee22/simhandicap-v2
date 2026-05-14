@@ -38,6 +38,7 @@ export const PLATFORMS = [
   'Full Swing',
   'E6',
   'GSPro',
+  'Garmin',
 ] as const;
 
 export type PlatformId = (typeof PLATFORMS)[number];
