@@ -140,3 +140,22 @@ export function computeTotalsIfComplete(
 export function opponentAhead(holeCountMine: number, holeCountOpponent: number): boolean {
   return holeCountOpponent > holeCountMine;
 }
+
+/** Sum of gross scores for a player across all holes in the match; null if any hole is missing. */
+export function loggedGrossTotalForPlayer(
+  rows: DbMatchHoleRow[],
+  playerId: string,
+  holeNums: number[]
+): number | null {
+  const byHole = new Map<number, number>();
+  for (const r of rows) {
+    if (r.player_id === playerId) byHole.set(r.hole_number, r.gross_score);
+  }
+  let sum = 0;
+  for (const h of holeNums) {
+    const g = byHole.get(h);
+    if (g == null || !Number.isFinite(g)) return null;
+    sum += g;
+  }
+  return sum;
+}

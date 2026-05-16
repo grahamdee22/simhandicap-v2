@@ -27,6 +27,11 @@ import {
   type DbMatchRow,
 } from '../../../src/lib/matchPlay';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
+import {
+  playerVerificationUiState,
+  verificationStatusEmoji,
+  verificationStatusLabel,
+} from '../../../src/lib/matchVerification';
 import { grossMapsForPlayers, matchHoleNumbers } from '../../../src/lib/matchStrokeMath';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../../src/lib/supabase';
@@ -367,6 +372,22 @@ export default function MatchResultsScreen() {
           </View>
         </View>
 
+        {match.verification_required ? (
+          <View style={styles.verifyCard}>
+            <Text style={styles.verifyTitle}>Scorecard verification</Text>
+            <Text style={styles.verifyRow}>
+              {verificationStatusEmoji(playerVerificationUiState(match, true))}{' '}
+              {names.p1}: {verificationStatusLabel(playerVerificationUiState(match, true))}
+            </Text>
+            {match.player_2_id ? (
+              <Text style={styles.verifyRow}>
+                {verificationStatusEmoji(playerVerificationUiState(match, false))}{' '}
+                {names.p2}: {verificationStatusLabel(playerVerificationUiState(match, false))}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
         {match.player_2_id &&
         userId &&
         (userId === match.player_1_id || userId === match.player_2_id) ? (
@@ -502,6 +523,23 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 16,
   },
+  verifyCard: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.sage,
+    backgroundColor: colors.accentSoft,
+    padding: 14,
+    marginBottom: 16,
+  },
+  verifyTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.forestDeep,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+    marginBottom: 8,
+  },
+  verifyRow: { fontSize: 14, color: colors.ink, marginTop: 4, lineHeight: 20 },
   scoreRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -193,6 +193,7 @@ export default function MatchCreateScreen() {
   const [wind, setWind] = useState<Wind>('off');
   const [mulligans, setMulligans] = useState<Mulligans>('off');
   const [holesChoice, setHolesChoice] = useState<HolesChoice>('18');
+  const [verificationRequired, setVerificationRequired] = useState(false);
   const [settingsImage, setSettingsImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [platOpen, setPlatOpen] = useState(false);
   const [courseOpen, setCourseOpen] = useState(false);
@@ -762,6 +763,7 @@ export default function MatchCreateScreen() {
         rematch_from: challengeKind === 'direct' && rematchSourceMatchId ? rematchSourceMatchId : null,
         player_1_ghin_index_at_post: idxSnapshot != null && Number.isFinite(idxSnapshot) ? idxSnapshot : null,
         player_1_platform: platform,
+        verification_required: verificationRequired,
       },
       user.id,
       googleOAuthAccessToken ?? undefined
@@ -823,6 +825,7 @@ export default function MatchCreateScreen() {
     devFutureTwoMinuteMode,
     scheduledForDraft,
     rematchSourceMatchId,
+    verificationRequired,
     router,
     googleOAuthAccessToken,
   ]);
@@ -1148,6 +1151,23 @@ export default function MatchCreateScreen() {
                   </Pressable>
                 );
               })}
+              <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Scorecard verification</Text>
+              <Pressable
+                style={[styles.holeCard, verificationRequired && styles.holeCardOn]}
+                onPress={() => setVerificationRequired((v) => !v)}
+                accessibilityRole="switch"
+                accessibilityState={{ checked: verificationRequired }}
+                accessibilityLabel="Require scorecard verification"
+              >
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.holeTitle}>Require scorecard verification</Text>
+                  <Text style={styles.holeSub}>
+                    Both players upload a final scorecard screenshot; AI confirms scores match before the match
+                    completes.
+                  </Text>
+                </View>
+                {verificationRequired ? <IconCheckmark size={20} color={colors.accent} /> : null}
+              </Pressable>
             </>
           ) : null}
 

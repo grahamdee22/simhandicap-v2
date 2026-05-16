@@ -899,6 +899,13 @@ export function MatchPlayHub({
             </Text>
           </View>
         ) : null}
+        {m.verification_required &&
+        (m.status === 'active' || m.status === 'waiting') &&
+        m.player_2_id != null ? (
+          <View style={[styles.cardStatusBadge, styles.cardStatusBadgeVerification]}>
+            <Text style={styles.cardStatusBadgeTxtVerification}>Verification required</Text>
+          </View>
+        ) : null}
         <Text style={styles.cardTitle} numberOfLines={1}>
           {m.course_name}
         </Text>
@@ -1270,6 +1277,12 @@ const styles = StyleSheet.create({
   cardStatusBadgeTxtIncoming: { fontSize: 11, fontWeight: '700', color: colors.accentDark },
   cardStatusBadgeTxtMuted: { fontSize: 11, fontWeight: '600', color: colors.muted },
   cardStatusBadgeTxtYours: { fontSize: 11, fontWeight: '700', color: colors.header },
+  cardStatusBadgeVerification: {
+    backgroundColor: colors.forestDeep,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.sage,
+  },
+  cardStatusBadgeTxtVerification: { fontSize: 11, fontWeight: '700', color: colors.sage },
   cardTitle: { fontSize: 13, fontWeight: '700', color: colors.ink },
   cardMeta: { fontSize: 11, color: colors.muted, marginTop: 4, lineHeight: 16 },
   cardPeople: { fontSize: 11, color: colors.subtle, marginTop: 6, lineHeight: 15 },

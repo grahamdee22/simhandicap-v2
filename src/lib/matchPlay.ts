@@ -118,6 +118,13 @@ export type DbMatchRow = {
   scheduled_for?: string | null;
   /** Open-challenge lifecycle state (scheduled/awaiting_photo/active/expired). */
   challenge_status?: OpenChallengeStatus | null;
+  verification_required?: boolean;
+  p1_verified?: boolean;
+  p2_verified?: boolean;
+  p1_screenshot_url?: string | null;
+  p2_screenshot_url?: string | null;
+  p1_verification_notes?: string | null;
+  p2_verification_notes?: string | null;
 };
 
 export type MatchListResult = { data: DbMatchRow[] | null; error: string | null };
@@ -208,6 +215,7 @@ export type InsertMatchInput = {
   player_1_platform?: string | null;
   scheduled_for?: string | null;
   challenge_status?: OpenChallengeStatus | null;
+  verification_required?: boolean;
 };
 
 /** Updatable subset (RLS still applies). */
@@ -239,6 +247,13 @@ export type MatchUpdatePatch = Partial<{
   player_2_settings_photo_url: string | null;
   scheduled_for: string | null;
   challenge_status: OpenChallengeStatus | null;
+  verification_required: boolean;
+  p1_verified: boolean;
+  p2_verified: boolean;
+  p1_screenshot_url: string | null;
+  p2_screenshot_url: string | null;
+  p1_verification_notes: string | null;
+  p2_verification_notes: string | null;
 }>;
 
 function asMatchRow(row: unknown): DbMatchRow {
@@ -274,12 +289,31 @@ function normalizeMatchRow(record: unknown): DbMatchRow {
       challenge_status = v as OpenChallengeStatus;
     }
   }
+  const verification_required = r.verification_required === true;
+  const p1_verified = r.p1_verified === true;
+  const p2_verified = r.p2_verified === true;
+  const p1_screenshot_url =
+    r.p1_screenshot_url == null ? null : String(r.p1_screenshot_url);
+  const p2_screenshot_url =
+    r.p2_screenshot_url == null ? null : String(r.p2_screenshot_url);
+  const p1_verification_notes =
+    r.p1_verification_notes == null ? null : String(r.p1_verification_notes);
+  const p2_verification_notes =
+    r.p2_verification_notes == null ? null : String(r.p2_verification_notes);
+
   return {
     ...base,
     player_1_platform,
     player_1_ghin_index_at_post,
     scheduled_for,
     challenge_status,
+    verification_required,
+    p1_verified,
+    p2_verified,
+    p1_screenshot_url,
+    p2_screenshot_url,
+    p1_verification_notes,
+    p2_verification_notes,
   };
 }
 
@@ -803,6 +837,13 @@ export async function insertMatch(
         : canonicalPlatformId(String(input.player_1_platform)),
     scheduled_for: input.scheduled_for ?? null,
     challenge_status: input.challenge_status ?? null,
+    verification_required: input.verification_required ?? false,
+    p1_verified: false,
+    p2_verified: false,
+    p1_screenshot_url: null,
+    p2_screenshot_url: null,
+    p1_verification_notes: null,
+    p2_verification_notes: null,
   };
 
   if (accessToken) {

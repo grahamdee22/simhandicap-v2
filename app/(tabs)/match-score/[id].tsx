@@ -43,6 +43,8 @@ import {
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { MatchChat } from '../../../src/components/MatchChat';
+import { MatchScorecardVerification } from '../../../src/components/MatchScorecardVerification';
+import { matchReadyToFinalize } from '../../../src/lib/matchVerification';
 
 const GROSS_MIN = 1;
 const GROSS_MAX = 15;
@@ -301,6 +303,7 @@ export default function MatchScoreScreen() {
       if (m.status !== 'active' || !strokeCtx || !course || !m.player_2_id) return;
       const totals = computeTotalsIfComplete(m, course, holeRows, strokeCtx, m.player_2_id);
       if (!totals) return;
+      if (!matchReadyToFinalize(m)) return;
       const { totalNet1, totalNet2 } = totals;
       let winner_id: string | null = null;
       if (totalNet1 < totalNet2) winner_id = m.player_1_id;
@@ -323,6 +326,20 @@ export default function MatchScoreScreen() {
     },
     [strokeCtx, course, router, googleOAuthAccessToken]
   );
+
+  const onVerificationComplete = useCallback(async () => {
+    if (!matchId || !supabaseOn || !user?.id) return;
+    const [mRes, hRes] = await Promise.all([
+      getMatchById(matchId, googleOAuthAccessToken ?? undefined),
+      listMatchHoles(matchId, googleOAuthAccessToken ?? undefined),
+    ]);
+    if (!mounted.current) return;
+    if (mRes.data) setMatch(mRes.data);
+    if (hRes.data) setHoles(hRes.data);
+    if (mRes.data && hRes.data) {
+      await tryFinalize(mRes.data, hRes.data);
+    }
+  }, [matchId, supabaseOn, user?.id, googleOAuthAccessToken, tryFinalize]);
 
   const onSubmitHole = useCallback(async () => {
     if (
@@ -770,6 +787,17 @@ export default function MatchScoreScreen() {
             </View>
           </View>
 
+          {myDone && match.verification_required && user?.id ? (
+            <MatchScorecardVerification
+              match={match}
+              holes={holes}
+              userId={user.id}
+              isPlayer1={amPlayer1}
+              accessToken={googleOAuthAccessToken ?? undefined}
+              onVerified={() => void onVerificationComplete()}
+            />
+          ) : null}
+
           <MatchChat
             matchId={matchId}
             currentUserId={user.id}
@@ -779,7 +807,11 @@ export default function MatchScoreScreen() {
 
         <View style={styles.footer}>
           {myDone ? (
-            <Text style={styles.footerTitle}>You&apos;ve entered all holes. Totals lock when both players finish.</Text>
+            <Text style={styles.footerTitle}>
+              {match.verification_required
+                ? 'You\'ve entered all holes. Upload and verify your scorecard screenshot to finish.'
+                : 'You\'ve entered all holes. Totals lock when both players finish.'}
+            </Text>
           ) : (
             <>
               <Text style={styles.footerTitle}>
