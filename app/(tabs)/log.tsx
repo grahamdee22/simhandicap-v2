@@ -1,5 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useAuth } from '../../src/auth/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -21,6 +22,9 @@ import {
 } from '../../src/lib/handicap';
 import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates';
 import { showAppAlert } from '../../src/lib/alertCompat';
+import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
+import { recordRoundForActiveLeagues } from '../../src/lib/leagues';
+import { isSupabaseConfigured } from '../../src/lib/supabase';
 import {
   COURSE_SEEDS,
   courseMatchesSearch,
@@ -62,6 +66,16 @@ const PIN_OPTS: { key: PinDay; dn: string; ds: string }[] = [
 /** Set true to log gross resolution in dev tools when saving a round. */
 const DEBUG_LOG_GROSS_SAVE = false;
 
+function ordinalPlace(n: number): string {
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
+  const mod10 = n % 10;
+  if (mod10 === 1) return `${n}st`;
+  if (mod10 === 2) return `${n}nd`;
+  if (mod10 === 3) return `${n}rd`;
+  return `${n}th`;
+}
+
 export default function LogRoundScreen() {
   const { gutter, isWide } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -70,9 +84,12 @@ export default function LogRoundScreen() {
   const editId =
     typeof params.editId === 'string' && params.editId.length > 0 ? params.editId : undefined;
 
+  const { user } = useAuth();
   const addRound = useAppStore((s) => s.addRound);
   const updateRound = useAppStore((s) => s.updateRound);
   const rounds = useAppStore((s) => s.rounds);
+  const groups = useAppStore((s) => s.groups);
+  const supabaseOn = isSupabaseConfigured();
   const pendingH2hMatchup = useAppStore((s) => s.pendingH2hMatchup);
   const setPendingH2hMatchup = useAppStore((s) => s.setPendingH2hMatchup);
   const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
@@ -413,11 +430,47 @@ export default function LogRoundScreen() {
         if (snap.existing) {
           await updateRound(snap.existing.id, base);
           resetLogForm();
+          router.replace('/(tabs)/analyze');
         } else {
-          await addRound(base);
+          const saved = await addRound(base);
           resetLogForm();
+          let leagueBanner: string | undefined;
+          if (supabaseOn && user?.id) {
+            const groupIds = groups
+              .filter((gr) => gr.members.some((m) => m.userId === user.id))
+              .map((gr) => gr.id);
+            const displayNames: Record<string, string> = {};
+            for (const gr of groups) {
+              for (const m of gr.members) {
+                if (m.userId) displayNames[m.userId] = m.displayName.replace(' (you)', '');
+              }
+            }
+            const leagueResults = await recordRoundForActiveLeagues({
+              userId: user.id,
+              groupIds,
+              roundId: saved.id,
+              grossScore: saved.grossScore,
+              playedAt: saved.playedAt,
+              simIndex: saved.indexAfter ?? saved.simcapIndexAtTime ?? null,
+              displayNames,
+              accessToken: googleOAuthAccessToken ?? undefined,
+            });
+            if (leagueResults.length > 0) {
+              const hit = leagueResults[0];
+              const place = ordinalPlace(hit.position);
+              const isTeamFmt = hit.format === 'scramble' || hit.format === 'best_ball';
+              leagueBanner =
+                isTeamFmt && hit.teamName
+                  ? `This round counts toward Team ${hit.teamName}'s score! You're currently in ${place} place.`
+                  : `This round counts toward ${hit.leagueName}! You're currently in ${place} place.`;
+            }
+          }
+          router.replace(
+            leagueBanner
+              ? { pathname: '/(tabs)/analyze', params: { leagueBanner } }
+              : '/(tabs)/analyze'
+          );
         }
-        router.replace('/(tabs)/analyze');
       } catch (e) {
         showAppAlert('Could not save', String(e));
       }

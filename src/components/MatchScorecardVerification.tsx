@@ -27,6 +27,9 @@ import { invokeScorecardVerification } from '../lib/scorecardVerification';
 import { loggedGrossTotalForPlayer, matchHoleNumbers } from '../lib/matchStrokeMath';
 import type { DbMatchHoleRow } from '../lib/matchPlay';
 
+/** Stripped from production builds via `__DEV__` (same pattern as settings screenshot skip). */
+const ALLOW_DEV_VERIFY_BYPASS = __DEV__;
+
 type Props = {
   match: DbMatchRow;
   holes: DbMatchHoleRow[];
@@ -45,6 +48,7 @@ export function MatchScorecardVerification({
   onVerified,
 }: Props) {
   const [busy, setBusy] = useState(false);
+  const [devBypassBusy, setDevBypassBusy] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
 
   const uiState: ScorecardVerificationUiState = playerVerificationUiState(match, isPlayer1);
@@ -138,6 +142,26 @@ export function MatchScorecardVerification({
     onVerified();
   }, [busy, verified, match.id, userId, accessToken, patchVerificationFields, onVerified]);
 
+  const onDevBypassVerify = useCallback(async () => {
+    if (!ALLOW_DEV_VERIFY_BYPASS || busy || devBypassBusy || verified) return;
+    setDevBypassBusy(true);
+    const notes = JSON.stringify({
+      status: 'verified',
+      message: 'Dev bypass: scorecard marked verified without AI review.',
+      dev_bypass: true,
+    });
+    const patch = isPlayer1
+      ? { p1_verified: true, p1_verification_notes: notes }
+      : { p2_verified: true, p2_verification_notes: notes };
+    const res = await updateMatchById(match.id, patch, accessToken);
+    setDevBypassBusy(false);
+    if (res.error) {
+      showAppAlert('Dev bypass failed', res.error);
+      return;
+    }
+    onVerified();
+  }, [busy, devBypassBusy, verified, isPlayer1, match.id, accessToken, onVerified]);
+
   if (!match.verification_required) return null;
 
   const oppVerified = isPlayer1 ? match.p2_verified : match.p1_verified;
@@ -166,21 +190,42 @@ export function MatchScorecardVerification({
       ) : null}
 
       {!verified ? (
-        <Pressable
-          style={({ pressed }) => [styles.btn, pressed && styles.btnPressed, busy && styles.btnDisabled]}
-          disabled={busy}
-          onPress={() => void onPickAndVerify()}
-          accessibilityRole="button"
-          accessibilityLabel="Upload scorecard screenshot for verification"
-        >
-          {busy ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.btnTxt}>
-              {uiState === 'failed' ? 'Resubmit scorecard screenshot' : 'Upload scorecard screenshot'}
-            </Text>
-          )}
-        </Pressable>
+        <>
+          <Pressable
+            style={({ pressed }) => [styles.btn, pressed && styles.btnPressed, busy && styles.btnDisabled]}
+            disabled={busy || devBypassBusy}
+            onPress={() => void onPickAndVerify()}
+            accessibilityRole="button"
+            accessibilityLabel="Upload scorecard screenshot for verification"
+          >
+            {busy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.btnTxt}>
+                {uiState === 'failed' ? 'Resubmit scorecard screenshot' : 'Upload scorecard screenshot'}
+              </Text>
+            )}
+          </Pressable>
+          {ALLOW_DEV_VERIFY_BYPASS ? (
+            <Pressable
+              style={({ pressed }) => [
+                styles.devBypassBtn,
+                pressed && styles.devBypassBtnPressed,
+                (busy || devBypassBusy) && styles.btnDisabled,
+              ]}
+              disabled={busy || devBypassBusy}
+              onPress={() => void onDevBypassVerify()}
+              accessibilityRole="button"
+              accessibilityLabel="Mark scorecard verified without AI, development only"
+            >
+              {devBypassBusy ? (
+                <ActivityIndicator size="small" color="#9a5a00" />
+              ) : (
+                <Text style={styles.devBypassBtnTxt}>DEV ONLY · Mark verified (skip AI)</Text>
+              )}
+            </Pressable>
+          ) : null}
+        </>
       ) : (
         <Text style={styles.doneHint}>
           {matchReadyToFinalize(match)
@@ -248,4 +293,16 @@ const styles = StyleSheet.create({
     marginTop: 12,
     lineHeight: 18,
   },
+  devBypassBtn: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#d97706',
+    backgroundColor: '#fffbeb',
+    alignItems: 'center',
+  },
+  devBypassBtnPressed: { opacity: 0.9 },
+  devBypassBtnTxt: { fontSize: 12, fontWeight: '700', color: '#9a5a00' },
 });

@@ -1,5 +1,5 @@
-import { Link } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { Link, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
@@ -97,10 +97,18 @@ function labelForPlatform(k: PlatformId | null) {
 }
 
 export default function AnalyzeScreen() {
+  const params = useLocalSearchParams<{ leagueBanner?: string | string[] }>();
   const insets = useSafeAreaInsets();
   const { gutter, maxContent, homeSplit, isWide, isVeryWide } = useResponsive();
   const rounds = useAppStore((s) => s.rounds);
+  const [leagueBanner, setLeagueBanner] = useState<string | null>(null);
   const [filters, setFilters] = useState<RoundFilters>(EMPTY_FILTERS);
+
+  useEffect(() => {
+    const raw = params.leagueBanner;
+    const msg = typeof raw === 'string' ? raw : raw?.[0];
+    if (msg) setLeagueBanner(msg);
+  }, [params.leagueBanner]);
   const [draftFilters, setDraftFilters] = useState<RoundFilters>(EMPTY_FILTERS);
   const [filtersExpanded, setFiltersExpanded] = useState(false);
   const filteredRounds = useMemo(
@@ -482,6 +490,15 @@ export default function AnalyzeScreen() {
           </Text>
         </View>
 
+        {leagueBanner ? (
+          <View style={[styles.leagueBanner, { marginHorizontal: gutter, marginBottom: 12 }]}>
+            <Text style={styles.leagueBannerTxt}>{leagueBanner}</Text>
+            <Pressable onPress={() => setLeagueBanner(null)} hitSlop={8} accessibilityRole="button">
+              <Text style={styles.leagueBannerDismiss}>Dismiss</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         {homeSplit ? (
           <View style={[styles.splitRow, { paddingHorizontal: gutter, gap: gutter }]}>
             <View style={[styles.splitLeft, { minWidth: 0 }]}>
@@ -520,6 +537,16 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   introSub: { fontSize: 12, color: colors.muted, lineHeight: 17, maxWidth: 520 },
+  leagueBanner: {
+    backgroundColor: '#d8f3dc',
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.sage,
+    padding: 14,
+    gap: 8,
+  },
+  leagueBannerTxt: { fontSize: 14, color: colors.ink, lineHeight: 20, fontWeight: '600' },
+  leagueBannerDismiss: { fontSize: 13, fontWeight: '700', color: colors.sage, alignSelf: 'flex-end' },
   splitRow: { flexDirection: 'row', alignItems: 'flex-start', width: '100%', marginTop: 4 },
   splitLeft: { flex: 1 },
   splitRight: { flexShrink: 0 },

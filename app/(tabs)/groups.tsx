@@ -18,6 +18,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { GroupTournamentsSection } from '../../src/components/GroupTournamentsSection';
 import { MatchPlayHub } from '../../src/components/MatchPlayHub';
 import { IconPlus } from '../../src/components/SvgUiIcons';
 import { confirmDestructive, showAppAlert } from '../../src/lib/alertCompat';
@@ -349,6 +350,14 @@ export default function GroupsScreen() {
   const isGroupCreator =
     supabaseOn && !!user?.id && !!g?.createdByUserId && g.createdByUserId === user.id;
 
+  const leagueDisplayNames = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const mem of g?.members ?? []) {
+      if (mem.userId) m[mem.userId] = mem.displayName.replace(' (you)', '');
+    }
+    return m;
+  }, [g?.members]);
+
   const onDeleteGroup = async () => {
     if (!g?.id || !isGroupCreator) return;
     const ok = await confirmDestructive(
@@ -634,13 +643,6 @@ export default function GroupsScreen() {
                       )}
                     </Pressable>
                   ) : null}
-                  <Pressable
-                    onPress={openInvite}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Invite someone to ${g.name}`}
-                  >
-                    <Text style={styles.invite}>+ Invite</Text>
-                  </Pressable>
                 </View>
               </View>
               {!hasMemberOrPending ? (
@@ -745,6 +747,22 @@ export default function GroupsScreen() {
                 </>
               )}
             </View>
+
+            <GroupTournamentsSection
+              group={g}
+              isGroupCreator={isGroupCreator}
+              gutter={gutter}
+              displayNames={leagueDisplayNames}
+            />
+
+            <Pressable
+              onPress={openInvite}
+              style={{ marginHorizontal: gutter, marginTop: 12, alignSelf: 'flex-start' }}
+              accessibilityRole="button"
+              accessibilityLabel={`Invite someone to ${g.name}`}
+            >
+              <Text style={styles.invite}>+ Invite</Text>
+            </Pressable>
 
             <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter, marginTop: 16 }]}>
               <View style={styles.sectionHeaderRow}>

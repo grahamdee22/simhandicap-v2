@@ -233,6 +233,30 @@ export default function TabLayout() {
           tabBarLabel: 'Contact',
         }}
       />
+      <Tabs.Screen
+        name="league-create/[groupId]"
+        options={{
+          href: null,
+          title: 'Create tournament',
+          headerRight: HeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
+        name="league/[id]"
+        options={{
+          href: null,
+          title: 'Tournament',
+          headerRight: HeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
+        name="league-manage/[id]"
+        options={{
+          href: null,
+          title: 'Manage tournament',
+          headerRight: HeaderInstagramAndSimCap,
+        }}
+      />
     </Tabs>
   );
 }
