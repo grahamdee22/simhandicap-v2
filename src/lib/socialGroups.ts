@@ -90,16 +90,85 @@ async function restSelectRows(accessToken: string, pathAndQuery: string): Promis
   return Array.isArray(parsed) ? parsed : [];
 }
 
-/** Fetch `social_groups.created_by` when store rows lack it (e.g. stale persist). */
+/** Bearer for social_groups REST: native Google OAuth token, else Supabase session JWT. */
+export async function resolveSocialGroupsAccessToken(): Promise<string | null> {
+  if (googleOAuthAccessToken) return googleOAuthAccessToken;
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    console.warn('[socialGroups] resolveSocialGroupsAccessToken', error.message);
+    return null;
+  }
+  return data.session?.access_token ?? null;
+}
+
+function groupMissingCreatorId(g: FriendGroup): boolean {
+  return !!g.id && !g.createdByUserId?.trim();
+}
+
+/**
+ * Patch `createdByUserId` for persisted groups that predate the field (batch fetch from Supabase).
+ * Returns true when every group in the store now has a non-empty creator id or none were missing.
+ */
+export async function backfillGroupCreatorsInStore(accessToken?: string): Promise<boolean> {
+  const groups = useAppStore.getState().groups;
+  const needIds = groups.filter(groupMissingCreatorId).map((g) => g.id);
+  if (needIds.length === 0) return true;
+
+  const tok = accessToken ?? (await resolveSocialGroupsAccessToken());
+  const creatorByGroupId = new Map<string, string>();
+
+  if (tok) {
+    const idInList = (ids: string[]) => `in.(${ids.join(',')})`;
+    const rows = (await restSelectRows(
+      tok,
+      `social_groups?id=${idInList(needIds)}&select=id,created_by`
+    )) as { id: string; created_by?: string }[];
+    for (const row of rows) {
+      const createdBy = row.created_by?.trim();
+      if (createdBy) creatorByGroupId.set(row.id, createdBy);
+    }
+  } else if (supabase) {
+    const { data, error } = await supabase
+      .from('social_groups')
+      .select('id, created_by')
+      .in('id', needIds);
+    if (error) {
+      console.warn('[socialGroups] backfillGroupCreatorsInStore', error.message);
+      return false;
+    }
+    for (const row of data ?? []) {
+      const createdBy = row.created_by?.trim();
+      if (createdBy) creatorByGroupId.set(row.id, createdBy);
+    }
+  } else {
+    return false;
+  }
+
+  if (creatorByGroupId.size === 0) {
+    console.warn('[socialGroups] backfillGroupCreatorsInStore: no created_by rows for', needIds.length, 'groups');
+    return false;
+  }
+
+  const next = groups.map((g) => {
+    const createdBy = creatorByGroupId.get(g.id);
+    return createdBy ? { ...g, createdByUserId: createdBy } : g;
+  });
+  useAppStore.getState().setGroups(next);
+  return next.every((g) => !groupMissingCreatorId(g));
+}
+
+/** Fetch `social_groups.created_by` for one group (prefer batch backfill when possible). */
 export async function fetchSocialGroupCreatedBy(
   groupId: string,
   accessToken?: string
 ): Promise<string | null> {
-  if (accessToken) {
+  const tok = accessToken ?? (await resolveSocialGroupsAccessToken());
+  if (tok) {
     const rows = (await restSelectRows(
-      accessToken,
-      `social_groups?id=eq.${encodeURIComponent(groupId)}&select=created_by`
-    )) as { created_by?: string }[];
+      tok,
+      `social_groups?id=eq.${encodeURIComponent(groupId)}&select=id,created_by`
+    )) as { id: string; created_by?: string }[];
     const id = rows[0]?.created_by?.trim();
     return id || null;
   }
@@ -275,6 +344,7 @@ async function fetchMySocialGroupsIntoStoreRest(uid: string, accessToken: string
     sgiRows,
     roundsRows
   );
+  await backfillGroupCreatorsInStore(accessToken);
 }
 
 /**
@@ -332,7 +402,10 @@ function mapProfileToMember(
 }
 
 /** Load crews from Supabase and replace `groups` in the store (then caller may run recomputeGroupsFromYou). */
-export async function fetchMySocialGroupsIntoStore(userId?: string, accessToken?: string): Promise<void> {
+export async function fetchMySocialGroupsIntoStore(
+  userId?: string,
+  accessToken?: string
+): Promise<void> {
   let uid: string | undefined = userId;
   if (!uid) {
     if (!supabase) {
@@ -451,6 +524,8 @@ export async function fetchMySocialGroupsIntoStore(userId?: string, accessToken?
     sgiRows ?? [],
     roundsRows
   );
+  const tok = accessToken ?? (await resolveSocialGroupsAccessToken());
+  await backfillGroupCreatorsInStore(tok ?? undefined);
 }
 
 let socialRealtimeDebounce: ReturnType<typeof setTimeout> | null = null;
@@ -481,15 +556,19 @@ export function attachSocialGroupsRealtimeSync(
       socialRealtimeDebounce = null;
       void (async () => {
         const uid = socialRefetchUserId;
-        const restTok = googleOAuthAccessToken ?? undefined;
+        const restTok =
+          googleOAuthAccessToken ?? accessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
         if (uid && restTok) {
           await fetchMySocialGroupsIntoStore(uid, restTok);
+          await backfillGroupCreatorsInStore(restTok);
           await fetchInboundGroupInvitesIntoStore(uid, restTok);
         } else if (uid) {
           await fetchMySocialGroupsIntoStore(uid);
+          await backfillGroupCreatorsInStore();
           await fetchInboundGroupInvitesIntoStore(uid);
         } else {
           await fetchMySocialGroupsIntoStore();
+          await backfillGroupCreatorsInStore();
           await fetchInboundGroupInvitesIntoStore();
         }
         useAppStore.getState().recomputeGroupsFromYou();

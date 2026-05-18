@@ -1,4 +1,5 @@
 import type { DbLeagueRow, DbLeagueEntryRow, DbLeagueRoundRow, DbLeagueTeamRow, LeagueFormat } from './leagues';
+import { leagueRoundsForStandings } from './leagues';
 
 export type LeagueStandingRow = {
   rank: number;
@@ -33,7 +34,8 @@ export function computeLeagueStandings(params: {
   displayNames: Record<string, string>;
   matchWinsByUser?: Record<string, number>;
 }): LeagueStandingRow[] {
-  const { league, entries, rounds, teams, displayNames, matchWinsByUser } = params;
+  const { league, entries, teams, displayNames, matchWinsByUser } = params;
+  const rounds = leagueRoundsForStandings(params.rounds);
   const isTeamFormat = league.format === 'scramble' || league.format === 'best_ball';
 
   if (league.format === 'match_play') {

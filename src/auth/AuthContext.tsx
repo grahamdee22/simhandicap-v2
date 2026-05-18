@@ -7,8 +7,10 @@ import { applyProfileRowToStore, fetchMyProfile } from '../lib/profiles';
 import { fetchMyRoundsForUser } from '../lib/rounds';
 import {
   attachSocialGroupsRealtimeSync,
+  backfillGroupCreatorsInStore,
   fetchInboundGroupInvitesIntoStore,
   fetchMySocialGroupsIntoStore,
+  resolveSocialGroupsAccessToken,
 } from '../lib/socialGroups';
 import { clearOnboardingSeen, getOnboardingSeen, setOnboardingSeen } from '../lib/onboardingStorage';
 import { clearGoogleOAuthAccessToken, googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
@@ -144,14 +146,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
         }
         await syncProfileIntoStore();
-        await fetchMySocialGroupsIntoStore(
-          data.session?.user?.id,
-          googleOAuthAccessToken ?? undefined
-        );
-        await fetchInboundGroupInvitesIntoStore(
-          data.session?.user?.id,
-          googleOAuthAccessToken ?? undefined
-        );
+        const accessToken =
+          googleOAuthAccessToken ?? data.session?.access_token ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+        await fetchMySocialGroupsIntoStore(data.session?.user?.id, accessToken);
+        await backfillGroupCreatorsInStore(accessToken);
+        await fetchInboundGroupInvitesIntoStore(data.session?.user?.id, accessToken);
         useAppStore.getState().recomputeGroupsFromYou();
       }
       setSession(data.session);
@@ -170,8 +169,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
         }
         await syncProfileIntoStore();
-        await fetchMySocialGroupsIntoStore(next?.user?.id, googleOAuthAccessToken ?? undefined);
-        await fetchInboundGroupInvitesIntoStore(next?.user?.id, googleOAuthAccessToken ?? undefined);
+        const accessToken =
+          googleOAuthAccessToken ?? next?.access_token ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+        await fetchMySocialGroupsIntoStore(next?.user?.id, accessToken);
+        await backfillGroupCreatorsInStore(accessToken);
+        await fetchInboundGroupInvitesIntoStore(next?.user?.id, accessToken);
         useAppStore.getState().recomputeGroupsFromYou();
       } else if (!next?.user) {
         useAppStore.getState().setInboundGroupInvites([]);

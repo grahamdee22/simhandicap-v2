@@ -52,7 +52,13 @@ export type SimRound = {
   h2hGroupId?: string;
   h2hOpponentMemberId?: string;
   h2hOpponentDisplayName?: string;
+  /** Team tournament rounds: stored in history but excluded from SimCap index math. */
+  excludesFromSimcapIndex?: boolean;
 };
+
+function roundsForSimcapIndex(rounds: SimRound[]): SimRound[] {
+  return rounds.filter((r) => !r.excludesFromSimcapIndex);
+}
 
 export type GroupMember = {
   id: string;
@@ -238,7 +244,7 @@ export type PendingH2hMatchup = {
 };
 
 export function currentIndexFromRounds(rounds: SimRound[]): number | null {
-  const sorted = [...rounds].sort(compareRoundsByPlayedAtAsc);
+  const sorted = [...roundsForSimcapIndex(rounds)].sort(compareRoundsByPlayedAtAsc);
   return handicapIndexFromDifferentials(sorted.map((r) => r.adjustedDiff));
 }
 
@@ -283,14 +289,19 @@ function recalcAllRounds(rounds: SimRound[]): SimRound[] {
   for (const r of sorted) {
     const storedAdjustedDiff =
       typeof r.adjustedDiff === 'number' && Number.isFinite(r.adjustedDiff) ? r.adjustedDiff : 0;
-    diffsSoFar.push(storedAdjustedDiff);
-    const before = handicapIndexFromDifferentials(diffsSoFar.slice(0, -1));
-    const after = handicapIndexFromDifferentials(diffsSoFar);
+    const countsForIndex = !r.excludesFromSimcapIndex;
+    const before = handicapIndexFromDifferentials([...diffsSoFar]);
+    let after = before;
+    if (countsForIndex) {
+      diffsSoFar.push(storedAdjustedDiff);
+      after = handicapIndexFromDifferentials([...diffsSoFar]);
+    }
     out.push({
       ...r,
       indexAfter: after,
-      indexDelta: before != null && after != null ? round1(after - before) : null,
-      simcapIndexAtTime: r.simcapIndexAtTime ?? null,
+      indexDelta:
+        countsForIndex && before != null && after != null ? round1(after - before) : null,
+      simcapIndexAtTime: r.simcapIndexAtTime ?? before,
     });
   }
   return out.sort(compareRoundsByPlayedAtDesc);
@@ -334,7 +345,8 @@ export const useAppStore = create<AppState>()(
         const holeScores = [...input.holeScores];
         while (holeScores.length < 18) holeScores.push(null);
         const grossForMath = grossFromHoles(holeScores) ?? input.grossScore;
-        const sorted = [...get().rounds].sort(compareRoundsByPlayedAtAsc);
+        const excludeFromIndex = !!input.excludesFromSimcapIndex;
+        const sorted = [...roundsForSimcapIndex(get().rounds)].sort(compareRoundsByPlayedAtAsc);
         const before = indexBeforeNewRound(sorted);
         const baseline = ratingForCourse(course, input.platform);
         const cr =
@@ -357,8 +369,10 @@ export const useAppStore = create<AppState>()(
           input.mulligans,
           CURRENT_DIFFERENTIAL_VERSION
         );
-        const trialDiffs = [...sorted.map((r) => r.adjustedDiff), math.adjustedDiff];
-        const after = handicapIndexFromDifferentials(trialDiffs);
+        const trialDiffs = excludeFromIndex
+          ? sorted.map((r) => r.adjustedDiff)
+          : [...sorted.map((r) => r.adjustedDiff), math.adjustedDiff];
+        const after = excludeFromIndex ? before : handicapIndexFromDifferentials(trialDiffs);
         const withoutId: Omit<SimRound, 'id'> = {
           ...input,
           holeScores,
@@ -367,8 +381,10 @@ export const useAppStore = create<AppState>()(
           teeName: input.teeName ?? course.defaultTee,
           ...math,
           indexAfter: after,
-          indexDelta: before != null && after != null ? round1(after - before) : null,
+          indexDelta:
+            !excludeFromIndex && before != null && after != null ? round1(after - before) : null,
           simcapIndexAtTime: before,
+          excludesFromSimcapIndex: excludeFromIndex || undefined,
         };
 
         let id = newId();

@@ -23,7 +23,12 @@ import {
 import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
-import { recordRoundForActiveLeagues } from '../../src/lib/leagues';
+import {
+  fetchActiveTournamentsForUser,
+  isTeamLeagueFormat,
+  recordOptedInLeagueRounds,
+  type ActiveTournamentOption,
+} from '../../src/lib/leagues';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import {
   COURSE_SEEDS,
@@ -110,6 +115,9 @@ export default function LogRoundScreen() {
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [playedDate, setPlayedDate] = useState(todayLocalYmd);
   const [diffInfoOpen, setDiffInfoOpen] = useState<DiffInfoKind>(null);
+  const [activeTournaments, setActiveTournaments] = useState<ActiveTournamentOption[]>([]);
+  const [tournamentApply, setTournamentApply] = useState<Record<string, boolean>>({});
+  const [tournamentsLoading, setTournamentsLoading] = useState(false);
   /** Latest form fields for save (deferred save must not read stale render closures). */
   const latestSaveRef = useRef<{
     grossScore: number;
@@ -162,7 +170,34 @@ export default function LogRoundScreen() {
     }
     setCustomRating('');
     setCustomSlope('');
+    setActiveTournaments([]);
+    setTournamentApply({});
   }, [preferredLogPlatform]);
+
+  const loadActiveTournaments = useCallback(async () => {
+    if (!supabaseOn || !user?.id || existing) {
+      setActiveTournaments([]);
+      setTournamentApply({});
+      return;
+    }
+    setTournamentsLoading(true);
+    const memberGroups = groups
+      .filter((gr) => gr.members.some((m) => m.userId === user.id))
+      .map((gr) => ({ id: gr.id, name: gr.name }));
+    const list = await fetchActiveTournamentsForUser({
+      userId: user.id,
+      groups: memberGroups,
+      playedAt: localYmdToIso(playedDate),
+      accessToken: googleOAuthAccessToken ?? undefined,
+    });
+    setActiveTournaments(list);
+    setTournamentApply(Object.fromEntries(list.map((t) => [t.leagueId, true])));
+    setTournamentsLoading(false);
+  }, [supabaseOn, user?.id, existing, groups, playedDate]);
+
+  useEffect(() => {
+    void loadActiveTournaments();
+  }, [loadActiveTournaments]);
 
   useEffect(() => {
     if (editId) return;
@@ -432,33 +467,44 @@ export default function LogRoundScreen() {
           resetLogForm();
           router.replace('/(tabs)/analyze');
         } else {
-          const saved = await addRound(base);
+          const optedIn = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
+          const hasIndividualOptIn = optedIn.some(
+            (t) => t.format === 'stroke' || t.format === 'match_play'
+          );
+          const hasTeamOptIn = optedIn.some((t) => isTeamLeagueFormat(t.format));
+          const excludesFromSimcapIndex = hasTeamOptIn && !hasIndividualOptIn;
+
+          const saved = await addRound({
+            ...base,
+            excludesFromSimcapIndex: excludesFromSimcapIndex || undefined,
+          });
           resetLogForm();
+
           let leagueBanner: string | undefined;
-          if (supabaseOn && user?.id) {
-            const groupIds = groups
-              .filter((gr) => gr.members.some((m) => m.userId === user.id))
-              .map((gr) => gr.id);
+          if (supabaseOn && user?.id && optedIn.length > 0) {
             const displayNames: Record<string, string> = {};
             for (const gr of groups) {
               for (const m of gr.members) {
                 if (m.userId) displayNames[m.userId] = m.displayName.replace(' (you)', '');
               }
             }
-            const leagueResults = await recordRoundForActiveLeagues({
+            const leagueResults = await recordOptedInLeagueRounds({
               userId: user.id,
-              groupIds,
               roundId: saved.id,
               grossScore: saved.grossScore,
               playedAt: saved.playedAt,
-              simIndex: saved.indexAfter ?? saved.simcapIndexAtTime ?? null,
+              simIndex: saved.simcapIndexAtTime ?? saved.indexAfter ?? null,
+              selections: activeTournaments.map((t) => ({
+                leagueId: t.leagueId,
+                apply: tournamentApply[t.leagueId] !== false,
+              })),
               displayNames,
               accessToken: googleOAuthAccessToken ?? undefined,
             });
             if (leagueResults.length > 0) {
               const hit = leagueResults[0];
               const place = ordinalPlace(hit.position);
-              const isTeamFmt = hit.format === 'scramble' || hit.format === 'best_ball';
+              const isTeamFmt = isTeamLeagueFormat(hit.format);
               leagueBanner =
                 isTeamFmt && hit.teamName
                   ? `This round counts toward Team ${hit.teamName}'s score! You're currently in ${place} place.`
@@ -706,6 +752,54 @@ export default function LogRoundScreen() {
               <Text style={styles.predNoIndex}>
                 Log at least one round to see your expected differential and a target gross for these conditions.
               </Text>
+            )}
+          </View>
+        ) : null}
+
+        {!existing && activeTournaments.length > 0 ? (
+          <View style={styles.tournamentSection}>
+            <Text style={styles.tournamentSectionTitle}>Active Tournaments</Text>
+            {tournamentsLoading ? (
+              <Text style={styles.tournamentLoading}>Checking active tournaments…</Text>
+            ) : (
+              activeTournaments.map((t) => {
+                const apply = tournamentApply[t.leagueId] !== false;
+                return (
+                  <View key={t.leagueId} style={styles.tournamentCard}>
+                    <Text style={styles.tournamentQ}>
+                      Apply this round to {t.leagueName}?
+                    </Text>
+                    <Text style={styles.tournamentMeta}>{t.groupName}</Text>
+                    <View style={styles.tournamentYesNo}>
+                      <Pressable
+                        style={[styles.tournamentOpt, apply && styles.tournamentOptOn]}
+                        onPress={() =>
+                          setTournamentApply((prev) => ({ ...prev, [t.leagueId]: true }))
+                        }
+                      >
+                        <Text style={[styles.tournamentOptTxt, apply && styles.tournamentOptTxtOn]}>
+                          Yes
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.tournamentOpt, !apply && styles.tournamentOptOn]}
+                        onPress={() =>
+                          setTournamentApply((prev) => ({ ...prev, [t.leagueId]: false }))
+                        }
+                      >
+                        <Text style={[styles.tournamentOptTxt, !apply && styles.tournamentOptTxtOn]}>
+                          No
+                        </Text>
+                      </Pressable>
+                    </View>
+                    {isTeamLeagueFormat(t.format) ? (
+                      <Text style={styles.tournamentTeamNote}>
+                        Scramble/Best Ball rounds won&apos;t affect your personal SimCap index.
+                      </Text>
+                    ) : null}
+                  </View>
+                );
+              })
             )}
           </View>
         ) : null}
@@ -1013,6 +1107,46 @@ const styles = StyleSheet.create({
   saveBtnPressed: { opacity: 0.88 },
   saveBtnLg: { paddingVertical: 14, maxWidth: 480, alignSelf: 'center', width: '100%' },
   saveTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
+  tournamentSection: {
+    marginTop: 20,
+    marginBottom: 8,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: '#f0f7f3',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  tournamentSectionTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.sage,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 12,
+  },
+  tournamentLoading: { fontSize: 13, color: colors.muted, marginBottom: 8 },
+  tournamentCard: {
+    paddingVertical: 12,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: 6,
+  },
+  tournamentQ: { fontSize: 14, fontWeight: '600', color: colors.ink },
+  tournamentMeta: { fontSize: 12, color: colors.muted },
+  tournamentYesNo: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  tournamentOpt: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.pillBorder,
+    alignItems: 'center',
+    backgroundColor: colors.surface,
+  },
+  tournamentOptOn: { backgroundColor: colors.header, borderColor: colors.header },
+  tournamentOptTxt: { fontSize: 14, fontWeight: '700', color: colors.ink },
+  tournamentOptTxtOn: { color: '#fff' },
+  tournamentTeamNote: { fontSize: 11, color: colors.muted, lineHeight: 16, marginTop: 4 },
   saveHint: { fontSize: 11, color: colors.muted, textAlign: 'center', marginTop: 10, lineHeight: 15, paddingHorizontal: 8 },
   modalRoot: {
     flex: 1,

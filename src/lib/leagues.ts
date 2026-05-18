@@ -55,8 +55,21 @@ export type DbLeagueRoundRow = {
   gross_score: number;
   net_score: number;
   counted: boolean;
+  player_opted_in: boolean;
   created_at: string;
 };
+
+export type ActiveTournamentOption = {
+  leagueId: string;
+  leagueName: string;
+  groupId: string;
+  groupName: string;
+  format: LeagueFormat;
+};
+
+export function isTeamLeagueFormat(format: LeagueFormat): boolean {
+  return format === 'scramble' || format === 'best_ball';
+}
 
 export type LeagueBundle = {
   league: DbLeagueRow;
@@ -250,7 +263,7 @@ export async function createLeague(
     start_date: input.startDate,
     end_date: input.endDate,
     rounds_that_count: input.roundsThatCount,
-    use_handicap: input.useHandicap,
+    use_handicap: input.useHandicap !== false,
     created_by: input.createdBy,
     status: 'active' as const,
   };
@@ -368,99 +381,139 @@ export function netScoreForLeagueRound(gross: number, useHandicap: boolean, simI
   return Math.max(1, gross - strokes);
 }
 
-export async function recordRoundForActiveLeagues(params: {
-  userId: string;
-  groupIds: string[];
-  roundId: string;
-  grossScore: number;
-  playedAt: string;
-  simIndex: number | null;
-  displayNames?: Record<string, string>;
-  accessToken?: string;
-}): Promise<
-  {
-    leagueName: string;
-    leagueId: string;
-    position: number;
-    teamName: string | null;
-    format: LeagueFormat;
-  }[]
-> {
-  const results: {
-    leagueName: string;
-    leagueId: string;
-    position: number;
-    teamName: string | null;
-    format: LeagueFormat;
-  }[] = [];
-  const playedYmd = params.playedAt.slice(0, 10);
+/** Rounds that count in standings (player opted in at log time). */
+export function leagueRoundsForStandings(rounds: DbLeagueRoundRow[]): DbLeagueRoundRow[] {
+  return rounds.filter((r) => r.player_opted_in === true);
+}
 
-  for (const groupId of params.groupIds) {
-    const { data: leagues } = await fetchLeaguesForGroup(groupId, params.accessToken);
+/** Active tournaments the user can apply a round to (by group membership + league entry). */
+export async function fetchActiveTournamentsForUser(params: {
+  userId: string;
+  groups: { id: string; name: string }[];
+  playedAt: string;
+  accessToken?: string;
+}): Promise<ActiveTournamentOption[]> {
+  const playedYmd = params.playedAt.slice(0, 10);
+  const out: ActiveTournamentOption[] = [];
+  const seen = new Set<string>();
+
+  for (const group of params.groups) {
+    const { data: leagues } = await fetchLeaguesForGroup(group.id, params.accessToken);
     if (!leagues?.length) continue;
     const synced = await syncLeagueStatuses(leagues, params.accessToken);
-    const active = synced.filter(
-      (l) => l.status === 'active' && playedYmd >= l.start_date && playedYmd <= l.end_date
-    );
-    for (const league of active) {
+    for (const league of synced) {
+      if (league.status !== 'active') continue;
       if (league.format === 'match_play') continue;
+      if (playedYmd < league.start_date || playedYmd > league.end_date) continue;
+      if (seen.has(league.id)) continue;
       const bundleRes = await fetchLeagueBundle(league.id, params.accessToken);
       if (!bundleRes.data) continue;
-      const entry = bundleRes.data.entries.find((e) => e.user_id === params.userId);
-      if (!entry) continue;
-      const net = netScoreForLeagueRound(params.grossScore, league.use_handicap, params.simIndex);
-      const row = {
-        league_id: league.id,
-        user_id: params.userId,
-        league_team_id: entry.league_team_id,
-        round_id: params.roundId,
-        gross_score: params.grossScore,
-        net_score: net,
-        counted: true,
-      };
-      if (params.accessToken) {
-        const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
-        await fetch(`${supabaseUrl}/rest/v1/league_rounds`, {
-          method: 'POST',
-          headers: {
-            apikey: supabaseAnonKey,
-            Authorization: `Bearer ${params.accessToken}`,
-            'Content-Type': 'application/json',
-            Prefer: 'return=minimal',
-          },
-          body: JSON.stringify([row]),
-        });
-      } else if (supabase) {
-        await supabase.from('league_rounds').insert(row);
-      }
-      const refreshed = await fetchLeagueBundle(league.id, params.accessToken);
-      if (!refreshed.data) continue;
-      const { computeLeagueStandings } = await import('./leagueStandings');
-      const names: Record<string, string> = { ...(params.displayNames ?? {}) };
-      for (const e of refreshed.data.entries) {
-        if (!names[e.user_id]) names[e.user_id] = e.user_id;
-      }
-      const standings = computeLeagueStandings({
-        league: refreshed.data.league,
-        entries: refreshed.data.entries,
-        rounds: refreshed.data.rounds,
-        teams: refreshed.data.teams,
-        displayNames: names,
-      });
-      const mine = standings.find((s) => s.userId === params.userId);
-      let teamName: string | null = null;
-      if (entry.league_team_id) {
-        teamName = refreshed.data.teams.find((t) => t.id === entry.league_team_id)?.name ?? null;
-      }
-      results.push({
-        leagueName: league.name,
+      if (!bundleRes.data.entries.some((e) => e.user_id === params.userId)) continue;
+      seen.add(league.id);
+      out.push({
         leagueId: league.id,
-        position: mine?.rank ?? standings.length,
-        teamName,
+        leagueName: league.name,
+        groupId: group.id,
+        groupName: group.name,
         format: league.format,
       });
     }
   }
+
+  out.sort((a, b) => a.leagueName.localeCompare(b.leagueName));
+  return out;
+}
+
+export type LeagueRoundRecordResult = {
+  leagueName: string;
+  leagueId: string;
+  position: number;
+  teamName: string | null;
+  format: LeagueFormat;
+};
+
+/** Record league_round rows only for tournaments the player opted into at log time. */
+export async function recordOptedInLeagueRounds(params: {
+  userId: string;
+  roundId: string;
+  grossScore: number;
+  playedAt: string;
+  simIndex: number | null;
+  selections: { leagueId: string; apply: boolean }[];
+  displayNames?: Record<string, string>;
+  accessToken?: string;
+}): Promise<LeagueRoundRecordResult[]> {
+  const results: LeagueRoundRecordResult[] = [];
+  const applyIds = new Set(
+    params.selections.filter((s) => s.apply).map((s) => s.leagueId)
+  );
+  if (applyIds.size === 0) return results;
+
+  for (const leagueId of applyIds) {
+    const bundleRes = await fetchLeagueBundle(leagueId, params.accessToken);
+    if (!bundleRes.data) continue;
+    const { league } = bundleRes.data;
+    if (league.format === 'match_play') continue;
+
+    const entry = bundleRes.data.entries.find((e) => e.user_id === params.userId);
+    if (!entry) continue;
+
+    const net = netScoreForLeagueRound(params.grossScore, league.use_handicap, params.simIndex);
+    const row = {
+      league_id: league.id,
+      user_id: params.userId,
+      league_team_id: entry.league_team_id,
+      round_id: params.roundId,
+      gross_score: params.grossScore,
+      net_score: net,
+      counted: true,
+      player_opted_in: true,
+    };
+
+    if (params.accessToken) {
+      const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+      await fetch(`${supabaseUrl}/rest/v1/league_rounds`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${params.accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify([row]),
+      });
+    } else if (supabase) {
+      await supabase.from('league_rounds').insert(row);
+    }
+
+    const refreshed = await fetchLeagueBundle(league.id, params.accessToken);
+    if (!refreshed.data) continue;
+    const { computeLeagueStandings } = await import('./leagueStandings');
+    const names: Record<string, string> = { ...(params.displayNames ?? {}) };
+    for (const e of refreshed.data.entries) {
+      if (!names[e.user_id]) names[e.user_id] = e.user_id;
+    }
+    const standings = computeLeagueStandings({
+      league: refreshed.data.league,
+      entries: refreshed.data.entries,
+      rounds: refreshed.data.rounds,
+      teams: refreshed.data.teams,
+      displayNames: names,
+    });
+    const mine = standings.find((s) => s.userId === params.userId);
+    let teamName: string | null = null;
+    if (entry.league_team_id) {
+      teamName = refreshed.data.teams.find((t) => t.id === entry.league_team_id)?.name ?? null;
+    }
+    results.push({
+      leagueName: league.name,
+      leagueId: league.id,
+      position: mine?.rank ?? standings.length,
+      teamName,
+      format: league.format,
+    });
+  }
+
   return results;
 }
 

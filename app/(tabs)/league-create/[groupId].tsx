@@ -1,12 +1,14 @@
+import { useFocusEffect } from '@react-navigation/native';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -49,6 +51,28 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+type WizardStep = 'basic' | 'settings' | 'teams' | 'review';
+
+function defaultEndDate(): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + 28);
+  return d;
+}
+
+function initialTeams() {
+  return [
+    { id: 't1', name: 'Team 1', memberIds: [] as string[] },
+    { id: 't2', name: 'Team 2', memberIds: [] as string[] },
+  ];
+}
+
+const DEFAULT_USE_HANDICAP = true;
+const MIN_MEMBERS_FOR_TEAM_FORMATS = 4;
+
+function isTeamFormat(key: LeagueFormat): boolean {
+  return key === 'scramble' || key === 'best_ball';
+}
+
 export default function LeagueCreateScreen() {
   const { groupId: rawGroupId } = useLocalSearchParams<{ groupId: string | string[] }>();
   const groupId = typeof rawGroupId === 'string' ? rawGroupId : rawGroupId?.[0] ?? '';
@@ -61,32 +85,93 @@ export default function LeagueCreateScreen() {
   const group = useMemo(() => groups.find((g) => g.id === groupId), [groups, groupId]);
   const members = group?.members.filter((m) => m.userId) ?? [];
 
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<WizardStep>('basic');
   const [name, setName] = useState('');
   const [format, setFormat] = useState<LeagueFormat>('stroke');
   const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 28);
-    return d;
-  });
+  const [endDate, setEndDate] = useState(defaultEndDate);
   const [roundsThatCount, setRoundsThatCount] = useState(4);
-  const [useHandicap, setUseHandicap] = useState(true);
-  const [teams, setTeams] = useState<{ id: string; name: string; memberIds: string[] }[]>([
-    { id: 't1', name: 'Team 1', memberIds: [] },
-    { id: 't2', name: 'Team 2', memberIds: [] },
-  ]);
+  const [useHandicap, setUseHandicap] = useState(DEFAULT_USE_HANDICAP);
+  const [teams, setTeams] = useState(initialTeams);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [assignedMemberAction, setAssignedMemberAction] = useState<{
+    userId: string;
+    fromTeamId: string;
+  } | null>(null);
   const [busy, setBusy] = useState(false);
+  const handicapTouchedRef = useRef(false);
 
-  const needsTeams = format === 'scramble' || format === 'best_ball';
-  const totalSteps = needsTeams ? 4 : 3;
+  const teamFormatsAvailable = members.length >= MIN_MEMBERS_FOR_TEAM_FORMATS;
+
+  const resetWizard = useCallback(() => {
+    handicapTouchedRef.current = false;
+    setStep('basic');
+    setName('');
+    setFormat('stroke');
+    setStartDate(new Date());
+    setEndDate(defaultEndDate());
+    setRoundsThatCount(4);
+    setUseHandicap(DEFAULT_USE_HANDICAP);
+    setTeams(initialTeams());
+    setSelectedMemberId(null);
+    setAssignedMemberAction(null);
+    setBusy(false);
+  }, []);
+
+  useLayoutEffect(() => {
+    resetWizard();
+  }, [groupId, resetWizard]);
+
+  useFocusEffect(
+    useCallback(() => {
+      resetWizard();
+    }, [groupId, resetWizard])
+  );
+
+  useEffect(() => {
+    if (step === 'settings' && !handicapTouchedRef.current) {
+      setUseHandicap(DEFAULT_USE_HANDICAP);
+    }
+  }, [step]);
+
+  useEffect(() => {
+    if (!teamFormatsAvailable && isTeamFormat(format)) {
+      setFormat('stroke');
+    }
+  }, [teamFormatsAvailable, format]);
+
+  const needsTeams = isTeamFormat(format);
+
+  const assignedMemberIds = useMemo(() => new Set(teams.flatMap((t) => t.memberIds)), [teams]);
+
+  const unassignedMembers = useMemo(
+    () => members.filter((m) => !assignedMemberIds.has(m.userId)),
+    [members, assignedMemberIds]
+  );
+  const stepSequence = useMemo((): WizardStep[] => {
+    return needsTeams ? ['basic', 'settings', 'teams', 'review'] : ['basic', 'settings', 'review'];
+  }, [needsTeams]);
+
+  const stepNumber = Math.max(1, stepSequence.indexOf(step) + 1);
+  const totalSteps = stepSequence.length;
+
+  const goToStep = useCallback(
+    (next: WizardStep) => {
+      if (stepSequence.includes(next)) setStep(next);
+    },
+    [stepSequence]
+  );
+
+  useEffect(() => {
+    if (!stepSequence.includes(step)) {
+      setStep(stepSequence[stepSequence.length - 1] ?? 'basic');
+    }
+  }, [step, stepSequence]);
 
   const allAssigned = useMemo(() => {
     if (!needsTeams) return true;
-    const assigned = new Set(teams.flatMap((t) => t.memberIds));
-    return members.every((m) => assigned.has(m.userId));
-  }, [needsTeams, teams, members]);
+    return members.every((m) => assignedMemberIds.has(m.userId));
+  }, [needsTeams, members, assignedMemberIds]);
 
   const onAutoBalance = () => {
     const sorted = [...members].sort((a, b) => (a.index ?? 99) - (b.index ?? 99));
@@ -95,15 +180,38 @@ export default function LeagueCreateScreen() {
       next[i % next.length].memberIds.push(m.userId);
     });
     setTeams(next);
+    setSelectedMemberId(null);
+    setAssignedMemberAction(null);
   };
 
   const assignMemberToTeam = (userId: string, teamId: string) => {
     setTeams((prev) =>
       prev.map((t) => ({
         ...t,
-        memberIds: t.id === teamId ? [...t.memberIds.filter((id) => id !== userId), userId] : t.memberIds.filter((id) => id !== userId),
+        memberIds:
+          t.id === teamId
+            ? [...t.memberIds.filter((id) => id !== userId), userId]
+            : t.memberIds.filter((id) => id !== userId),
       }))
     );
+    setSelectedMemberId(null);
+    setAssignedMemberAction(null);
+  };
+
+  const removeMemberFromTeams = (userId: string) => {
+    setTeams((prev) =>
+      prev.map((t) => ({
+        ...t,
+        memberIds: t.memberIds.filter((id) => id !== userId),
+      }))
+    );
+    setAssignedMemberAction(null);
+    setSelectedMemberId(userId);
+  };
+
+  const selectUnassignedMember = (userId: string) => {
+    setAssignedMemberAction(null);
+    setSelectedMemberId((prev) => (prev === userId ? null : userId));
   };
 
   const onLaunch = async () => {
@@ -160,10 +268,10 @@ export default function LeagueCreateScreen() {
         }}
       >
         <Text style={styles.stepProg}>
-          Step {step + 1} of {totalSteps}
+          Step {stepNumber} of {totalSteps}
         </Text>
 
-        {step === 0 ? (
+        {step === 'basic' ? (
           <>
             <Text style={styles.head}>Basic info</Text>
             <Text style={styles.lbl}>Tournament name</Text>
@@ -177,15 +285,26 @@ export default function LeagueCreateScreen() {
             <Text style={[styles.lbl, { marginTop: 16 }]}>Format</Text>
             {FORMATS.map((f) => {
               const on = format === f.key;
+              const disabled = isTeamFormat(f.key) && !teamFormatsAvailable;
               return (
                 <Pressable
                   key={f.key}
-                  style={[styles.formatCard, on && styles.formatCardOn]}
+                  style={[
+                    styles.formatCard,
+                    on && styles.formatCardOn,
+                    disabled && styles.formatCardDisabled,
+                  ]}
+                  disabled={disabled}
                   onPress={() => setFormat(f.key)}
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.formatTitle}>{f.title}</Text>
-                    <Text style={styles.formatSub}>{f.sub}</Text>
+                    <Text style={[styles.formatTitle, disabled && styles.formatTitleDisabled]}>
+                      {f.title}
+                    </Text>
+                    <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>{f.sub}</Text>
+                    {disabled ? (
+                      <Text style={styles.formatDisabledNote}>Requires at least 4 group members.</Text>
+                    ) : null}
                   </View>
                   {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
                 </Pressable>
@@ -194,14 +313,14 @@ export default function LeagueCreateScreen() {
             <Pressable
               style={[styles.primaryBtn, !name.trim() && styles.btnDisabled]}
               disabled={!name.trim()}
-              onPress={() => setStep(1)}
+              onPress={() => goToStep('settings')}
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
             </Pressable>
           </>
         ) : null}
 
-        {step === 1 ? (
+        {step === 'settings' ? (
           <>
             <Text style={styles.head}>Settings</Text>
             <Text style={styles.lbl}>Start date</Text>
@@ -229,39 +348,63 @@ export default function LeagueCreateScreen() {
               </Pressable>
             </View>
             <Text style={styles.helper}>e.g. best {roundsThatCount} of 6 rounds count</Text>
-            <Pressable style={styles.toggleRow} onPress={() => setUseHandicap((v) => !v)}>
+            <View style={styles.toggleRow}>
               <Text style={styles.toggleLbl}>Use SimCap handicap</Text>
-              <Text style={styles.toggleVal}>{useHandicap ? 'On' : 'Off'}</Text>
-            </Pressable>
+              <View style={styles.toggleRight}>
+                <Text style={styles.toggleVal}>{useHandicap ? 'On' : 'Off'}</Text>
+                <Switch
+                  value={useHandicap}
+                  onValueChange={(next) => {
+                    handicapTouchedRef.current = true;
+                    setUseHandicap(next);
+                  }}
+                  trackColor={{ false: colors.pillBorder, true: colors.sage }}
+                  thumbColor={Platform.OS === 'android' ? colors.surface : undefined}
+                  ios_backgroundColor={colors.pillBorder}
+                />
+              </View>
+            </View>
             <Text style={styles.helper}>Adjusts scores using each player&apos;s SimCap index</Text>
-            <Pressable style={styles.primaryBtn} onPress={() => setStep(needsTeams ? 2 : 3)}>
+            <Pressable
+              style={styles.primaryBtn}
+              onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
+            >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
             </Pressable>
           </>
         ) : null}
 
-        {step === 2 && needsTeams ? (
+        {step === 'teams' && needsTeams ? (
           <>
             <Text style={styles.head}>Assign Teams</Text>
             <Text style={styles.helper}>
-              Tap a player, then tap a team to assign. Use Auto-balance to sort by handicap.
+              Select an unassigned player, then add them to a team. Tap someone on a team to remove or
+              move them.
             </Text>
             <Pressable style={styles.outlineBtn} onPress={onAutoBalance}>
               <Text style={styles.outlineBtnTxt}>Auto-balance</Text>
             </Pressable>
-            {members.map((m) => (
-              <Pressable
-                key={m.userId}
-                style={[styles.memberRow, selectedMemberId === m.userId && styles.memberRowOn]}
-                onPress={() => setSelectedMemberId(m.userId)}
-              >
-                <View style={styles.memberAv}>
-                  <Text style={styles.memberAvTxt}>{m.initials}</Text>
-                </View>
-                <Text style={styles.memberName}>{m.displayName}</Text>
-                <Text style={styles.memberIdx}>{m.index != null ? m.index.toFixed(1) : '—'}</Text>
-              </Pressable>
-            ))}
+
+            <Text style={styles.sectionLbl}>Unassigned players</Text>
+            {unassignedMembers.length === 0 ? (
+              <Text style={styles.helper}>Everyone is on a team.</Text>
+            ) : (
+              unassignedMembers.map((m) => (
+                <Pressable
+                  key={m.userId}
+                  style={[styles.memberRow, selectedMemberId === m.userId && styles.memberRowOn]}
+                  onPress={() => selectUnassignedMember(m.userId)}
+                >
+                  <View style={styles.memberAv}>
+                    <Text style={styles.memberAvTxt}>{m.initials}</Text>
+                  </View>
+                  <Text style={styles.memberName}>{m.displayName}</Text>
+                  <Text style={styles.memberIdx}>{m.index != null ? m.index.toFixed(1) : '—'}</Text>
+                </Pressable>
+              ))
+            )}
+
+            <Text style={[styles.sectionLbl, { marginTop: 16 }]}>Teams</Text>
             {teams.map((t) => (
               <View key={t.id} style={styles.teamBucket}>
                 <TextInput
@@ -271,30 +414,62 @@ export default function LeagueCreateScreen() {
                     setTeams((prev) => prev.map((x) => (x.id === t.id ? { ...x, name: v } : x)))
                   }
                 />
-                <View style={styles.teamMembers}>
-                  {t.memberIds.map((uid) => {
-                    const m = members.find((x) => x.userId === uid);
-                    return (
-                      <Pressable
-                        key={uid}
-                        style={styles.chip}
-                        onPress={() => assignMemberToTeam(uid, t.id)}
-                      >
-                        <Text style={styles.chipTxt}>{m?.displayName ?? uid}</Text>
-                      </Pressable>
-                    );
-                  })}
-                  {selectedMemberId ? (
-                    <Pressable
-                      style={styles.chipAdd}
-                      onPress={() => {
-                        assignMemberToTeam(selectedMemberId, t.id);
-                        setSelectedMemberId(null);
-                      }}
-                    >
-                      <Text style={styles.chipAddTxt}>+ Add selected</Text>
-                    </Pressable>
-                  ) : null}
+                {selectedMemberId && unassignedMembers.some((m) => m.userId === selectedMemberId) ? (
+                  <Pressable
+                    style={styles.addToTeamBtn}
+                    onPress={() => assignMemberToTeam(selectedMemberId, t.id)}
+                  >
+                    <Text style={styles.addToTeamBtnTxt}>Add to {t.name}</Text>
+                  </Pressable>
+                ) : null}
+                <View style={styles.teamMembersCol}>
+                  {t.memberIds.length === 0 ? (
+                    <Text style={styles.teamEmptyTxt}>No players yet</Text>
+                  ) : (
+                    t.memberIds.map((uid) => {
+                      const m = members.find((x) => x.userId === uid);
+                      const showActions =
+                        assignedMemberAction?.userId === uid &&
+                        assignedMemberAction.fromTeamId === t.id;
+                      return (
+                        <View key={uid} style={styles.assignedMemberBlock}>
+                          <Pressable
+                            style={[styles.chip, showActions && styles.chipOn]}
+                            onPress={() =>
+                              setAssignedMemberAction((prev) =>
+                                prev?.userId === uid && prev.fromTeamId === t.id
+                                  ? null
+                                  : { userId: uid, fromTeamId: t.id }
+                              )
+                            }
+                          >
+                            <Text style={styles.chipTxt}>{m?.displayName ?? uid}</Text>
+                          </Pressable>
+                          {showActions ? (
+                            <View style={styles.memberActions}>
+                              <Pressable
+                                style={styles.memberActionBtn}
+                                onPress={() => removeMemberFromTeams(uid)}
+                              >
+                                <Text style={styles.memberActionRemove}>Remove from team</Text>
+                              </Pressable>
+                              {teams
+                                .filter((other) => other.id !== t.id)
+                                .map((other) => (
+                                  <Pressable
+                                    key={other.id}
+                                    style={styles.memberActionBtn}
+                                    onPress={() => assignMemberToTeam(uid, other.id)}
+                                  >
+                                    <Text style={styles.memberActionMove}>Move to {other.name}</Text>
+                                  </Pressable>
+                                ))}
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })
+                  )}
                 </View>
               </View>
             ))}
@@ -312,14 +487,14 @@ export default function LeagueCreateScreen() {
             <Pressable
               style={[styles.primaryBtn, !allAssigned && styles.btnDisabled]}
               disabled={!allAssigned}
-              onPress={() => setStep(3)}
+              onPress={() => goToStep('review')}
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
             </Pressable>
           </>
         ) : null}
 
-        {step === 3 || (step === 2 && !needsTeams) ? (
+        {step === 'review' ? (
           <>
             <Text style={styles.head}>Review & Launch</Text>
             <View style={styles.summaryCard}>
@@ -373,8 +548,26 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   formatCardOn: { borderColor: colors.sage, backgroundColor: colors.accentSoft },
+  formatCardDisabled: { opacity: 0.55, backgroundColor: colors.bg },
   formatTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  formatTitleDisabled: { color: colors.subtle },
   formatSub: { fontSize: 13, color: colors.muted, marginTop: 4, lineHeight: 18 },
+  formatSubDisabled: { color: colors.subtle },
+  formatDisabledNote: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.subtle,
+    marginTop: 8,
+  },
+  sectionLbl: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.sage,
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 8,
+    marginTop: 4,
+  },
   primaryBtn: {
     marginTop: 20,
     backgroundColor: colors.header,
@@ -405,8 +598,9 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     marginTop: 8,
   },
-  toggleLbl: { fontSize: 15, fontWeight: '600', color: colors.ink },
-  toggleVal: { fontSize: 15, fontWeight: '700', color: colors.sage },
+  toggleRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  toggleLbl: { fontSize: 15, fontWeight: '600', color: colors.ink, flex: 1, paddingRight: 8 },
+  toggleVal: { fontSize: 15, fontWeight: '700', color: colors.sage, minWidth: 28 },
   outlineBtn: {
     marginTop: 8,
     marginBottom: 12,
@@ -447,22 +641,39 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   teamNameInput: { fontSize: 15, fontWeight: '700', color: colors.ink, marginBottom: 8 },
-  teamMembers: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  teamMembersCol: { gap: 8 },
+  teamEmptyTxt: { fontSize: 13, color: colors.muted, fontStyle: 'italic' },
+  addToTeamBtn: {
+    marginBottom: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: colors.header,
+    alignItems: 'center',
+  },
+  addToTeamBtnTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  assignedMemberBlock: { gap: 6 },
   chip: {
+    alignSelf: 'flex-start',
     backgroundColor: colors.header,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 999,
   },
+  chipOn: { borderWidth: 2, borderColor: colors.sage },
   chipTxt: { color: '#fff', fontSize: 12, fontWeight: '600' },
-  chipAdd: {
-    borderWidth: 1,
-    borderColor: colors.sage,
-    paddingHorizontal: 10,
+  memberActions: { gap: 6, paddingLeft: 4 },
+  memberActionBtn: {
+    alignSelf: 'flex-start',
     paddingVertical: 6,
-    borderRadius: 999,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: colors.surface,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
   },
-  chipAddTxt: { color: colors.accentDark, fontSize: 12, fontWeight: '600' },
+  memberActionRemove: { fontSize: 12, fontWeight: '700', color: colors.danger },
+  memberActionMove: { fontSize: 12, fontWeight: '700', color: colors.accentDark },
   summaryCard: {
     backgroundColor: '#f0f7f3',
     borderRadius: 12,

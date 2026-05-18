@@ -1,3 +1,4 @@
+import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
@@ -71,6 +72,12 @@ export function GroupTournamentsSection({ group, isGroupCreator, gutter, display
   useEffect(() => {
     void load();
   }, [load]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load])
+  );
 
   const activeLeague = useMemo(
     () => leagues.find((l) => l.status === 'active' && isLeagueActive(l)) ?? null,

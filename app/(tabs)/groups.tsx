@@ -32,8 +32,9 @@ import {
   createSocialGroup,
   deleteSocialGroupAsCreator,
   fetchInboundGroupInvitesIntoStore,
+  backfillGroupCreatorsInStore,
   fetchMySocialGroupsIntoStore,
-  fetchSocialGroupCreatedBy,
+  resolveSocialGroupsAccessToken,
   respondToGroupInvite,
   sendGroupInvite,
 } from '../../src/lib/socialGroups';
@@ -120,6 +121,7 @@ export default function GroupsScreen() {
   const [inboundBusy, setInboundBusy] = useState(false);
   const [deleteGroupBusy, setDeleteGroupBusy] = useState(false);
   const [socialSectionInfo, setSocialSectionInfo] = useState<'match' | 'groups' | 'net' | null>(null);
+  const [creatorsBackfillReady, setCreatorsBackfillReady] = useState(false);
 
   /** Bumps on blur so in-flight fetches don’t leave `listRefreshing` stuck true (e.g. switch tabs mid-request). */
   const groupsRefreshSessionRef = useRef(0);
@@ -151,10 +153,14 @@ export default function GroupsScreen() {
 
       void (async () => {
         try {
-          await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
-          await fetchInboundGroupInvitesIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
+          const accessToken =
+            googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+          await fetchMySocialGroupsIntoStore(user?.id, accessToken);
+          await backfillGroupCreatorsInStore(accessToken);
+          await fetchInboundGroupInvitesIntoStore(user?.id, accessToken);
           if (groupsRefreshSessionRef.current !== session) return;
           useAppStore.getState().recomputeGroupsFromYou();
+          setCreatorsBackfillReady(true);
         } finally {
           if (groupsRefreshSessionRef.current === session && emptyShell) {
             setListRefreshing(false);
@@ -349,32 +355,35 @@ export default function GroupsScreen() {
     recomputeGroupsFromYou();
   };
 
+  const needsCreatorsBackfill = useMemo(
+    () => supabaseOn && groups.some((gr) => gr.id && !gr.createdByUserId?.trim()),
+    [groups, supabaseOn]
+  );
+
+  useEffect(() => {
+    if (!needsCreatorsBackfill) {
+      setCreatorsBackfillReady(true);
+      return;
+    }
+    let cancelled = false;
+    setCreatorsBackfillReady(false);
+    void (async () => {
+      const accessToken =
+        googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+      await backfillGroupCreatorsInStore(accessToken);
+      if (!cancelled) setCreatorsBackfillReady(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [needsCreatorsBackfill]);
+
   const authUserId = session?.user?.id ?? user?.id ?? g?.members.find((m) => m.isYou)?.userId ?? null;
 
   const isGroupCreator = useMemo(
     () => isSocialGroupCreator(g, authUserId),
     [g, authUserId]
   );
-
-  useEffect(() => {
-    if (!g?.id || !supabaseOn || g.createdByUserId?.trim()) return;
-    let cancelled = false;
-    void (async () => {
-      const createdBy = await fetchSocialGroupCreatedBy(g.id, googleOAuthAccessToken ?? undefined);
-      if (cancelled || !createdBy) return;
-      const current = useAppStore.getState().groups;
-      const idx = current.findIndex((gr) => gr.id === g.id);
-      if (idx < 0) return;
-      if (current[idx]?.createdByUserId?.trim() === createdBy) return;
-      const next = current.map((gr) =>
-        gr.id === g.id ? { ...gr, createdByUserId: createdBy } : gr
-      );
-      useAppStore.getState().setGroups(next);
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [g?.id, g?.createdByUserId, supabaseOn]);
 
   const leagueDisplayNames = useMemo(() => {
     const m: Record<string, string> = {};
@@ -476,7 +485,7 @@ export default function GroupsScreen() {
               showsVerticalScrollIndicator={false}
             >
               {inboundInviteCards.length > 0 ? (
-                <View style={{ marginHorizontal: gutter, marginTop: 0, gap: 10 }}>{inboundInviteCards}</View>
+                <View style={[styles.inboundCardsWrap, { marginHorizontal: gutter }]}>{inboundInviteCards}</View>
               ) : null}
               <View style={styles.socialMatchPlaySection}>
                 <MatchPlayHub
@@ -589,7 +598,7 @@ export default function GroupsScreen() {
             showsVerticalScrollIndicator={false}
           >
             {inboundInviteCards.length > 0 ? (
-              <View style={{ marginHorizontal: gutter, marginTop: 0, gap: 10 }}>{inboundInviteCards}</View>
+              <View style={[styles.inboundCardsWrap, { marginHorizontal: gutter }]}>{inboundInviteCards}</View>
             ) : null}
 
             <View style={styles.socialMatchPlaySection}>
@@ -653,6 +662,13 @@ export default function GroupsScreen() {
                   {g.lastRoundSummary ? <Text style={styles.groupMeta}>{g.lastRoundSummary}</Text> : null}
                 </View>
                 <View style={styles.cardHdrActions}>
+                  <Pressable
+                    onPress={openInvite}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Invite someone to ${g.name}`}
+                  >
+                    <Text style={styles.invite}>+ Invite</Text>
+                  </Pressable>
                   {isGroupCreator ? (
                     <Pressable
                       onPress={() => void onDeleteGroup()}
@@ -774,21 +790,18 @@ export default function GroupsScreen() {
               )}
             </View>
 
-            <GroupTournamentsSection
-              group={g}
-              isGroupCreator={isGroupCreator}
-              gutter={gutter}
-              displayNames={leagueDisplayNames}
-            />
-
-            <Pressable
-              onPress={openInvite}
-              style={{ marginHorizontal: gutter, marginTop: 12, alignSelf: 'flex-start' }}
-              accessibilityRole="button"
-              accessibilityLabel={`Invite someone to ${g.name}`}
-            >
-              <Text style={styles.invite}>+ Invite</Text>
-            </Pressable>
+            {g && (!needsCreatorsBackfill || creatorsBackfillReady) ? (
+              <GroupTournamentsSection
+                group={g}
+                isGroupCreator={isGroupCreator}
+                gutter={gutter}
+                displayNames={leagueDisplayNames}
+              />
+            ) : needsCreatorsBackfill ? (
+              <View style={{ marginTop: 16, marginHorizontal: gutter, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.header} />
+              </View>
+            ) : null}
 
             <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter, marginTop: 16 }]}>
               <View style={styles.sectionHeaderRow}>
@@ -1184,6 +1197,10 @@ const styles = StyleSheet.create({
   modalBtnTxt: { fontSize: 15, fontWeight: '600', color: colors.accent },
   modalBtnTxtPri: { color: '#fff', fontWeight: '700' },
   modalSuccessBody: { fontSize: 14, color: colors.muted, lineHeight: 21, marginBottom: 8 },
+  inboundCardsWrap: {
+    gap: 10,
+    marginBottom: 18,
+  },
   inboundCard: {
     backgroundColor: colors.accentSoft,
     borderRadius: 12,
