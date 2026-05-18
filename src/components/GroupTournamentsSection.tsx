@@ -18,6 +18,9 @@ import { fetchLeagueBundle } from '../lib/leagues';
 import { leagueSectionLabelStyles } from '../lib/leagueSectionTitle';
 import type { FriendGroup } from '../store/useAppStore';
 
+/** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
+const ALLOW_DEV_CREATOR_VIEW = __DEV__;
+
 type Props = {
   group: FriendGroup;
   isGroupCreator: boolean;
@@ -27,6 +30,8 @@ type Props = {
 
 export function GroupTournamentsSection({ group, isGroupCreator, gutter, displayNames }: Props) {
   const router = useRouter();
+  const [devForceCreatorView, setDevForceCreatorView] = useState(false);
+  const showCreatorUi = isGroupCreator || (ALLOW_DEV_CREATOR_VIEW && devForceCreatorView);
   const [loading, setLoading] = useState(true);
   const [leagues, setLeagues] = useState<DbLeagueRow[]>([]);
   const [pastOpen, setPastOpen] = useState(false);
@@ -115,7 +120,7 @@ export function GroupTournamentsSection({ group, isGroupCreator, gutter, display
             )}
             <Text style={styles.seeAll}>See full standings →</Text>
           </Pressable>
-        ) : isGroupCreator ? (
+        ) : showCreatorUi ? (
           <Pressable
             style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
             onPress={() => router.push(`/(tabs)/league-create/${group.id}` as never)}
@@ -127,6 +132,21 @@ export function GroupTournamentsSection({ group, isGroupCreator, gutter, display
         ) : (
           <Text style={styles.emptyMuted}>No active tournament</Text>
         )}
+
+        {ALLOW_DEV_CREATOR_VIEW && !isGroupCreator ? (
+          <Pressable
+            onPress={() => setDevForceCreatorView((v) => !v)}
+            style={({ pressed }) => [styles.devCreatorBtn, pressed && styles.devCreatorBtnPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle developer creator view for tournaments"
+          >
+            <Text style={styles.devCreatorBtnTxt}>
+              {devForceCreatorView
+                ? 'DEV ONLY · Creator view ON (tap to reset)'
+                : 'DEV ONLY · Show creator view (test Create Tournament)'}
+            </Text>
+          </Pressable>
+        ) : null}
 
         {pastLeagues.length > 0 ? (
           <>
@@ -219,4 +239,16 @@ const styles = StyleSheet.create({
   pastRow: { paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   pastName: { fontSize: 14, fontWeight: '600', color: colors.ink },
   pastMeta: { fontSize: 12, color: colors.subtle, marginTop: 2 },
+  devCreatorBtn: {
+    marginTop: 12,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    borderWidth: 1,
+    borderColor: '#dd9a3f',
+    backgroundColor: '#fff5e7',
+    alignSelf: 'flex-start',
+  },
+  devCreatorBtnPressed: { opacity: 0.85 },
+  devCreatorBtnTxt: { fontSize: 11, fontWeight: '700', color: '#9a5a00' },
 });

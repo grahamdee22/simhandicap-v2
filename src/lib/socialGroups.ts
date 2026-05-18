@@ -90,6 +90,33 @@ async function restSelectRows(accessToken: string, pathAndQuery: string): Promis
   return Array.isArray(parsed) ? parsed : [];
 }
 
+/** Fetch `social_groups.created_by` when store rows lack it (e.g. stale persist). */
+export async function fetchSocialGroupCreatedBy(
+  groupId: string,
+  accessToken?: string
+): Promise<string | null> {
+  if (accessToken) {
+    const rows = (await restSelectRows(
+      accessToken,
+      `social_groups?id=eq.${encodeURIComponent(groupId)}&select=created_by`
+    )) as { created_by?: string }[];
+    const id = rows[0]?.created_by?.trim();
+    return id || null;
+  }
+  if (!supabase) return null;
+  const { data, error } = await supabase
+    .from('social_groups')
+    .select('created_by')
+    .eq('id', groupId)
+    .maybeSingle();
+  if (error) {
+    console.warn('[socialGroups] fetchSocialGroupCreatedBy', error.message);
+    return null;
+  }
+  const id = data?.created_by?.trim();
+  return id || null;
+}
+
 const ROUNDS_SELECT_FOR_SOCIAL =
   'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,differential_version,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time';
 
@@ -175,7 +202,7 @@ function applyLoadedSocialGroupData(
     return {
       id: gr.id,
       name: gr.name,
-      createdByUserId: gr.created_by,
+      createdByUserId: (gr.created_by ?? '').trim(),
       members,
       pendingInApp: pendingInAppByGroup.get(gr.id),
       pendingEmail: pendingEmailByGroup.get(gr.id),

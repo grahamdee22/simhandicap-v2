@@ -17,6 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
+import { isSocialGroupCreator } from '../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { GroupTournamentsSection } from '../../src/components/GroupTournamentsSection';
 import { MatchPlayHub } from '../../src/components/MatchPlayHub';
@@ -32,6 +33,7 @@ import {
   deleteSocialGroupAsCreator,
   fetchInboundGroupInvitesIntoStore,
   fetchMySocialGroupsIntoStore,
+  fetchSocialGroupCreatedBy,
   respondToGroupInvite,
   sendGroupInvite,
 } from '../../src/lib/socialGroups';
@@ -93,7 +95,7 @@ function indexSortKey(m: GroupMember): number {
 export default function GroupsScreen() {
   const router = useRouter();
   const navigation = useNavigation();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const { gutter } = useResponsive();
   const insets = useSafeAreaInsets();
   const supabaseOn = isSupabaseConfigured();
@@ -347,8 +349,32 @@ export default function GroupsScreen() {
     recomputeGroupsFromYou();
   };
 
-  const isGroupCreator =
-    supabaseOn && !!user?.id && !!g?.createdByUserId && g.createdByUserId === user.id;
+  const authUserId = session?.user?.id ?? user?.id ?? g?.members.find((m) => m.isYou)?.userId ?? null;
+
+  const isGroupCreator = useMemo(
+    () => isSocialGroupCreator(g, authUserId),
+    [g, authUserId]
+  );
+
+  useEffect(() => {
+    if (!g?.id || !supabaseOn || g.createdByUserId?.trim()) return;
+    let cancelled = false;
+    void (async () => {
+      const createdBy = await fetchSocialGroupCreatedBy(g.id, googleOAuthAccessToken ?? undefined);
+      if (cancelled || !createdBy) return;
+      const current = useAppStore.getState().groups;
+      const idx = current.findIndex((gr) => gr.id === g.id);
+      if (idx < 0) return;
+      if (current[idx]?.createdByUserId?.trim() === createdBy) return;
+      const next = current.map((gr) =>
+        gr.id === g.id ? { ...gr, createdByUserId: createdBy } : gr
+      );
+      useAppStore.getState().setGroups(next);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [g?.id, g?.createdByUserId, supabaseOn]);
 
   const leagueDisplayNames = useMemo(() => {
     const m: Record<string, string> = {};

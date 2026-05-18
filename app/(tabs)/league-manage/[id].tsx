@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
+import { isSocialGroupCreator } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
@@ -32,7 +33,7 @@ export default function LeagueManageScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
-  const { user } = useAuth();
+  const { user, session } = useAuth();
   const groups = useAppStore((s) => s.groups);
 
   const [bundle, setBundle] = useState<LeagueBundle | null>(null);
@@ -44,7 +45,8 @@ export default function LeagueManageScreen() {
     () => groups.find((g) => g.id === bundle?.league.group_id),
     [groups, bundle?.league.group_id]
   );
-  const isCreator = !!user?.id && group?.createdByUserId === user.id;
+  const authUserId = session?.user?.id ?? user?.id ?? null;
+  const isCreator = isSocialGroupCreator(group, authUserId);
 
   const load = useCallback(async () => {
     const res = await fetchLeagueBundle(leagueId, googleOAuthAccessToken ?? undefined);
