@@ -20,7 +20,7 @@ import {
   type ScorecardVerificationUiState,
 } from '../lib/matchVerification';
 import type { DbMatchRow } from '../lib/matchPlay';
-import { updateMatchById } from '../lib/matchPlay';
+import { resolveMatchAccessToken, updateMatchById } from '../lib/matchPlay';
 import { uploadMatchScorecardScreenshot } from '../lib/matchScorecardStorage';
 import { settingsScreenshotPickerOptions } from '../lib/settingsScreenshotPicker';
 import { invokeScorecardVerification } from '../lib/scorecardVerification';
@@ -59,6 +59,11 @@ export function MatchScorecardVerification({
     isPlayer1 ? match.p1_verification_notes : match.p2_verification_notes
   );
 
+  const bearer = useCallback(
+    async () => accessToken ?? (await resolveMatchAccessToken()) ?? undefined,
+    [accessToken]
+  );
+
   const patchVerificationFields = useCallback(
     async (fields: {
       screenshotUrl: string;
@@ -76,9 +81,9 @@ export function MatchScorecardVerification({
             p2_verification_notes: fields.notes,
             p2_verified: fields.verified,
           };
-      return updateMatchById(match.id, patch, accessToken);
+      return updateMatchById(match.id, patch, await bearer());
     },
-    [isPlayer1, match.id, accessToken]
+    [isPlayer1, match.id, bearer]
   );
 
   const onPickAndVerify = useCallback(async () => {
@@ -97,11 +102,12 @@ export function MatchScorecardVerification({
     setPreviewUri(asset.uri);
     setBusy(true);
 
+    const tok = await bearer();
     const up = await uploadMatchScorecardScreenshot({
       matchId: match.id,
       userId,
       localUri: asset.uri,
-      accessToken,
+      accessToken: tok,
     });
     if ('error' in up) {
       setBusy(false);
@@ -120,7 +126,7 @@ export function MatchScorecardVerification({
       return;
     }
 
-    const ai = await invokeScorecardVerification(match.id, accessToken);
+    const ai = await invokeScorecardVerification(match.id, tok);
     setBusy(false);
 
     if (ai.error && !ai.verified) {
@@ -140,7 +146,7 @@ export function MatchScorecardVerification({
       ai.notes || 'The score on your screenshot does not match what you logged. Re-enter scores or upload a clearer image.'
     );
     onVerified();
-  }, [busy, verified, match.id, userId, accessToken, patchVerificationFields, onVerified]);
+  }, [busy, verified, match.id, userId, bearer, patchVerificationFields, onVerified]);
 
   const onDevBypassVerify = useCallback(async () => {
     if (!ALLOW_DEV_VERIFY_BYPASS || busy || devBypassBusy || verified) return;
@@ -153,14 +159,14 @@ export function MatchScorecardVerification({
     const patch = isPlayer1
       ? { p1_verified: true, p1_verification_notes: notes }
       : { p2_verified: true, p2_verification_notes: notes };
-    const res = await updateMatchById(match.id, patch, accessToken);
+    const res = await updateMatchById(match.id, patch, await bearer());
     setDevBypassBusy(false);
     if (res.error) {
       showAppAlert('Dev bypass failed', res.error);
       return;
     }
     onVerified();
-  }, [busy, devBypassBusy, verified, isPlayer1, match.id, accessToken, onVerified]);
+  }, [busy, devBypassBusy, verified, isPlayer1, match.id, bearer, onVerified]);
 
   if (!match.verification_required) return null;
 

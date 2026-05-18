@@ -5,7 +5,20 @@
 
 import Constants from 'expo-constants';
 import { canonicalPlatformId } from './constants';
+import { googleOAuthAccessToken } from './googleOAuthAccessToken';
 import { supabase } from './supabase';
+
+/** Bearer for match REST/RPC: native Google OAuth token, else Supabase session JWT. */
+export async function resolveMatchAccessToken(): Promise<string | null> {
+  if (googleOAuthAccessToken) return googleOAuthAccessToken;
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    console.warn('[matchPlay] resolveMatchAccessToken', error.message);
+    return null;
+  }
+  return data.session?.access_token ?? null;
+}
 
 function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
   const extra = Constants.expoConfig?.extra as
@@ -173,7 +186,17 @@ export function reactionSentOnOpponentRow(
 
 export type MatchHoleListResult = { data: DbMatchHoleRow[] | null; error: string | null };
 
-export type MatchHoleSingleResult = { data: DbMatchHoleRow | null; error: string | null };
+export type MatchHoleSingleResult = {
+  data: DbMatchHoleRow | null;
+  error: string | null;
+  verificationReset?: boolean;
+};
+
+export type MatchOpponentScoringSummary = {
+  opponentHolesPlayed: number;
+  bothFinishedHoles: boolean;
+  opponentGrossTotal: number | null;
+};
 
 function asMatchHoleRow(row: unknown): DbMatchHoleRow {
   return row as DbMatchHoleRow;
@@ -586,7 +609,73 @@ export async function listMatchHoles(matchId: string, accessToken?: string): Pro
   return { data: (data as unknown[]).map(asMatchHoleRow), error: null };
 }
 
-/** Insert or update the signed-in player’s gross score for one hole. */
+function parseUpsertMatchHoleRpcPayload(json: unknown): {
+  hole: DbMatchHoleRow | null;
+  verificationReset: boolean;
+} {
+  if (!json || typeof json !== 'object') return { hole: null, verificationReset: false };
+  const o = json as { hole?: unknown; verification_reset?: boolean };
+  const hole =
+    o.hole && typeof o.hole === 'object' ? asMatchHoleRow(o.hole) : null;
+  return { hole, verificationReset: !!o.verification_reset };
+}
+
+/** Opponent aggregate scoring (no per-hole leak while match is in progress). */
+export async function getMatchOpponentScoringSummary(
+  matchId: string,
+  accessToken?: string
+): Promise<{ data: MatchOpponentScoringSummary | null; error: string | null }> {
+  const tok = accessToken ?? (await resolveMatchAccessToken());
+  if (tok) {
+    const { json, error } = await restRpcPost(tok, 'get_match_opponent_scoring_summary', {
+      p_match_id: matchId,
+    });
+    if (error) return { data: null, error };
+    const payload = json as {
+      error?: string;
+      opponent_holes_played?: number;
+      both_finished_holes?: boolean;
+      opponent_gross_total?: number | null;
+    } | null;
+    if (payload?.error) return { data: null, error: payload.error };
+    return {
+      data: {
+        opponentHolesPlayed: payload?.opponent_holes_played ?? 0,
+        bothFinishedHoles: !!payload?.both_finished_holes,
+        opponentGrossTotal:
+          payload?.opponent_gross_total != null ? Number(payload.opponent_gross_total) : null,
+      },
+      error: null,
+    };
+  }
+
+  if (!supabase) return { data: null, error: 'Supabase is not configured' };
+  const { data, error } = await supabase.rpc('get_match_opponent_scoring_summary', {
+    p_match_id: matchId,
+  });
+  if (error) {
+    console.warn('[matchPlay] getMatchOpponentScoringSummary', error.message);
+    return { data: null, error: error.message };
+  }
+  const payload = data as {
+    error?: string;
+    opponent_holes_played?: number;
+    both_finished_holes?: boolean;
+    opponent_gross_total?: number | null;
+  } | null;
+  if (payload?.error) return { data: null, error: payload.error };
+  return {
+    data: {
+      opponentHolesPlayed: payload?.opponent_holes_played ?? 0,
+      bothFinishedHoles: !!payload?.both_finished_holes,
+      opponentGrossTotal:
+        payload?.opponent_gross_total != null ? Number(payload.opponent_gross_total) : null,
+    },
+    error: null,
+  };
+}
+
+/** Insert or update the signed-in player’s gross score for one hole (RPC with verification reset). */
 export async function upsertMatchHoleScore(params: {
   matchId: string;
   holeNumber: number;
@@ -595,87 +684,20 @@ export async function upsertMatchHoleScore(params: {
   userId?: string;
   accessToken?: string;
 }): Promise<MatchHoleSingleResult> {
-  const accessToken = params.accessToken;
+  const accessToken = params.accessToken ?? (await resolveMatchAccessToken());
   if (accessToken) {
-    const uid = params.userId;
-    if (!uid) return { data: null, error: 'Not signed in' };
-    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
-    if (!supabaseUrl || !supabaseAnonKey) return { data: null, error: 'Supabase is not configured' };
-    const selQ = `match_holes?match_id=eq.${encodeURIComponent(params.matchId)}&player_id=eq.${encodeURIComponent(uid)}&hole_number=eq.${params.holeNumber}&select=id&limit=1`;
-    const selRes = await fetch(`${supabaseUrl}/rest/v1/${selQ}`, {
-      headers: { apikey: supabaseAnonKey, Authorization: `Bearer ${accessToken}` },
+    const { json, error } = await restRpcPost(accessToken, 'upsert_match_hole_score', {
+      p_match_id: params.matchId,
+      p_hole_number: params.holeNumber,
+      p_gross_score: params.grossScore,
     });
-    const selText = await selRes.text().catch(() => '');
-    if (!selRes.ok) {
-      console.warn('[matchPlay] upsertMatchHoleScore select', selRes.status, selText);
-      return { data: null, error: restErrorMessage(selText, selRes.statusText) };
+    if (error) {
+      console.warn('[matchPlay] upsertMatchHoleScore:rpc_error', error);
+      return { data: null, error };
     }
-    let existingId: string | null = null;
-    try {
-      const rows = JSON.parse(selText) as unknown;
-      if (Array.isArray(rows) && rows[0] && typeof (rows[0] as { id?: string }).id === 'string') {
-        existingId = (rows[0] as { id: string }).id;
-      }
-    } catch {
-      return { data: null, error: 'Invalid response' };
-    }
-
-    if (existingId) {
-      const patchRes = await fetch(`${supabaseUrl}/rest/v1/match_holes?id=eq.${encodeURIComponent(existingId)}`, {
-        method: 'PATCH',
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          Prefer: 'return=representation',
-        },
-        body: JSON.stringify({ gross_score: params.grossScore }),
-      });
-      const patchText = await patchRes.text().catch(() => '');
-      if (!patchRes.ok) {
-        console.warn('[matchPlay] upsertMatchHoleScore update', patchRes.status, patchText);
-        return { data: null, error: restErrorMessage(patchText, patchRes.statusText) };
-      }
-      try {
-        const rows = JSON.parse(patchText) as unknown;
-        const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
-        if (!row) return { data: null, error: 'Could not update hole' };
-        return { data: asMatchHoleRow(row), error: null };
-      } catch {
-        return { data: null, error: 'Invalid response' };
-      }
-    }
-
-    const insRes = await fetch(`${supabaseUrl}/rest/v1/match_holes`, {
-      method: 'POST',
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=representation',
-      },
-      body: JSON.stringify([
-        {
-          match_id: params.matchId,
-          player_id: uid,
-          hole_number: params.holeNumber,
-          gross_score: params.grossScore,
-        },
-      ]),
-    });
-    const insText = await insRes.text().catch(() => '');
-    if (!insRes.ok) {
-      console.warn('[matchPlay] upsertMatchHoleScore insert', insRes.status, insText);
-      return { data: null, error: restErrorMessage(insText, insRes.statusText) };
-    }
-    try {
-      const rows = JSON.parse(insText) as unknown;
-      const row = Array.isArray(rows) && rows[0] ? rows[0] : null;
-      if (!row) return { data: null, error: 'Could not save hole' };
-      return { data: asMatchHoleRow(row), error: null };
-    } catch {
-      return { data: null, error: 'Invalid response' };
-    }
+    const { hole, verificationReset } = parseUpsertMatchHoleRpcPayload(json);
+    if (!hole) return { data: null, error: 'Could not save hole' };
+    return { data: hole, error: null, verificationReset };
   }
 
   if (!supabase) return { data: null, error: 'Supabase is not configured' };
@@ -684,50 +706,20 @@ export async function upsertMatchHoleScore(params: {
   } = await supabase.auth.getUser();
   if (!user) return { data: null, error: 'Not signed in' };
 
-  const { data: existing, error: selErr } = await supabase
-    .from('match_holes')
-    .select('id')
-    .eq('match_id', params.matchId)
-    .eq('player_id', user.id)
-    .eq('hole_number', params.holeNumber)
-    .maybeSingle();
-
-  if (selErr) {
-    console.warn('[matchPlay] upsertMatchHoleScore select', selErr.message);
-    return { data: null, error: selErr.message };
-  }
-
-  const rowId = (existing as { id?: string } | null)?.id;
-  if (rowId) {
-    const { data, error } = await supabase
-      .from('match_holes')
-      .update({ gross_score: params.grossScore })
-      .eq('id', rowId)
-      .select('*')
-      .single();
-    if (error) {
-      console.warn('[matchPlay] upsertMatchHoleScore update', error.message);
-      return { data: null, error: error.message };
-    }
-    return { data: asMatchHoleRow(data), error: null };
-  }
-
-  const { data, error } = await supabase
-    .from('match_holes')
-    .insert({
-      match_id: params.matchId,
-      player_id: user.id,
-      hole_number: params.holeNumber,
-      gross_score: params.grossScore,
-    })
-    .select('*')
-    .single();
+  const { data, error } = await supabase.rpc('upsert_match_hole_score', {
+    p_match_id: params.matchId,
+    p_hole_number: params.holeNumber,
+    p_gross_score: params.grossScore,
+  });
 
   if (error) {
-    console.warn('[matchPlay] upsertMatchHoleScore insert', error.message);
+    console.warn('[matchPlay] upsertMatchHoleScore', error.message);
     return { data: null, error: error.message };
   }
-  return { data: asMatchHoleRow(data), error: null };
+
+  const { hole, verificationReset } = parseUpsertMatchHoleRpcPayload(data);
+  if (!hole) return { data: null, error: 'Could not save hole' };
+  return { data: hole, error: null, verificationReset };
 }
 
 export type SetMatchHoleReactionResult = { ok: boolean; error: string | null };

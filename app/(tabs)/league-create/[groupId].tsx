@@ -24,7 +24,7 @@ import { createLeague, fetchLeaguesForGroup, type LeagueFormat } from '../../../
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
-const FORMATS: { key: LeagueFormat; title: string; sub: string }[] = [
+const FORMATS: { key: LeagueFormat; title: string; sub: string; comingSoon?: boolean }[] = [
   {
     key: 'stroke',
     title: 'Stroke Play',
@@ -39,11 +39,13 @@ const FORMATS: { key: LeagueFormat; title: string; sub: string }[] = [
     key: 'scramble',
     title: 'Scramble',
     sub: 'Teams play together. Everyone hits, the best shot is used. Lowest team score wins.',
+    comingSoon: true,
   },
   {
     key: 'best_ball',
     title: 'Best Ball',
     sub: 'Teams play individually. The best score on each hole counts for the team.',
+    comingSoon: true,
   },
 ];
 
@@ -67,7 +69,6 @@ function initialTeams() {
 }
 
 const DEFAULT_USE_HANDICAP = true;
-const MIN_MEMBERS_FOR_TEAM_FORMATS = 4;
 
 function isTeamFormat(key: LeagueFormat): boolean {
   return key === 'scramble' || key === 'best_ball';
@@ -102,8 +103,6 @@ export default function LeagueCreateScreen() {
   const [busy, setBusy] = useState(false);
   const handicapTouchedRef = useRef(false);
 
-  const teamFormatsAvailable = members.length >= MIN_MEMBERS_FOR_TEAM_FORMATS;
-
   const resetWizard = useCallback(() => {
     handicapTouchedRef.current = false;
     setStep('basic');
@@ -136,10 +135,10 @@ export default function LeagueCreateScreen() {
   }, [step]);
 
   useEffect(() => {
-    if (!teamFormatsAvailable && isTeamFormat(format)) {
+    if (isTeamFormat(format)) {
       setFormat('stroke');
     }
-  }, [teamFormatsAvailable, format]);
+  }, [format]);
 
   const needsTeams = isTeamFormat(format);
 
@@ -287,13 +286,13 @@ export default function LeagueCreateScreen() {
             <Text style={[styles.lbl, { marginTop: 16 }]}>Format</Text>
             {FORMATS.map((f) => {
               const on = format === f.key;
-              const disabled = isTeamFormat(f.key) && !teamFormatsAvailable;
+              const disabled = !!f.comingSoon;
               return (
                 <Pressable
                   key={f.key}
                   style={[
                     styles.formatCard,
-                    on && styles.formatCardOn,
+                    on && !disabled && styles.formatCardOn,
                     disabled && styles.formatCardDisabled,
                   ]}
                   disabled={disabled}
@@ -305,10 +304,10 @@ export default function LeagueCreateScreen() {
                     </Text>
                     <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>{f.sub}</Text>
                     {disabled ? (
-                      <Text style={styles.formatDisabledNote}>Requires at least 4 group members.</Text>
+                      <Text style={styles.formatDisabledNote}>Coming soon</Text>
                     ) : null}
                   </View>
-                  {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                  {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
                 </Pressable>
               );
             })}

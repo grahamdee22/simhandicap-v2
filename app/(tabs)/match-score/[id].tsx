@@ -15,21 +15,23 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
-import { googleOAuthAccessToken } from '@/src/lib/googleOAuthAccessToken';
 import {
   abandonMatch,
   fetchMatchParticipantProfiles,
   fetchMatchPlayerDisplayNames,
   getMatchById,
+  getMatchOpponentScoringSummary,
   listMatchHoles,
   MATCH_HOLE_REACTION_EMOJIS,
   reactionReceivedOnMyHoleRow,
   reactionSentOnOpponentRow,
+  resolveMatchAccessToken,
   setMatchHoleReaction,
   updateMatchById,
   upsertMatchHoleScore,
   type DbMatchHoleRow,
   type DbMatchRow,
+  type MatchOpponentScoringSummary,
 } from '../../../src/lib/matchPlay';
 import {
   buildMatchStrokeContext,
@@ -44,7 +46,11 @@ import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { MatchChat } from '../../../src/components/MatchChat';
 import { MatchScorecardVerification } from '../../../src/components/MatchScorecardVerification';
-import { matchReadyToFinalize } from '../../../src/lib/matchVerification';
+import {
+  isMatchScoringLocked,
+  matchReadyToFinalize,
+  playerIsVerified,
+} from '../../../src/lib/matchVerification';
 
 const GROSS_MIN = 1;
 const GROSS_MAX = 15;
@@ -82,6 +88,8 @@ export default function MatchScoreScreen() {
   const [settingsMineImgErr, setSettingsMineImgErr] = useState(false);
   const [settingsOppImgErr, setSettingsOppImgErr] = useState(false);
   const [reactionPickerOpenHole, setReactionPickerOpenHole] = useState<number | null>(null);
+  const [editingHole, setEditingHole] = useState<number | null>(null);
+  const [opponentSummary, setOpponentSummary] = useState<MatchOpponentScoringSummary | null>(null);
   /** Hole numbers where we show the user's reaction before server confirms (cleared when `holes` includes it). */
   const [optimisticSentReactionByHole, setOptimisticSentReactionByHole] = useState<Record<number, string>>(
     {}
@@ -103,9 +111,11 @@ export default function MatchScoreScreen() {
       setLoading(false);
       return;
     }
-    const [mRes, hRes] = await Promise.all([
-      getMatchById(matchId, googleOAuthAccessToken ?? undefined),
-      listMatchHoles(matchId, googleOAuthAccessToken ?? undefined),
+    const accessToken = (await resolveMatchAccessToken()) ?? undefined;
+    const [mRes, hRes, oppRes] = await Promise.all([
+      getMatchById(matchId, accessToken),
+      listMatchHoles(matchId, accessToken),
+      getMatchOpponentScoringSummary(matchId, accessToken),
     ]);
     if (!mounted.current) return;
     if (mRes.error || !mRes.data) {
@@ -132,12 +142,12 @@ export default function MatchScoreScreen() {
     setMatch(m);
     setFatalErr(null);
     if (hRes.data) setHoles(hRes.data);
+    if (oppRes.data) setOpponentSummary(oppRes.data);
+    else setOpponentSummary(null);
     const p1 = m.player_1_id;
     const p2 = m.player_2_id;
 
-    const sessionRes = supabase ? await supabase.auth.getSession() : null;
-    const nameBearer =
-      googleOAuthAccessToken ?? sessionRes?.data?.session?.access_token ?? undefined;
+    const nameBearer = accessToken;
 
     if (nameBearer) {
       const { displayNames, ghinById } = await fetchMatchParticipantProfiles([m], nameBearer);
@@ -180,7 +190,7 @@ export default function MatchScoreScreen() {
       setGhin2(0);
     }
     setLoading(false);
-  }, [matchId, supabaseOn, user?.id, router, googleOAuthAccessToken]);
+  }, [matchId, supabaseOn, user?.id, router]);
 
   useFocusEffect(
     useCallback(() => {
@@ -275,8 +285,10 @@ export default function MatchScoreScreen() {
   }, [holes, oppId, amPlayer1]);
 
   const myDistinct = user?.id && match ? distinctHoleCount(holes, user.id) : 0;
-  const oppDistinct = oppId ? distinctHoleCount(holes, oppId) : 0;
+  const oppDistinct = opponentSummary?.opponentHolesPlayed ?? 0;
   const showAheadBanner = opponentAhead(myDistinct, oppDistinct);
+  const scoringLocked = match ? isMatchScoringLocked(match) : false;
+  const showOpponentHoleDetail = match?.status === 'complete';
 
   const currentHole = useMemo(() => {
     if (!match?.player_2_id || !user?.id || !maps) return null;
@@ -287,16 +299,32 @@ export default function MatchScoreScreen() {
     return null;
   }, [match?.player_2_id, user?.id, maps, amPlayer1, holeNums]);
 
+  const activeEntryHole = editingHole ?? currentHole;
+  const myDone = currentHole == null && editingHole == null;
+
   useEffect(() => {
     setSettingsMineImgErr(false);
     setSettingsOppImgErr(false);
   }, [match?.player_1_settings_photo_url, match?.player_2_settings_photo_url, amPlayer1]);
 
   useEffect(() => {
-    if (currentHole == null || !course) return;
+    if (editingHole != null || currentHole == null || !course) return;
     const par = course.pars[currentHole - 1] ?? 4;
     setHoleGross(clampGross(par));
-  }, [currentHole, course]);
+  }, [currentHole, course, editingHole]);
+
+  const startEditHole = useCallback(
+    (holeNum: number) => {
+      if (!match?.player_2_id || !user?.id || scoringLocked) return;
+      const myMap = amPlayer1 ? maps.p1 : maps.p2;
+      const g = myMap.get(holeNum);
+      if (g == null) return;
+      setEditingHole(holeNum);
+      setHoleGross(clampGross(g));
+      setReactionPickerOpenHole(null);
+    },
+    [match?.player_2_id, user?.id, scoringLocked, amPlayer1, maps]
+  );
 
   const tryFinalize = useCallback(
     async (m: DbMatchRow, holeRows: DbMatchHoleRow[]) => {
@@ -318,63 +346,99 @@ export default function MatchScoreScreen() {
           player_1_finished: true,
           player_2_finished: true,
         },
-        googleOAuthAccessToken ?? undefined
+        (await resolveMatchAccessToken()) ?? undefined
       );
       if (!res.error && res.data?.status === 'complete') {
         router.replace(`/(tabs)/match-results/${m.id}` as never);
       }
     },
-    [strokeCtx, course, router, googleOAuthAccessToken]
+    [strokeCtx, course, router]
   );
 
   const onVerificationComplete = useCallback(async () => {
     if (!matchId || !supabaseOn || !user?.id) return;
-    const [mRes, hRes] = await Promise.all([
-      getMatchById(matchId, googleOAuthAccessToken ?? undefined),
-      listMatchHoles(matchId, googleOAuthAccessToken ?? undefined),
+    const accessToken = (await resolveMatchAccessToken()) ?? undefined;
+    const [mRes, hRes, oppRes] = await Promise.all([
+      getMatchById(matchId, accessToken),
+      listMatchHoles(matchId, accessToken),
+      getMatchOpponentScoringSummary(matchId, accessToken),
     ]);
     if (!mounted.current) return;
     if (mRes.data) setMatch(mRes.data);
     if (hRes.data) setHoles(hRes.data);
+    if (oppRes.data) setOpponentSummary(oppRes.data);
     if (mRes.data && hRes.data) {
       await tryFinalize(mRes.data, hRes.data);
     }
-  }, [matchId, supabaseOn, user?.id, googleOAuthAccessToken, tryFinalize]);
+  }, [matchId, supabaseOn, user?.id, tryFinalize]);
 
-  const onSubmitHole = useCallback(async () => {
+  const onSaveHole = useCallback(async () => {
+    const holeToSave = editingHole ?? currentHole;
     if (
       !match ||
       !user?.id ||
-      currentHole == null ||
+      holeToSave == null ||
       !course ||
       !strokeCtx ||
       submitBusy ||
       !matchId
     )
       return;
+
+    if (isMatchScoringLocked(match)) {
+      showAppAlert(
+        'Match locked',
+        'Scores cannot be edited after both players have verified and the match is complete.'
+      );
+      return;
+    }
+
+    const myMap = amPlayer1 ? maps.p1 : maps.p2;
+    const isEdit = myMap.has(holeToSave);
+    if (isEdit && playerIsVerified(match, amPlayer1)) {
+      const ok = await confirmDestructive(
+        'Reset verification?',
+        "Editing your score will reset your verification. You'll need to resubmit your scorecard screenshot.",
+        'Edit score'
+      );
+      if (!ok) return;
+    }
+
     const gross = clampGross(holeGross);
     setSubmitBusy(true);
+    const accessToken = (await resolveMatchAccessToken()) ?? undefined;
     const res = await upsertMatchHoleScore({
       matchId,
-      holeNumber: currentHole,
+      holeNumber: holeToSave,
       grossScore: gross,
       userId: user.id,
-      accessToken: googleOAuthAccessToken ?? undefined,
+      accessToken,
     });
     setSubmitBusy(false);
     if (res.error) {
       showAppAlert('Could not save hole', res.error);
       return;
     }
-    const nextRows = [...holes.filter((r) => !(r.player_id === user.id && r.hole_number === currentHole))];
+    if (res.verificationReset) {
+      showAppAlert(
+        'Verification reset',
+        'Your scorecard verification was cleared. Upload a new screenshot when you are done editing.'
+      );
+    }
+    setEditingHole(null);
+    const nextRows = [...holes.filter((r) => !(r.player_id === user.id && r.hole_number === holeToSave))];
     if (res.data) nextRows.push(res.data);
     setHoles(nextRows);
-    await tryFinalize(match, nextRows);
+    const mRes = await getMatchById(matchId, accessToken);
+    const nextMatch = mRes.data ?? match;
+    if (mRes.data) setMatch(mRes.data);
+    await tryFinalize(nextMatch, nextRows);
     void refreshAll();
   }, [
+    editingHole,
+    currentHole,
     match,
     user?.id,
-    currentHole,
     course,
     strokeCtx,
     submitBusy,
@@ -383,7 +447,8 @@ export default function MatchScoreScreen() {
     holes,
     tryFinalize,
     refreshAll,
-    googleOAuthAccessToken,
+    amPlayer1,
+    maps,
   ]);
 
   const onPickHoleReaction = useCallback(
@@ -405,7 +470,7 @@ export default function MatchScoreScreen() {
             holeNumber: holeNum,
             emoji,
           },
-          googleOAuthAccessToken ?? undefined
+          (await resolveMatchAccessToken()) ?? undefined
         );
         if (!res.ok) {
           setOptimisticSentReactionByHole((prev) => {
@@ -420,7 +485,7 @@ export default function MatchScoreScreen() {
         reactionRpcInFlightByHoleRef.current.delete(holeNum);
       }
     },
-    [matchId, user?.id, oppId, holes, amPlayer1, refreshAll, googleOAuthAccessToken]
+    [matchId, user?.id, oppId, holes, amPlayer1, refreshAll]
   );
 
   const onAbandonMatch = useCallback(async () => {
@@ -432,14 +497,14 @@ export default function MatchScoreScreen() {
     );
     if (!ok) return;
     setAbandonBusy(true);
-    const res = await abandonMatch(matchId, googleOAuthAccessToken ?? undefined);
+    const res = await abandonMatch(matchId, (await resolveMatchAccessToken()) ?? undefined);
     setAbandonBusy(false);
     if (!res.ok) {
       showAppAlert('Could not abandon match', res.error ?? 'Unknown error');
       return;
     }
     router.replace('/(tabs)/groups' as never);
-  }, [matchId, abandonBusy, router, googleOAuthAccessToken]);
+  }, [matchId, abandonBusy, router]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
@@ -530,13 +595,16 @@ export default function MatchScoreScreen() {
     reactionOnMyScore: string | null;
     reactionISent: string | null;
     showReactionPicker: boolean;
+    canEditMyScore: boolean;
+    isEditingRow: boolean;
   }[] = [];
 
   for (const h of holeNums) {
     const g1 = maps.p1.get(h);
     const g2 = maps.p2.get(h);
     const myGross = amPlayer1 ? g1 : g2;
-    const oppGross = amPlayer1 ? g2 : g1;
+    const oppGrossRaw = amPlayer1 ? g2 : g1;
+    const oppGross = showOpponentHoleDetail ? oppGrossRaw : undefined;
     const myRow =
       user?.id ? holeRowByPlayerHole.get(`${user.id}:${h}`) : undefined;
     const oppRow =
@@ -545,10 +613,12 @@ export default function MatchScoreScreen() {
     const reactionISentFromServer = reactionSentOnOpponentRow(oppRow, amPlayer1);
     const reactionISent =
       reactionISentFromServer ?? optimisticSentReactionByHole[h] ?? null;
-    const showReactionPicker = Boolean(oppId && oppGross != null && !reactionISent);
+    const showReactionPicker = Boolean(
+      showOpponentHoleDetail && oppId && oppGross != null && !reactionISent
+    );
     let myNetDisp: string | number = '—';
     let oppNetDisp: string | number = '—';
-    if (g1 != null && g2 != null) {
+    if (showOpponentHoleDetail && g1 != null && g2 != null) {
       const n1 = holeNetScore(g1, h, strokeCtx, true);
       const n2 = holeNetScore(g2, h, strokeCtx, false);
       myNetDisp = amPlayer1 ? n1 : n2;
@@ -578,8 +648,22 @@ export default function MatchScoreScreen() {
       reactionOnMyScore,
       reactionISent,
       showReactionPicker,
+      canEditMyScore: myGross != null && !scoringLocked,
+      isEditingRow: editingHole === h,
     });
   }
+
+  const showOpponentGrossTotal =
+    showOpponentHoleDetail ||
+    (opponentSummary?.bothFinishedHoles && opponentSummary.opponentGrossTotal != null);
+  const oppGrossTotalDisp = showOpponentHoleDetail
+    ? oppScoredHoles === 0
+      ? '—'
+      : cumOppGross
+    : opponentSummary?.bothFinishedHoles && opponentSummary.opponentGrossTotal != null
+      ? opponentSummary.opponentGrossTotal
+      : '—';
+  const oppNetTotalDisp = showOpponentHoleDetail ? (oppScoredHoles === 0 ? '—' : cumOppNet) : '—';
 
   const myDisplayName = amPlayer1 ? names.p1 : names.p2;
   const oppDisplayName = amPlayer1 ? names.p2 : names.p1;
@@ -590,9 +674,7 @@ export default function MatchScoreScreen() {
     ? match.player_2_settings_photo_url
     : match.player_1_settings_photo_url;
 
-  const parCur = currentHole != null ? course.pars[currentHole - 1] ?? 4 : null;
-
-  const myDone = currentHole == null;
+  const parCur = activeEntryHole != null ? course.pars[activeEntryHole - 1] ?? 4 : null;
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -698,17 +780,39 @@ export default function MatchScoreScreen() {
               reactionOnMyScore,
               reactionISent,
               showReactionPicker,
+              canEditMyScore,
+              isEditingRow,
             }) => (
-              <View key={h} style={styles.tr}>
+              <View key={h} style={[styles.tr, isEditingRow && styles.trEditing]}>
                 <Text style={[styles.td, styles.colHole]}>{h}</Text>
                 <View style={[styles.tdCell, styles.colNum]}>
                   <View style={styles.oppGrossInlineWrap}>
-                    <View style={styles.oppGrossInlineRow}>
-                      <Text style={[styles.td, styles.oppGrossInlineNum]}>{myGross ?? '—'}</Text>
-                      {reactionOnMyScore ? (
-                        <Text style={styles.reactionEmojiInline}>{reactionOnMyScore}</Text>
-                      ) : null}
-                    </View>
+                    {canEditMyScore ? (
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.oppGrossInlineRow,
+                          styles.myScoreEditHit,
+                          pressed && styles.myScoreEditHitPressed,
+                        ]}
+                        onPress={() => startEditHole(h)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Edit score for hole ${h}`}
+                      >
+                        <Text style={[styles.td, styles.oppGrossInlineNum, styles.myScoreEditTxt]}>
+                          {myGross ?? '—'}
+                        </Text>
+                        {reactionOnMyScore ? (
+                          <Text style={styles.reactionEmojiInline}>{reactionOnMyScore}</Text>
+                        ) : null}
+                      </Pressable>
+                    ) : (
+                      <View style={styles.oppGrossInlineRow}>
+                        <Text style={[styles.td, styles.oppGrossInlineNum]}>{myGross ?? '—'}</Text>
+                        {reactionOnMyScore ? (
+                          <Text style={styles.reactionEmojiInline}>{reactionOnMyScore}</Text>
+                        ) : null}
+                      </View>
+                    )}
                   </View>
                 </View>
                 <View style={[styles.tdCell, styles.colNum]}>
@@ -779,21 +883,24 @@ export default function MatchScoreScreen() {
             </View>
             <View style={[styles.tdCell, styles.colNum]}>
               <Text style={[styles.tdStrong, styles.tdCenter]}>
-                {oppScoredHoles === 0 ? '—' : cumOppGross}
+                {showOpponentGrossTotal ? oppGrossTotalDisp : '—'}
               </Text>
             </View>
             <View style={[styles.tdCell, styles.colNum]}>
-              <Text style={[styles.tdStrong, styles.tdCenter]}>{oppScoredHoles === 0 ? '—' : cumOppNet}</Text>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>{oppNetTotalDisp}</Text>
             </View>
           </View>
 
-          {myDone && match.verification_required && user?.id ? (
+          {myDone && !editingHole && !scoringLocked ? (
+            <Text style={styles.editHint}>Tap any of your scores to edit.</Text>
+          ) : null}
+
+          {myDone && match.verification_required && user?.id && !editingHole ? (
             <MatchScorecardVerification
               match={match}
               holes={holes}
               userId={user.id}
               isPlayer1={amPlayer1}
-              accessToken={googleOAuthAccessToken ?? undefined}
               onVerified={() => void onVerificationComplete()}
             />
           ) : null}
@@ -806,16 +913,11 @@ export default function MatchScoreScreen() {
         </ScrollView>
 
         <View style={styles.footer}>
-          {myDone ? (
-            <Text style={styles.footerTitle}>
-              {match.verification_required
-                ? 'You\'ve entered all holes. Upload and verify your scorecard screenshot to finish.'
-                : 'You\'ve entered all holes. Totals lock when both players finish.'}
-            </Text>
-          ) : (
+          {activeEntryHole != null && !scoringLocked ? (
             <>
               <Text style={styles.footerTitle}>
-                Hole {currentHole} · Par {parCur}
+                {editingHole != null ? `Editing hole ${editingHole}` : `Hole ${activeEntryHole}`} · Par{' '}
+                {parCur}
               </Text>
               <Text style={styles.sectionLabel}>Score</Text>
               <View style={styles.scoreBlock}>
@@ -848,16 +950,35 @@ export default function MatchScoreScreen() {
                   submitBusy && styles.submitBtnDisabled,
                 ]}
                 disabled={submitBusy}
-                onPress={() => void onSubmitHole()}
+                onPress={() => void onSaveHole()}
               >
                 {submitBusy ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.submitBtnTxt}>Save hole {currentHole}</Text>
+                  <Text style={styles.submitBtnTxt}>
+                    {editingHole != null ? `Save hole ${editingHole}` : `Save hole ${activeEntryHole}`}
+                  </Text>
                 )}
               </Pressable>
+              {editingHole != null ? (
+                <Pressable
+                  style={styles.cancelEditBtn}
+                  onPress={() => setEditingHole(null)}
+                  accessibilityRole="button"
+                >
+                  <Text style={styles.cancelEditBtnTxt}>Cancel edit</Text>
+                </Pressable>
+              ) : null}
             </>
-          )}
+          ) : myDone ? (
+            <Text style={styles.footerTitle}>
+              {scoringLocked
+                ? 'This match is locked — scores cannot be edited.'
+                : match.verification_required
+                  ? 'You\'ve entered all holes. Upload and verify your scorecard screenshot to finish.'
+                  : 'You\'ve entered all holes. Totals lock when both players finish.'}
+            </Text>
+          ) : null}
           <Pressable
             style={styles.abandonBtn}
             disabled={abandonBusy || submitBusy}
@@ -956,6 +1077,23 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   tr: { flexDirection: 'row', alignItems: 'flex-start', paddingVertical: 7 },
+  trEditing: { backgroundColor: colors.accentSoft, borderRadius: 6 },
+  editHint: {
+    fontSize: 13,
+    color: colors.muted,
+    marginTop: 12,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  myScoreEditHit: {
+    borderRadius: 6,
+    paddingHorizontal: 2,
+    paddingVertical: 1,
+  },
+  myScoreEditHitPressed: { opacity: 0.85, backgroundColor: colors.accentSoft },
+  myScoreEditTxt: { textDecorationLine: 'underline', color: colors.sage },
+  cancelEditBtn: { marginTop: 10, alignItems: 'center', paddingVertical: 8 },
+  cancelEditBtnTxt: { fontSize: 14, fontWeight: '600', color: colors.muted },
   trTotals: {
     marginTop: 6,
     paddingTop: 10,

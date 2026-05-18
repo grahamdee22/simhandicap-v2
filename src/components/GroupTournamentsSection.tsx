@@ -3,7 +3,6 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../lib/constants';
-import { googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
 import {
   fetchLeaguesForGroup,
   syncLeagueStatuses,
@@ -18,11 +17,17 @@ import {
 import { fetchLeagueBundle } from '../lib/leagues';
 import { leagueSectionLabelStyles } from '../lib/leagueSectionTitle';
 import { isSocialGroupCreator } from '../lib/socialGroupCreator';
-import { fetchSocialGroupCreatedBy } from '../lib/socialGroups';
+import {
+  isSocialGroupCreatorViaRpc,
+  patchGroupCreatorInStore,
+  resolveSocialGroupsAccessToken,
+} from '../lib/socialGroups';
 import type { FriendGroup } from '../store/useAppStore';
 
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
 const ALLOW_DEV_CREATOR_VIEW = __DEV__;
+
+type CreatorCheck = 'pending' | 'creator' | 'member';
 
 type Props = {
   group: FriendGroup;
@@ -34,34 +39,44 @@ type Props = {
 export function GroupTournamentsSection({ group, authUserId, gutter, displayNames }: Props) {
   const router = useRouter();
   const storeCreatorId = group.createdByUserId?.trim() || null;
-  const [dbCreatorId, setDbCreatorId] = useState<string | null>(null);
-  const [creatorResolved, setCreatorResolved] = useState(!!storeCreatorId);
+  const [creatorCheck, setCreatorCheck] = useState<CreatorCheck>(() =>
+    storeCreatorId
+      ? isSocialGroupCreator(group, authUserId)
+        ? 'creator'
+        : 'member'
+      : 'pending'
+  );
 
   useEffect(() => {
     let cancelled = false;
+
     if (storeCreatorId) {
-      setDbCreatorId(null);
-      setCreatorResolved(true);
+      setCreatorCheck(isSocialGroupCreator(group, authUserId) ? 'creator' : 'member');
       return;
     }
-    setCreatorResolved(false);
+
+    if (!authUserId) {
+      setCreatorCheck('pending');
+      return;
+    }
+
+    setCreatorCheck('pending');
     void (async () => {
-      const id = await fetchSocialGroupCreatedBy(group.id, googleOAuthAccessToken ?? undefined);
-      if (!cancelled) {
-        setDbCreatorId(id);
-        setCreatorResolved(true);
+      const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const { isCreator } = await isSocialGroupCreatorViaRpc(group.id, accessToken);
+      if (cancelled) return;
+      if (isCreator) {
+        patchGroupCreatorInStore(group.id, authUserId);
       }
+      setCreatorCheck(isCreator ? 'creator' : 'member');
     })();
+
     return () => {
       cancelled = true;
     };
-  }, [group.id, storeCreatorId]);
+  }, [group.id, group.createdByUserId, authUserId, storeCreatorId]);
 
-  const isGroupCreator = isSocialGroupCreator(
-    { createdByUserId: storeCreatorId ?? dbCreatorId ?? '' },
-    authUserId
-  );
-
+  const isGroupCreator = creatorCheck === 'creator';
   const [devForceCreatorView, setDevForceCreatorView] = useState(false);
   const showCreatorUi = isGroupCreator || (ALLOW_DEV_CREATOR_VIEW && devForceCreatorView);
   const [loading, setLoading] = useState(true);
@@ -71,12 +86,13 @@ export function GroupTournamentsSection({ group, authUserId, gutter, displayName
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetchLeaguesForGroup(group.id, googleOAuthAccessToken ?? undefined);
-    const synced = await syncLeagueStatuses(res.data ?? [], googleOAuthAccessToken ?? undefined);
+    const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
+    const res = await fetchLeaguesForGroup(group.id, accessToken);
+    const synced = await syncLeagueStatuses(res.data ?? [], accessToken);
     setLeagues(synced);
     const active = synced.find((l) => l.status === 'active' && isLeagueActive(l));
     if (active) {
-      const bundle = await fetchLeagueBundle(active.id, googleOAuthAccessToken ?? undefined);
+      const bundle = await fetchLeagueBundle(active.id, accessToken);
       if (bundle.data) {
         const standings = computeLeagueStandings({
           league: bundle.data.league,
@@ -161,8 +177,12 @@ export function GroupTournamentsSection({ group, authUserId, gutter, displayName
             )}
             <Text style={styles.seeAll}>See full standings →</Text>
           </Pressable>
-        ) : !creatorResolved ? (
-          <ActivityIndicator color={colors.header} style={{ marginVertical: 16 }} />
+        ) : creatorCheck === 'pending' ? (
+          <View
+            style={styles.neutralPending}
+            accessibilityLabel="Loading tournament options"
+            accessibilityRole="progressbar"
+          />
         ) : showCreatorUi ? (
           <Pressable
             style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
@@ -242,6 +262,10 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: colors.muted,
     fontSize: 14,
+    paddingVertical: 16,
+  },
+  neutralPending: {
+    minHeight: 46,
     paddingVertical: 16,
   },
   activeCard: { paddingVertical: 4 },

@@ -80,6 +80,13 @@ export function matchReadyToFinalize(match: DbMatchRow): boolean {
   return !!match.p1_verified && !!match.p2_verified;
 }
 
+/** No hole edits once the match is complete or both players have verified (when required). */
+export function isMatchScoringLocked(match: DbMatchRow): boolean {
+  if (match.status === 'complete') return true;
+  if (match.verification_required && match.p1_verified && match.p2_verified) return true;
+  return false;
+}
+
 export function verificationNotesMessage(notes: string | null | undefined): string | null {
   const parsed = parseNotesJson(notes);
   if (parsed?.message) return parsed.message;

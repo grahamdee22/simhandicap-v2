@@ -186,6 +186,47 @@ export async function fetchSocialGroupCreatedBy(
   return id || null;
 }
 
+/** Server-authoritative: `auth.uid()` is `social_groups.created_by` for `p_group_id`. */
+export async function isSocialGroupCreatorViaRpc(
+  groupId: string,
+  accessToken?: string
+): Promise<{ isCreator: boolean; error: string | null }> {
+  const tok = accessToken ?? (await resolveSocialGroupsAccessToken());
+  if (tok) {
+    const { json, error } = await restRpcPost(tok, 'is_social_group_creator', {
+      p_group_id: groupId,
+    });
+    if (error) {
+      console.warn('[socialGroups] isSocialGroupCreatorViaRpc:rpc_error', error);
+      return { isCreator: false, error };
+    }
+    return { isCreator: json === true, error: null };
+  }
+
+  if (!supabase) {
+    return { isCreator: false, error: 'Supabase is not configured' };
+  }
+
+  const { data, error } = await supabase.rpc('is_social_group_creator', { p_group_id: groupId });
+  if (error) {
+    console.warn('[socialGroups] isSocialGroupCreatorViaRpc', error.message);
+    return { isCreator: false, error: error.message };
+  }
+  return { isCreator: data === true, error: null };
+}
+
+/** Patch persisted groups missing `createdByUserId` after a successful creator RPC. */
+export function patchGroupCreatorInStore(groupId: string, createdByUserId: string): void {
+  const uid = createdByUserId.trim();
+  if (!uid) return;
+  const groups = useAppStore.getState().groups;
+  const g = groups.find((x) => x.id === groupId);
+  if (!g || g.createdByUserId?.trim() === uid) return;
+  useAppStore.getState().setGroups(
+    groups.map((x) => (x.id === groupId ? { ...x, createdByUserId: uid } : x))
+  );
+}
+
 const ROUNDS_SELECT_FOR_SOCIAL =
   'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,differential_version,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time';
 
