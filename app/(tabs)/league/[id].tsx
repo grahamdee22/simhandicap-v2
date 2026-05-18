@@ -16,6 +16,7 @@ import {
 } from '../../../src/lib/leagues';
 import {
   computeLeagueStandings,
+  formatLeagueDateRange,
   formatLeagueFormatLabel,
   isLeagueActive,
   leagueDaysRemaining,
@@ -142,8 +143,11 @@ export default function LeagueDetailScreen() {
         </View>
         <Text style={styles.title}>{league.name}</Text>
         <Text style={styles.dates}>
-          {league.start_date} – {league.end_date}
+          {formatLeagueDateRange(league.start_date, league.end_date)}
         </Text>
+        {league.notes?.trim() ? (
+          <Text style={styles.notes}>{league.notes.trim()}</Text>
+        ) : null}
 
         {completed && winner ? (
           <View style={styles.trophyCard}>
@@ -223,6 +227,13 @@ const styles = StyleSheet.create({
   pillMutedTxt: { fontSize: 11, fontWeight: '600', color: colors.muted },
   title: { fontSize: 24, fontWeight: '700', color: colors.ink },
   dates: { fontSize: 13, color: colors.muted, marginTop: 4, marginBottom: 16 },
+  notes: {
+    fontSize: 14,
+    color: colors.ink,
+    lineHeight: 20,
+    marginTop: -8,
+    marginBottom: 16,
+  },
   trophyCard: {
     backgroundColor: '#f0f7f3',
     borderRadius: 12,

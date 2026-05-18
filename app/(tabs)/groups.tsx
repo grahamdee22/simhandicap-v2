@@ -790,17 +790,13 @@ export default function GroupsScreen() {
               )}
             </View>
 
-            {g && (!needsCreatorsBackfill || creatorsBackfillReady) ? (
+            {g ? (
               <GroupTournamentsSection
                 group={g}
-                isGroupCreator={isGroupCreator}
+                authUserId={authUserId}
                 gutter={gutter}
                 displayNames={leagueDisplayNames}
               />
-            ) : needsCreatorsBackfill ? (
-              <View style={{ marginTop: 16, marginHorizontal: gutter, alignItems: 'center' }}>
-                <ActivityIndicator color={colors.header} />
-              </View>
             ) : null}
 
             <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter, marginTop: 16 }]}>

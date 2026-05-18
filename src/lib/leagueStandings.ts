@@ -168,3 +168,17 @@ export function isLeagueActive(league: DbLeagueRow): boolean {
   const today = new Date().toISOString().slice(0, 10);
   return today >= league.start_date && today <= league.end_date;
 }
+
+/** e.g. May 18 – Jun 15, 2026 */
+export function formatLeagueDateRange(startYmd: string, endYmd: string): string {
+  const start = new Date(`${startYmd}T12:00:00`);
+  const end = new Date(`${endYmd}T12:00:00`);
+  const monthDay: Intl.DateTimeFormatOptions = { month: 'short', day: 'numeric' };
+  const startPart = start.toLocaleDateString('en-US', monthDay);
+  const endPart = end.toLocaleDateString('en-US', monthDay);
+  const year = end.getFullYear();
+  if (start.getFullYear() === year) {
+    return `${startPart} – ${endPart}, ${year}`;
+  }
+  return `${start.toLocaleDateString('en-US', { ...monthDay, year: 'numeric' })} – ${end.toLocaleDateString('en-US', { ...monthDay, year: 'numeric' })}`;
+}

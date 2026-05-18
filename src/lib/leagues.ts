@@ -24,6 +24,7 @@ export type DbLeagueRow = {
   use_handicap: boolean;
   created_by: string;
   status: LeagueStatus;
+  notes: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -246,6 +247,7 @@ export type CreateLeagueInput = {
   endDate: string;
   roundsThatCount: number;
   useHandicap: boolean;
+  notes?: string | null;
   createdBy: string;
   members: GroupMember[];
   teams?: { name: string; memberUserIds: string[] }[];
@@ -265,6 +267,7 @@ export async function createLeague(
     rounds_that_count: input.roundsThatCount,
     use_handicap: input.useHandicap !== false,
     created_by: input.createdBy,
+    notes: input.notes?.trim() ? input.notes.trim() : null,
     status: 'active' as const,
   };
 

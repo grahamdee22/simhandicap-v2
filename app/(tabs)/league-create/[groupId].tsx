@@ -92,6 +92,7 @@ export default function LeagueCreateScreen() {
   const [endDate, setEndDate] = useState(defaultEndDate);
   const [roundsThatCount, setRoundsThatCount] = useState(4);
   const [useHandicap, setUseHandicap] = useState(DEFAULT_USE_HANDICAP);
+  const [notes, setNotes] = useState('');
   const [teams, setTeams] = useState(initialTeams);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [assignedMemberAction, setAssignedMemberAction] = useState<{
@@ -231,6 +232,7 @@ export default function LeagueCreateScreen() {
         endDate: ymd(endDate),
         roundsThatCount,
         useHandicap,
+        notes: notes.trim() || null,
         createdBy: user.id,
         members,
         teams: needsTeams
@@ -365,6 +367,16 @@ export default function LeagueCreateScreen() {
               </View>
             </View>
             <Text style={styles.helper}>Adjusts scores using each player&apos;s SimCap index</Text>
+            <Text style={styles.lbl}>Tournament notes (optional)</Text>
+            <TextInput
+              style={styles.notesInput}
+              value={notes}
+              onChangeText={setNotes}
+              placeholder="e.g. Pebble Beach only, white tees, auto 2-putt"
+              placeholderTextColor={colors.subtle}
+              multiline
+              maxLength={500}
+            />
             <Pressable
               style={styles.primaryBtn}
               onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
@@ -443,7 +455,10 @@ export default function LeagueCreateScreen() {
                               )
                             }
                           >
-                            <Text style={styles.chipTxt}>{m?.displayName ?? uid}</Text>
+                            <Text style={styles.chipTxt}>
+                              {m?.displayName ?? uid}
+                              {m?.index != null ? ` · ${m.index.toFixed(1)}` : ''}
+                            </Text>
                           </Pressable>
                           {showActions ? (
                             <View style={styles.memberActions}>
@@ -505,6 +520,9 @@ export default function LeagueCreateScreen() {
               <Text style={styles.summaryMeta}>
                 Best {roundsThatCount} rounds · Handicap {useHandicap ? 'on' : 'off'}
               </Text>
+              {notes.trim() ? (
+                <Text style={styles.summaryMeta}>Notes: {notes.trim()}</Text>
+              ) : null}
               {needsTeams
                 ? teams.map((t) => (
                     <Text key={t.id} style={styles.summaryMeta}>
@@ -535,6 +553,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.ink,
     backgroundColor: colors.bg,
+  },
+  notesInput: {
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.pillBorder,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 15,
+    color: colors.ink,
+    backgroundColor: colors.bg,
+    minHeight: 88,
+    textAlignVertical: 'top',
+    marginBottom: 8,
   },
   formatCard: {
     flexDirection: 'row',

@@ -17,6 +17,8 @@ import {
 } from '../lib/leagueStandings';
 import { fetchLeagueBundle } from '../lib/leagues';
 import { leagueSectionLabelStyles } from '../lib/leagueSectionTitle';
+import { isSocialGroupCreator } from '../lib/socialGroupCreator';
+import { fetchSocialGroupCreatedBy } from '../lib/socialGroups';
 import type { FriendGroup } from '../store/useAppStore';
 
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
@@ -24,13 +26,42 @@ const ALLOW_DEV_CREATOR_VIEW = __DEV__;
 
 type Props = {
   group: FriendGroup;
-  isGroupCreator: boolean;
+  authUserId: string | null;
   gutter: number;
   displayNames: Record<string, string>;
 };
 
-export function GroupTournamentsSection({ group, isGroupCreator, gutter, displayNames }: Props) {
+export function GroupTournamentsSection({ group, authUserId, gutter, displayNames }: Props) {
   const router = useRouter();
+  const storeCreatorId = group.createdByUserId?.trim() || null;
+  const [dbCreatorId, setDbCreatorId] = useState<string | null>(null);
+  const [creatorResolved, setCreatorResolved] = useState(!!storeCreatorId);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (storeCreatorId) {
+      setDbCreatorId(null);
+      setCreatorResolved(true);
+      return;
+    }
+    setCreatorResolved(false);
+    void (async () => {
+      const id = await fetchSocialGroupCreatedBy(group.id, googleOAuthAccessToken ?? undefined);
+      if (!cancelled) {
+        setDbCreatorId(id);
+        setCreatorResolved(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [group.id, storeCreatorId]);
+
+  const isGroupCreator = isSocialGroupCreator(
+    { createdByUserId: storeCreatorId ?? dbCreatorId ?? '' },
+    authUserId
+  );
+
   const [devForceCreatorView, setDevForceCreatorView] = useState(false);
   const showCreatorUi = isGroupCreator || (ALLOW_DEV_CREATOR_VIEW && devForceCreatorView);
   const [loading, setLoading] = useState(true);
@@ -114,6 +145,9 @@ export function GroupTournamentsSection({ group, isGroupCreator, gutter, display
               </View>
             </View>
             <Text style={styles.tournamentName}>{activeLeague.name}</Text>
+            {activeLeague.notes?.trim() ? (
+              <Text style={styles.tournamentNotes}>{activeLeague.notes.trim()}</Text>
+            ) : null}
             {previewTop3.length > 0 ? (
               <View style={styles.preview}>
                 {previewTop3.map((p) => (
@@ -127,6 +161,8 @@ export function GroupTournamentsSection({ group, isGroupCreator, gutter, display
             )}
             <Text style={styles.seeAll}>See full standings →</Text>
           </Pressable>
+        ) : !creatorResolved ? (
+          <ActivityIndicator color={colors.header} style={{ marginVertical: 16 }} />
         ) : showCreatorUi ? (
           <Pressable
             style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
@@ -228,6 +264,12 @@ const styles = StyleSheet.create({
   },
   daysBadgeTxt: { fontSize: 11, fontWeight: '600', color: colors.muted },
   tournamentName: { fontSize: 18, fontWeight: '700', color: colors.ink },
+  tournamentNotes: {
+    fontSize: 13,
+    color: colors.muted,
+    lineHeight: 18,
+    marginTop: 6,
+  },
   preview: { marginTop: 10, gap: 4 },
   previewLine: { fontSize: 13, color: colors.ink },
   previewMuted: { fontSize: 13, color: colors.muted, marginTop: 10 },
