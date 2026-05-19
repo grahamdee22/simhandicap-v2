@@ -97,8 +97,6 @@ export default function LeagueDetailScreen() {
     return standings.find((s) => s.userId === user.id) ?? null;
   }, [standings, user?.id]);
 
-  const winner = standings[0];
-
   if (loading) {
     return (
       <ContentWidth bg={colors.surface}>
@@ -149,11 +147,29 @@ export default function LeagueDetailScreen() {
           <Text style={styles.notes}>{league.notes.trim()}</Text>
         ) : null}
 
-        {completed && winner ? (
-          <View style={styles.trophyCard}>
-            <Text style={styles.trophyEmoji}>🏆</Text>
-            <Text style={styles.trophyTitle}>{winner.displayName}</Text>
-            <Text style={styles.trophySub}>Tournament champion</Text>
+        {completed ? (
+          <View style={styles.podium}>
+            {standings[0] ? (
+              <View style={[styles.trophyCard, styles.trophyCardGold]}>
+                <Text style={styles.trophyEmoji}>🏆</Text>
+                <Text style={styles.trophyTitle}>{standings[0].displayName}</Text>
+                <Text style={styles.trophySub}>Tournament champion</Text>
+              </View>
+            ) : null}
+            {standings[1] ? (
+              <View style={[styles.trophyCard, styles.trophyCardSilver]}>
+                <Text style={styles.trophyEmoji}>🥈</Text>
+                <Text style={styles.trophyTitle}>{standings[1].displayName}</Text>
+                <Text style={styles.trophySub}>2nd place</Text>
+              </View>
+            ) : null}
+            {standings[2] ? (
+              <View style={[styles.trophyCard, styles.trophyCardBronze]}>
+                <Text style={styles.trophyEmoji}>🥉</Text>
+                <Text style={styles.trophyTitle}>{standings[2].displayName}</Text>
+                <Text style={styles.trophySub}>3rd place</Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
 
@@ -234,14 +250,23 @@ const styles = StyleSheet.create({
     marginTop: -8,
     marginBottom: 16,
   },
+  podium: { gap: 10, marginBottom: 16 },
   trophyCard: {
-    backgroundColor: '#f0f7f3',
     borderRadius: 12,
     padding: 20,
     alignItems: 'center',
-    marginBottom: 16,
     borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  trophyCardGold: {
+    backgroundColor: '#f0f7f3',
     borderColor: colors.sage,
+  },
+  trophyCardSilver: {
+    backgroundColor: colors.bg,
+  },
+  trophyCardBronze: {
+    backgroundColor: colors.bg,
   },
   trophyEmoji: { fontSize: 36 },
   trophyTitle: { fontSize: 20, fontWeight: '700', color: colors.ink, marginTop: 8 },

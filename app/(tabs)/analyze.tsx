@@ -491,7 +491,12 @@ export default function AnalyzeScreen() {
         </View>
 
         {leagueBanner ? (
-          <View style={[styles.leagueBanner, { marginHorizontal: gutter, marginBottom: 12 }]}>
+          <View
+            style={[
+              styles.leagueBanner,
+              { marginHorizontal: gutter, marginTop: 12, marginBottom: 12 },
+            ]}
+          >
             <Text style={styles.leagueBannerTxt}>{leagueBanner}</Text>
             <Pressable onPress={() => setLeagueBanner(null)} hitSlop={8} accessibilityRole="button">
               <Text style={styles.leagueBannerDismiss}>Dismiss</Text>

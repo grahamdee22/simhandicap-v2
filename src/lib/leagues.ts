@@ -66,6 +66,8 @@ export type ActiveTournamentOption = {
   groupId: string;
   groupName: string;
   format: LeagueFormat;
+  /** Shown on Log Round but cannot opt in (e.g. match play). */
+  logOptInDisabled?: boolean;
 };
 
 export function isTeamLeagueFormat(format: LeagueFormat): boolean {
@@ -406,7 +408,6 @@ export async function fetchActiveTournamentsForUser(params: {
     const synced = await syncLeagueStatuses(leagues, params.accessToken);
     for (const league of synced) {
       if (league.status !== 'active') continue;
-      if (league.format === 'match_play') continue;
       if (playedYmd < league.start_date || playedYmd > league.end_date) continue;
       if (seen.has(league.id)) continue;
       const bundleRes = await fetchLeagueBundle(league.id, params.accessToken);
@@ -419,6 +420,7 @@ export async function fetchActiveTournamentsForUser(params: {
         groupId: group.id,
         groupName: group.name,
         format: league.format,
+        logOptInDisabled: league.format === 'match_play',
       });
     }
   }

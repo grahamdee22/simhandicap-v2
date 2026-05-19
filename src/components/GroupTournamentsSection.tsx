@@ -153,105 +153,7 @@ export function GroupTournamentsSection({
   );
 
   const showLoadingSpinner = loading && !hasCache && !activeLeague;
-  const wrapInCard = !!activeLeague || pastLeagues.length > 0;
-
-  const body = (
-    <>
-      {showLoadingSpinner ? (
-        <ActivityIndicator color={colors.header} style={{ marginVertical: 16 }} />
-      ) : activeLeague ? (
-        <Pressable
-          onPress={() => router.push(`/(tabs)/league/${activeLeague.id}` as never)}
-          style={({ pressed }) => [styles.activeCard, pressed && styles.pressed]}
-          accessibilityRole="button"
-        >
-          <View style={styles.badgeRow}>
-            <View style={styles.formatBadge}>
-              <Text style={styles.formatBadgeTxt}>{formatLeagueFormatLabel(activeLeague.format)}</Text>
-            </View>
-            <View style={styles.daysBadge}>
-              <Text style={styles.daysBadgeTxt}>{leagueDaysRemaining(activeLeague)}d left</Text>
-            </View>
-          </View>
-          <Text style={styles.tournamentName}>{activeLeague.name}</Text>
-          {activeLeague.notes?.trim() ? (
-            <Text style={styles.tournamentNotes}>{activeLeague.notes.trim()}</Text>
-          ) : null}
-          {previewTop3.length > 0 ? (
-            <View style={styles.preview}>
-              {previewTop3.map((p) => (
-                <Text key={`${p.rank}-${p.name}`} style={styles.previewLine}>
-                  {p.rank}. {p.name}
-                </Text>
-              ))}
-            </View>
-          ) : (
-            <Text style={styles.previewMuted}>No scores yet — log rounds to climb the board.</Text>
-          )}
-          <Text style={styles.seeAll}>See full standings →</Text>
-        </Pressable>
-      ) : creatorCheck === 'pending' ? (
-        <View
-          style={styles.neutralPending}
-          accessibilityLabel="Loading tournament options"
-          accessibilityRole="progressbar"
-        />
-      ) : showCreatorUi ? (
-        <Pressable
-          style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
-          onPress={() => router.push(`/(tabs)/league-create/${group.id}` as never)}
-          accessibilityRole="button"
-          accessibilityLabel="Create tournament"
-        >
-          <Text style={styles.createBtnTxt}>Create Tournament</Text>
-        </Pressable>
-      ) : (
-        <Text style={styles.emptyMuted}>No active tournament</Text>
-      )}
-
-      {ALLOW_DEV_CREATOR_VIEW && !isGroupCreator ? (
-        <Pressable
-          onPress={() => setDevForceCreatorView((v) => !v)}
-          style={({ pressed }) => [styles.devCreatorBtn, pressed && styles.devCreatorBtnPressed]}
-          accessibilityRole="button"
-          accessibilityLabel="Toggle developer creator view for tournaments"
-        >
-          <Text style={styles.devCreatorBtnTxt}>
-            {devForceCreatorView
-              ? 'DEV ONLY · Creator view ON (tap to reset)'
-              : 'DEV ONLY · Show creator view (test Create Tournament)'}
-          </Text>
-        </Pressable>
-      ) : null}
-
-      {pastLeagues.length > 0 ? (
-        <>
-          <Pressable
-            onPress={() => setPastOpen((o) => !o)}
-            style={styles.pastToggle}
-            accessibilityRole="button"
-          >
-            <Text style={styles.pastToggleTxt}>Past tournaments ({pastLeagues.length})</Text>
-            <Text style={styles.pastChev}>{pastOpen ? '▾' : '▸'}</Text>
-          </Pressable>
-          {pastOpen
-            ? pastLeagues.map((l) => (
-                <Pressable
-                  key={l.id}
-                  onPress={() => router.push(`/(tabs)/league/${l.id}` as never)}
-                  style={styles.pastRow}
-                >
-                  <Text style={styles.pastName}>{l.name}</Text>
-                  <Text style={styles.pastMeta}>
-                    {formatLeagueFormatLabel(l.format)} · {l.status}
-                  </Text>
-                </Pressable>
-              ))
-            : null}
-        </>
-      ) : null}
-    </>
-  );
+  const showCreateBtn = !activeLeague && creatorCheck !== 'pending' && showCreatorUi;
 
   return (
     <View style={{ marginTop: 16 }}>
@@ -272,28 +174,136 @@ export function GroupTournamentsSection({
         </View>
       </View>
 
-      <View style={{ marginHorizontal: gutter, marginTop: 8 }}>
-        {wrapInCard ? <View style={styles.card}>{body}</View> : body}
+      <View style={[styles.sectionBody, { marginHorizontal: gutter, marginTop: 8 }]}>
+        {showLoadingSpinner ? (
+          <ActivityIndicator color={colors.header} style={{ marginVertical: 16 }} />
+        ) : activeLeague ? (
+          <View style={styles.activeCardWrap}>
+            <Pressable
+              onPress={() => router.push(`/(tabs)/league/${activeLeague.id}` as never)}
+              style={({ pressed }) => [styles.activeCard, pressed && styles.pressed]}
+              accessibilityRole="button"
+            >
+              <View style={styles.badgeRow}>
+                <View style={styles.formatBadge}>
+                  <Text style={styles.formatBadgeTxt}>
+                    {formatLeagueFormatLabel(activeLeague.format)}
+                  </Text>
+                </View>
+                <View style={styles.daysBadge}>
+                  <Text style={styles.daysBadgeTxt}>{leagueDaysRemaining(activeLeague)}d left</Text>
+                </View>
+              </View>
+              <Text style={styles.tournamentName}>{activeLeague.name}</Text>
+              {activeLeague.notes?.trim() ? (
+                <Text style={styles.tournamentNotes}>{activeLeague.notes.trim()}</Text>
+              ) : null}
+              {previewTop3.length > 0 ? (
+                <View style={styles.preview}>
+                  {previewTop3.map((p) => (
+                    <Text key={`${p.rank}-${p.name}`} style={styles.previewLine}>
+                      {p.rank}. {p.name}
+                    </Text>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.previewMuted}>No scores yet — log rounds to climb the board.</Text>
+              )}
+              <Text style={styles.seeAll}>See full standings →</Text>
+            </Pressable>
+          </View>
+        ) : creatorCheck === 'pending' ? (
+          <View
+            style={styles.neutralPending}
+            accessibilityLabel="Loading tournament options"
+            accessibilityRole="progressbar"
+          />
+        ) : !showCreateBtn ? (
+          <Text style={styles.emptyMuted}>No active tournament</Text>
+        ) : null}
+
+        {showCreateBtn ? (
+          <Pressable
+            style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
+            onPress={() => router.push(`/(tabs)/league-create/${group.id}` as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Create tournament"
+          >
+            <Text style={styles.createBtnTxt}>Create Tournament</Text>
+          </Pressable>
+        ) : null}
+
+        {ALLOW_DEV_CREATOR_VIEW && !isGroupCreator ? (
+          <Pressable
+            onPress={() => setDevForceCreatorView((v) => !v)}
+            style={({ pressed }) => [styles.devCreatorBtn, pressed && styles.devCreatorBtnPressed]}
+            accessibilityRole="button"
+            accessibilityLabel="Toggle developer creator view for tournaments"
+          >
+            <Text style={styles.devCreatorBtnTxt}>
+              {devForceCreatorView
+                ? 'DEV ONLY · Creator view ON (tap to reset)'
+                : 'DEV ONLY · Show creator view (test Create Tournament)'}
+            </Text>
+          </Pressable>
+        ) : null}
+
+        {pastLeagues.length > 0 ? (
+          <View style={styles.pastCard}>
+            <Pressable
+              onPress={() => setPastOpen((o) => !o)}
+              style={styles.pastToggle}
+              accessibilityRole="button"
+            >
+              <Text style={styles.pastToggleTxt}>Past tournaments ({pastLeagues.length})</Text>
+              <Text style={styles.pastChev}>{pastOpen ? '▾' : '▸'}</Text>
+            </Pressable>
+            {pastOpen
+              ? pastLeagues.map((l) => (
+                  <Pressable
+                    key={l.id}
+                    onPress={() => router.push(`/(tabs)/league/${l.id}` as never)}
+                    style={styles.pastRow}
+                  >
+                    <Text style={styles.pastName}>{l.name}</Text>
+                    <Text style={styles.pastMeta}>
+                      {formatLeagueFormatLabel(l.format)} · {l.status}
+                    </Text>
+                  </Pressable>
+                ))
+              : null}
+          </View>
+        ) : null}
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  card: {
+  sectionBody: { gap: 12 },
+  activeCardWrap: {
     backgroundColor: '#f0f7f3',
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
     padding: 14,
   },
-  createBtn: {
-    backgroundColor: colors.header,
-    borderRadius: 10,
-    paddingVertical: 14,
-    alignItems: 'center',
+  pastCard: {
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: 14,
   },
-  createBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  createBtn: {
+    alignSelf: 'stretch',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.header,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  createBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 15 },
   emptyMuted: {
     textAlign: 'center',
     color: colors.muted,
@@ -338,10 +348,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 14,
-    paddingTop: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: colors.border,
   },
   pastToggleTxt: { fontSize: 13, fontWeight: '600', color: colors.muted },
   pastChev: { fontSize: 14, color: colors.muted },

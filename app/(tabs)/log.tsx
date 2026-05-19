@@ -488,10 +488,10 @@ export default function LogRoundScreen() {
           resetLogForm();
           router.replace('/(tabs)/analyze');
         } else {
-          const optedIn = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
-          const hasIndividualOptIn = optedIn.some(
-            (t) => t.format === 'stroke' || t.format === 'match_play'
+          const optedIn = activeTournaments.filter(
+            (t) => !t.logOptInDisabled && tournamentApply[t.leagueId] !== false
           );
+          const hasIndividualOptIn = optedIn.some((t) => t.format === 'stroke');
           const hasTeamOptIn = optedIn.some((t) => isTeamLeagueFormat(t.format));
           const excludesFromSimcapIndex = hasTeamOptIn && !hasIndividualOptIn;
 
@@ -519,7 +519,7 @@ export default function LogRoundScreen() {
               simIndex: saved.simcapIndexAtTime ?? saved.indexAfter ?? null,
               selections: activeTournaments.map((t) => ({
                 leagueId: t.leagueId,
-                apply: tournamentApply[t.leagueId] !== false,
+                apply: !t.logOptInDisabled && tournamentApply[t.leagueId] !== false,
               })),
               displayNames,
               accessToken: saveAccessToken,
@@ -786,6 +786,20 @@ export default function LogRoundScreen() {
               <Text style={styles.tournamentLoading}>Checking active tournaments…</Text>
             ) : (
               activeTournaments.map((t) => {
+                if (t.logOptInDisabled) {
+                  return (
+                    <View
+                      key={t.leagueId}
+                      style={[styles.tournamentCard, styles.tournamentCardDisabled]}
+                    >
+                      <Text style={[styles.tournamentQ, styles.tournamentQDisabled]}>
+                        {t.leagueName}
+                      </Text>
+                      <Text style={styles.tournamentMeta}>{t.groupName}</Text>
+                      <Text style={styles.tournamentComingSoon}>Coming soon</Text>
+                    </View>
+                  );
+                }
                 const apply = tournamentApply[t.leagueId] !== false;
                 return (
                   <View key={t.leagueId} style={styles.tournamentCard}>
@@ -1154,7 +1168,15 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     gap: 6,
   },
+  tournamentCardDisabled: { opacity: 0.55 },
   tournamentQ: { fontSize: 14, fontWeight: '600', color: colors.ink },
+  tournamentQDisabled: { color: colors.subtle },
+  tournamentComingSoon: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: colors.subtle,
+    marginTop: 4,
+  },
   tournamentMeta: { fontSize: 12, color: colors.muted },
   tournamentYesNo: { flexDirection: 'row', gap: 10, marginTop: 6 },
   tournamentOpt: {

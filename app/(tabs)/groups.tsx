@@ -146,11 +146,12 @@ export default function GroupsScreen() {
   }, []);
 
   useLayoutEffect(() => {
-    const sum = incomingMatchTabBadge + outgoingAcceptedTabBadge;
+    const sum =
+      incomingMatchTabBadge + outgoingAcceptedTabBadge + inboundGroupInvites.length;
     navigation.setOptions({
       tabBarBadge: sum > 0 ? sum : undefined,
     });
-  }, [navigation, incomingMatchTabBadge, outgoingAcceptedTabBadge]);
+  }, [navigation, incomingMatchTabBadge, outgoingAcceptedTabBadge, inboundGroupInvites.length]);
 
   const g = groups[tab] ?? groups[0];
 
