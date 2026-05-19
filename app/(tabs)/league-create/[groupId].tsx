@@ -29,26 +29,31 @@ const FORMATS: { key: LeagueFormat; title: string; sub: string; comingSoon?: boo
   {
     key: 'stroke',
     title: 'Stroke Play',
-    sub: 'Each player logs their own rounds. Lowest average net score wins.',
+    sub: 'Total strokes win. Log your rounds — the lowest average net score over the tournament takes the title.',
   },
   {
     key: 'match_play',
     title: 'Match Play',
-    sub: 'Head to head matches between players. Most wins takes the title.',
+    sub: 'Win holes, not strokes. Each hole is played independently — win, lose, or halve. The player who wins the most holes wins the match.',
+    comingSoon: true,
   },
   {
     key: 'scramble',
     title: 'Scramble',
-    sub: 'Teams play together. Everyone hits, the best shot is used. Lowest team score wins.',
+    sub: 'Everyone hits, the team picks the best shot, and you all play from there. One team score per hole.',
     comingSoon: true,
   },
   {
     key: 'best_ball',
     title: 'Best Ball',
-    sub: 'Teams play individually. The best score on each hole counts for the team.',
+    sub: 'Everyone plays their own ball the whole round. The lowest score on each hole counts for the team.',
     comingSoon: true,
   },
 ];
+
+function isFormatComingSoon(key: LeagueFormat): boolean {
+  return FORMATS.some((f) => f.key === key && !!f.comingSoon);
+}
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -138,7 +143,7 @@ export default function LeagueCreateScreen() {
   }, [step]);
 
   useEffect(() => {
-    if (isTeamFormat(format)) {
+    if (isTeamFormat(format) || isFormatComingSoon(format)) {
       setFormat('stroke');
     }
   }, [format]);
@@ -219,6 +224,10 @@ export default function LeagueCreateScreen() {
 
   const onLaunch = async () => {
     if (!user?.id || !group) return;
+    if (isFormatComingSoon(format)) {
+      showAppAlert('Coming soon', 'This tournament format is not available yet.');
+      return;
+    }
     const existing = await fetchLeaguesForGroup(groupId, googleOAuthAccessToken ?? undefined);
     if (existing.data?.some((l) => l.status === 'active')) {
       showAppAlert('Active tournament', 'This crew already has an active tournament. End it before creating another.');
