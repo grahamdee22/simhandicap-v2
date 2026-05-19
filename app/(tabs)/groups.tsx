@@ -44,7 +44,10 @@ import { useAppStore, type GroupMember } from '../../src/store/useAppStore';
 
 const APP_INVITE_URL = 'https://simhandicap-v2.vercel.app';
 
-const SOCIAL_SECTION_INFO_COPY: Record<'match' | 'groups' | 'net', { title: string; body: string }> = {
+const SOCIAL_SECTION_INFO_COPY: Record<
+  'match' | 'groups' | 'net' | 'tournaments',
+  { title: string; body: string }
+> = {
   match: {
     title: 'Match Play',
     body:
@@ -54,6 +57,11 @@ const SOCIAL_SECTION_INFO_COPY: Record<'match' | 'groups' | 'net', { title: stri
     title: 'My Groups',
     body:
       'Groups let you track handicaps and compete with your regular sim crew. Invite friends to see how your indexes compare.',
+  },
+  tournaments: {
+    title: 'Tournaments',
+    body:
+      'Run a tournament for your crew. The group creator can set up stroke play or match play competitions with standings that update as rounds are logged.',
   },
   net: {
     title: 'Crew Match Calculator',
@@ -120,7 +128,9 @@ export default function GroupsScreen() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inboundBusy, setInboundBusy] = useState(false);
   const [deleteGroupBusy, setDeleteGroupBusy] = useState(false);
-  const [socialSectionInfo, setSocialSectionInfo] = useState<'match' | 'groups' | 'net' | null>(null);
+  const [socialSectionInfo, setSocialSectionInfo] = useState<
+    'match' | 'groups' | 'net' | 'tournaments' | null
+  >(null);
   const [creatorsBackfillReady, setCreatorsBackfillReady] = useState(false);
 
   /** Bumps on blur so in-flight fetches don’t leave `listRefreshing` stuck true (e.g. switch tabs mid-request). */
@@ -796,6 +806,7 @@ export default function GroupsScreen() {
                 authUserId={authUserId}
                 gutter={gutter}
                 displayNames={leagueDisplayNames}
+                onInfoPress={() => setSocialSectionInfo('tournaments')}
               />
             ) : null}
 

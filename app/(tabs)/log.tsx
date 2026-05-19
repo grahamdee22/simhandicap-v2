@@ -29,6 +29,7 @@ import {
   recordOptedInLeagueRounds,
   type ActiveTournamentOption,
 } from '../../src/lib/leagues';
+import { resolveSocialGroupsAccessToken } from '../../src/lib/socialGroups';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import {
   COURSE_SEEDS,
@@ -119,6 +120,9 @@ export default function LogRoundScreen() {
   const [tournamentApply, setTournamentApply] = useState<Record<string, boolean>>({});
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
   /** Latest form fields for save (deferred save must not read stale render closures). */
+  const activeTournamentsRef = useRef<ActiveTournamentOption[]>([]);
+  activeTournamentsRef.current = activeTournaments;
+
   const latestSaveRef = useRef<{
     grossScore: number;
     playedDate: string;
@@ -176,28 +180,45 @@ export default function LogRoundScreen() {
 
   const loadActiveTournaments = useCallback(async () => {
     if (!supabaseOn || !user?.id || existing) {
-      setActiveTournaments([]);
-      setTournamentApply({});
+      if (existing) {
+        setActiveTournaments([]);
+        setTournamentApply({});
+      }
+      setTournamentsLoading(false);
       return;
     }
-    setTournamentsLoading(true);
-    const memberGroups = groups
-      .filter((gr) => gr.members.some((m) => m.userId === user.id))
-      .map((gr) => ({ id: gr.id, name: gr.name }));
-    const list = await fetchActiveTournamentsForUser({
-      userId: user.id,
-      groups: memberGroups,
-      playedAt: localYmdToIso(playedDate),
-      accessToken: googleOAuthAccessToken ?? undefined,
-    });
-    setActiveTournaments(list);
-    setTournamentApply(Object.fromEntries(list.map((t) => [t.leagueId, true])));
-    setTournamentsLoading(false);
+    const hadCached = activeTournamentsRef.current.length > 0;
+    if (!hadCached) setTournamentsLoading(true);
+    try {
+      const accessToken =
+        googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const memberGroups = groups
+        .filter((gr) => gr.members.some((m) => m.userId === user.id))
+        .map((gr) => ({ id: gr.id, name: gr.name }));
+      const list = await fetchActiveTournamentsForUser({
+        userId: user.id,
+        groups: memberGroups,
+        playedAt: localYmdToIso(playedDate),
+        accessToken,
+      });
+      setActiveTournaments(list);
+      setTournamentApply((prev) =>
+        Object.fromEntries(list.map((t) => [t.leagueId, prev[t.leagueId] ?? true]))
+      );
+    } finally {
+      setTournamentsLoading(false);
+    }
   }, [supabaseOn, user?.id, existing, groups, playedDate]);
 
   useEffect(() => {
     void loadActiveTournaments();
   }, [loadActiveTournaments]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadActiveTournaments();
+    }, [loadActiveTournaments])
+  );
 
   useEffect(() => {
     if (editId) return;
@@ -488,6 +509,8 @@ export default function LogRoundScreen() {
                 if (m.userId) displayNames[m.userId] = m.displayName.replace(' (you)', '');
               }
             }
+            const saveAccessToken =
+              googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
             const leagueResults = await recordOptedInLeagueRounds({
               userId: user.id,
               roundId: saved.id,
@@ -499,7 +522,7 @@ export default function LogRoundScreen() {
                 apply: tournamentApply[t.leagueId] !== false,
               })),
               displayNames,
-              accessToken: googleOAuthAccessToken ?? undefined,
+              accessToken: saveAccessToken,
             });
             if (leagueResults.length > 0) {
               const hit = leagueResults[0];
@@ -756,10 +779,10 @@ export default function LogRoundScreen() {
           </View>
         ) : null}
 
-        {!existing && activeTournaments.length > 0 ? (
+        {!existing && (activeTournaments.length > 0 || tournamentsLoading) ? (
           <View style={styles.tournamentSection}>
             <Text style={styles.tournamentSectionTitle}>Active Tournaments</Text>
-            {tournamentsLoading ? (
+            {tournamentsLoading && activeTournaments.length === 0 ? (
               <Text style={styles.tournamentLoading}>Checking active tournaments…</Text>
             ) : (
               activeTournaments.map((t) => {

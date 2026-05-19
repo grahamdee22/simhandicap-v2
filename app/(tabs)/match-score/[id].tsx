@@ -20,7 +20,6 @@ import {
   fetchMatchParticipantProfiles,
   fetchMatchPlayerDisplayNames,
   getMatchById,
-  getMatchOpponentScoringSummary,
   listMatchHoles,
   MATCH_HOLE_REACTION_EMOJIS,
   reactionReceivedOnMyHoleRow,
@@ -31,7 +30,6 @@ import {
   upsertMatchHoleScore,
   type DbMatchHoleRow,
   type DbMatchRow,
-  type MatchOpponentScoringSummary,
 } from '../../../src/lib/matchPlay';
 import {
   buildMatchStrokeContext,
@@ -89,7 +87,6 @@ export default function MatchScoreScreen() {
   const [settingsOppImgErr, setSettingsOppImgErr] = useState(false);
   const [reactionPickerOpenHole, setReactionPickerOpenHole] = useState<number | null>(null);
   const [editingHole, setEditingHole] = useState<number | null>(null);
-  const [opponentSummary, setOpponentSummary] = useState<MatchOpponentScoringSummary | null>(null);
   /** Hole numbers where we show the user's reaction before server confirms (cleared when `holes` includes it). */
   const [optimisticSentReactionByHole, setOptimisticSentReactionByHole] = useState<Record<number, string>>(
     {}
@@ -98,6 +95,7 @@ export default function MatchScoreScreen() {
   const supabaseOn = isSupabaseConfigured();
   const mounted = useRef(true);
   const reactionRpcInFlightByHoleRef = useRef<Set<number>>(new Set());
+  const finalizeInFlightRef = useRef(false);
 
   useEffect(() => {
     mounted.current = true;
@@ -112,10 +110,9 @@ export default function MatchScoreScreen() {
       return;
     }
     const accessToken = (await resolveMatchAccessToken()) ?? undefined;
-    const [mRes, hRes, oppRes] = await Promise.all([
+    const [mRes, hRes] = await Promise.all([
       getMatchById(matchId, accessToken),
       listMatchHoles(matchId, accessToken),
-      getMatchOpponentScoringSummary(matchId, accessToken),
     ]);
     if (!mounted.current) return;
     if (mRes.error || !mRes.data) {
@@ -142,8 +139,6 @@ export default function MatchScoreScreen() {
     setMatch(m);
     setFatalErr(null);
     if (hRes.data) setHoles(hRes.data);
-    if (oppRes.data) setOpponentSummary(oppRes.data);
-    else setOpponentSummary(null);
     const p1 = m.player_1_id;
     const p2 = m.player_2_id;
 
@@ -285,10 +280,9 @@ export default function MatchScoreScreen() {
   }, [holes, oppId, amPlayer1]);
 
   const myDistinct = user?.id && match ? distinctHoleCount(holes, user.id) : 0;
-  const oppDistinct = opponentSummary?.opponentHolesPlayed ?? 0;
+  const oppDistinct = oppId ? distinctHoleCount(holes, oppId) : 0;
   const showAheadBanner = opponentAhead(myDistinct, oppDistinct);
   const scoringLocked = match ? isMatchScoringLocked(match) : false;
-  const showOpponentHoleDetail = match?.status === 'complete';
 
   const currentHole = useMemo(() => {
     if (!match?.player_2_id || !user?.id || !maps) return null;
@@ -328,45 +322,59 @@ export default function MatchScoreScreen() {
 
   const tryFinalize = useCallback(
     async (m: DbMatchRow, holeRows: DbMatchHoleRow[]) => {
-      if (m.status !== 'active' || !strokeCtx || !course || !m.player_2_id) return;
+      if ((m.status !== 'active' && m.status !== 'waiting') || !strokeCtx || !course || !m.player_2_id) {
+        return;
+      }
+      if (!matchReadyToFinalize(m)) return;
       const totals = computeTotalsIfComplete(m, course, holeRows, strokeCtx, m.player_2_id);
       if (!totals) return;
-      if (!matchReadyToFinalize(m)) return;
-      const { totalNet1, totalNet2 } = totals;
-      let winner_id: string | null = null;
-      if (totalNet1 < totalNet2) winner_id = m.player_1_id;
-      else if (totalNet2 < totalNet1) winner_id = m.player_2_id;
-      const res = await updateMatchById(
-        m.id,
-        {
-          status: 'complete',
-          player_1_net_score: totalNet1,
-          player_2_net_score: totalNet2,
-          winner_id,
-          player_1_finished: true,
-          player_2_finished: true,
-        },
-        (await resolveMatchAccessToken()) ?? undefined
-      );
-      if (!res.error && res.data?.status === 'complete') {
-        router.replace(`/(tabs)/match-results/${m.id}` as never);
+      if (finalizeInFlightRef.current) return;
+      finalizeInFlightRef.current = true;
+      try {
+        const { totalNet1, totalNet2 } = totals;
+        let winner_id: string | null = null;
+        if (totalNet1 < totalNet2) winner_id = m.player_1_id;
+        else if (totalNet2 < totalNet1) winner_id = m.player_2_id;
+        const res = await updateMatchById(
+          m.id,
+          {
+            status: 'complete',
+            player_1_net_score: totalNet1,
+            player_2_net_score: totalNet2,
+            winner_id,
+            player_1_finished: true,
+            player_2_finished: true,
+          },
+          (await resolveMatchAccessToken()) ?? undefined
+        );
+        if (!res.error && res.data?.status === 'complete') {
+          router.replace(`/(tabs)/match-results/${m.id}` as never);
+        }
+      } finally {
+        finalizeInFlightRef.current = false;
       }
     },
     [strokeCtx, course, router]
   );
 
+  useEffect(() => {
+    if (!match?.player_2_id || !strokeCtx || !course) return;
+    if (match.status !== 'active' && match.status !== 'waiting') return;
+    if (!matchReadyToFinalize(match)) return;
+    if (!computeTotalsIfComplete(match, course, holes, strokeCtx, match.player_2_id)) return;
+    void tryFinalize(match, holes);
+  }, [match, holes, strokeCtx, course, tryFinalize]);
+
   const onVerificationComplete = useCallback(async () => {
     if (!matchId || !supabaseOn || !user?.id) return;
     const accessToken = (await resolveMatchAccessToken()) ?? undefined;
-    const [mRes, hRes, oppRes] = await Promise.all([
+    const [mRes, hRes] = await Promise.all([
       getMatchById(matchId, accessToken),
       listMatchHoles(matchId, accessToken),
-      getMatchOpponentScoringSummary(matchId, accessToken),
     ]);
     if (!mounted.current) return;
     if (mRes.data) setMatch(mRes.data);
     if (hRes.data) setHoles(hRes.data);
-    if (oppRes.data) setOpponentSummary(oppRes.data);
     if (mRes.data && hRes.data) {
       await tryFinalize(mRes.data, hRes.data);
     }
@@ -603,8 +611,7 @@ export default function MatchScoreScreen() {
     const g1 = maps.p1.get(h);
     const g2 = maps.p2.get(h);
     const myGross = amPlayer1 ? g1 : g2;
-    const oppGrossRaw = amPlayer1 ? g2 : g1;
-    const oppGross = showOpponentHoleDetail ? oppGrossRaw : undefined;
+    const oppGross = amPlayer1 ? g2 : g1;
     const myRow =
       user?.id ? holeRowByPlayerHole.get(`${user.id}:${h}`) : undefined;
     const oppRow =
@@ -613,12 +620,10 @@ export default function MatchScoreScreen() {
     const reactionISentFromServer = reactionSentOnOpponentRow(oppRow, amPlayer1);
     const reactionISent =
       reactionISentFromServer ?? optimisticSentReactionByHole[h] ?? null;
-    const showReactionPicker = Boolean(
-      showOpponentHoleDetail && oppId && oppGross != null && !reactionISent
-    );
+    const showReactionPicker = Boolean(oppId && oppGross != null && !reactionISent);
     let myNetDisp: string | number = '—';
     let oppNetDisp: string | number = '—';
-    if (showOpponentHoleDetail && g1 != null && g2 != null) {
+    if (g1 != null && g2 != null) {
       const n1 = holeNetScore(g1, h, strokeCtx, true);
       const n2 = holeNetScore(g2, h, strokeCtx, false);
       myNetDisp = amPlayer1 ? n1 : n2;
@@ -652,18 +657,6 @@ export default function MatchScoreScreen() {
       isEditingRow: editingHole === h,
     });
   }
-
-  const showOpponentGrossTotal =
-    showOpponentHoleDetail ||
-    (opponentSummary?.bothFinishedHoles && opponentSummary.opponentGrossTotal != null);
-  const oppGrossTotalDisp = showOpponentHoleDetail
-    ? oppScoredHoles === 0
-      ? '—'
-      : cumOppGross
-    : opponentSummary?.bothFinishedHoles && opponentSummary.opponentGrossTotal != null
-      ? opponentSummary.opponentGrossTotal
-      : '—';
-  const oppNetTotalDisp = showOpponentHoleDetail ? (oppScoredHoles === 0 ? '—' : cumOppNet) : '—';
 
   const myDisplayName = amPlayer1 ? names.p1 : names.p2;
   const oppDisplayName = amPlayer1 ? names.p2 : names.p1;
@@ -883,11 +876,13 @@ export default function MatchScoreScreen() {
             </View>
             <View style={[styles.tdCell, styles.colNum]}>
               <Text style={[styles.tdStrong, styles.tdCenter]}>
-                {showOpponentGrossTotal ? oppGrossTotalDisp : '—'}
+                {oppScoredHoles === 0 ? '—' : cumOppGross}
               </Text>
             </View>
             <View style={[styles.tdCell, styles.colNum]}>
-              <Text style={[styles.tdStrong, styles.tdCenter]}>{oppNetTotalDisp}</Text>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>
+                {oppScoredHoles === 0 ? '—' : cumOppNet}
+              </Text>
             </View>
           </View>
 

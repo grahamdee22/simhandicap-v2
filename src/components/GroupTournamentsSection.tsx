@@ -15,13 +15,20 @@ import {
   leagueDaysRemaining,
 } from '../lib/leagueStandings';
 import { fetchLeagueBundle } from '../lib/leagues';
-import { leagueSectionLabelStyles } from '../lib/leagueSectionTitle';
+import {
+  socialPageSectionTitleStyles,
+  socialSectionHeaderStyles,
+} from '../lib/socialPageSectionTitle';
 import { isSocialGroupCreator } from '../lib/socialGroupCreator';
 import {
   isSocialGroupCreatorViaRpc,
   patchGroupCreatorInStore,
   resolveSocialGroupsAccessToken,
 } from '../lib/socialGroups';
+import {
+  getTournamentSectionCache,
+  setTournamentSectionCache,
+} from '../lib/tournamentSectionCache';
 import type { FriendGroup } from '../store/useAppStore';
 
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
@@ -34,10 +41,18 @@ type Props = {
   authUserId: string | null;
   gutter: number;
   displayNames: Record<string, string>;
+  onInfoPress: () => void;
 };
 
-export function GroupTournamentsSection({ group, authUserId, gutter, displayNames }: Props) {
+export function GroupTournamentsSection({
+  group,
+  authUserId,
+  gutter,
+  displayNames,
+  onInfoPress,
+}: Props) {
   const router = useRouter();
+  const initialCache = getTournamentSectionCache(group.id);
   const storeCreatorId = group.createdByUserId?.trim() || null;
   const [creatorCheck, setCreatorCheck] = useState<CreatorCheck>(() =>
     storeCreatorId
@@ -79,18 +94,22 @@ export function GroupTournamentsSection({ group, authUserId, gutter, displayName
   const isGroupCreator = creatorCheck === 'creator';
   const [devForceCreatorView, setDevForceCreatorView] = useState(false);
   const showCreatorUi = isGroupCreator || (ALLOW_DEV_CREATOR_VIEW && devForceCreatorView);
-  const [loading, setLoading] = useState(true);
-  const [leagues, setLeagues] = useState<DbLeagueRow[]>([]);
+  const [hasCache, setHasCache] = useState(() => !!initialCache);
+  const [loading, setLoading] = useState(() => !initialCache);
+  const [leagues, setLeagues] = useState<DbLeagueRow[]>(() => initialCache?.leagues ?? []);
   const [pastOpen, setPastOpen] = useState(false);
-  const [previewTop3, setPreviewTop3] = useState<{ name: string; rank: number }[]>([]);
+  const [previewTop3, setPreviewTop3] = useState<{ name: string; rank: number }[]>(
+    () => initialCache?.previewTop3 ?? []
+  );
 
   const load = useCallback(async () => {
-    setLoading(true);
+    const cached = getTournamentSectionCache(group.id);
+    if (!cached) setLoading(true);
     const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
     const res = await fetchLeaguesForGroup(group.id, accessToken);
     const synced = await syncLeagueStatuses(res.data ?? [], accessToken);
-    setLeagues(synced);
     const active = synced.find((l) => l.status === 'active' && isLeagueActive(l));
+    let top3: { name: string; rank: number }[] = [];
     if (active) {
       const bundle = await fetchLeagueBundle(active.id, accessToken);
       if (bundle.data) {
@@ -101,18 +120,16 @@ export function GroupTournamentsSection({ group, authUserId, gutter, displayName
           teams: bundle.data.teams,
           displayNames,
         });
-        setPreviewTop3(
-          standings.slice(0, 3).map((s) => ({
-            name: s.isTeam ? s.displayName : s.displayName,
-            rank: s.rank,
-          }))
-        );
-      } else {
-        setPreviewTop3([]);
+        top3 = standings.slice(0, 3).map((s) => ({
+          name: s.displayName,
+          rank: s.rank,
+        }));
       }
-    } else {
-      setPreviewTop3([]);
     }
+    setLeagues(synced);
+    setPreviewTop3(top3);
+    setTournamentSectionCache(group.id, { leagues: synced, previewTop3: top3 });
+    setHasCache(true);
     setLoading(false);
   }, [group.id, displayNames]);
 
@@ -135,16 +152,29 @@ export function GroupTournamentsSection({ group, authUserId, gutter, displayName
     [leagues]
   );
 
+  const showLoadingSpinner = loading && !hasCache && !activeLeague;
+
   return (
     <View style={{ marginTop: 16 }}>
-      <View style={[styles.headerRow, { paddingHorizontal: gutter }]}>
-        <Text style={leagueSectionLabelStyles.text} accessibilityRole="header">
-          Tournaments
-        </Text>
+      <View style={[socialSectionHeaderStyles.headerWrap, { paddingHorizontal: gutter }]}>
+        <View style={socialSectionHeaderStyles.row}>
+          <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
+            Tournaments
+          </Text>
+          <Pressable
+            style={socialSectionHeaderStyles.infoBtn}
+            onPress={onInfoPress}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="About Tournaments"
+          >
+            <Text style={socialSectionHeaderStyles.infoBtnTxt}>ⓘ</Text>
+          </Pressable>
+        </View>
       </View>
 
       <View style={[styles.card, { marginHorizontal: gutter, marginTop: 8 }]}>
-        {loading ? (
+        {showLoadingSpinner ? (
           <ActivityIndicator color={colors.header} style={{ marginVertical: 16 }} />
         ) : activeLeague ? (
           <Pressable
@@ -243,7 +273,6 @@ export function GroupTournamentsSection({ group, authUserId, gutter, displayName
 }
 
 const styles = StyleSheet.create({
-  headerRow: { marginBottom: 4 },
   card: {
     backgroundColor: '#f0f7f3',
     borderRadius: 12,

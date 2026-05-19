@@ -4,6 +4,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
@@ -102,6 +103,8 @@ export default function LeagueCreateScreen() {
   } | null>(null);
   const [busy, setBusy] = useState(false);
   const handicapTouchedRef = useRef(false);
+  const scrollRef = useRef<ScrollView>(null);
+  const notesSectionYRef = useRef(0);
 
   const resetWizard = useCallback(() => {
     handicapTouchedRef.current = false;
@@ -261,13 +264,20 @@ export default function LeagueCreateScreen() {
 
   return (
     <ContentWidth bg={colors.surface}>
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: gutter,
-          paddingTop: 14,
-          paddingBottom: insets.bottom + 24,
-        }}
+      <KeyboardAvoidingView
+        style={styles.flex1}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 56 : 0}
       >
+        <ScrollView
+          ref={scrollRef}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={{
+            paddingHorizontal: gutter,
+            paddingTop: 14,
+            paddingBottom: insets.bottom + 120,
+          }}
+        >
         <Text style={styles.stepProg}>
           Step {stepNumber} of {totalSteps}
         </Text>
@@ -366,16 +376,30 @@ export default function LeagueCreateScreen() {
               </View>
             </View>
             <Text style={styles.helper}>Adjusts scores using each player&apos;s SimCap index</Text>
-            <Text style={styles.lbl}>Tournament notes (optional)</Text>
-            <TextInput
-              style={styles.notesInput}
-              value={notes}
-              onChangeText={setNotes}
-              placeholder="e.g. Pebble Beach only, white tees, auto 2-putt"
-              placeholderTextColor={colors.subtle}
-              multiline
-              maxLength={500}
-            />
+            <View
+              onLayout={(e) => {
+                notesSectionYRef.current = e.nativeEvent.layout.y;
+              }}
+            >
+              <Text style={styles.lbl}>Tournament notes (optional)</Text>
+              <TextInput
+                style={styles.notesInput}
+                value={notes}
+                onChangeText={setNotes}
+                placeholder="e.g. Pebble Beach only, white tees, auto 2-putt"
+                placeholderTextColor={colors.subtle}
+                multiline
+                maxLength={500}
+                onFocus={() => {
+                  requestAnimationFrame(() => {
+                    scrollRef.current?.scrollTo({
+                      y: Math.max(0, notesSectionYRef.current - 24),
+                      animated: true,
+                    });
+                  });
+                }}
+              />
+            </View>
             <Pressable
               style={styles.primaryBtn}
               onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
@@ -535,12 +559,14 @@ export default function LeagueCreateScreen() {
             </Pressable>
           </>
         ) : null}
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
     </ContentWidth>
   );
 }
 
 const styles = StyleSheet.create({
+  flex1: { flex: 1 },
   stepProg: { fontSize: 12, color: colors.muted, marginBottom: 8 },
   head: { fontSize: 22, fontWeight: '700', color: colors.ink, marginBottom: 12 },
   lbl: { fontSize: 12, fontWeight: '600', color: colors.muted, marginBottom: 6 },
