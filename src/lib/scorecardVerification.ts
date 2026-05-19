@@ -17,10 +17,18 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
   };
 }
 
+export type ScorecardVerificationInvokeParams = {
+  /** 9 or 18 — holes in play for this match. */
+  hole_count: number;
+  /** Player's logged gross total across those holes only. */
+  logged_gross_total: number;
+};
+
 /** Invoke Supabase Edge Function to run Claude scorecard verification. */
 export async function invokeScorecardVerification(
   matchId: string,
-  accessToken?: string
+  accessToken?: string,
+  params?: ScorecardVerificationInvokeParams
 ): Promise<ScorecardVerificationResult> {
   const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
   if (!supabaseUrl || !supabaseAnonKey) {
@@ -57,7 +65,11 @@ export async function invokeScorecardVerification(
       apikey: supabaseAnonKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ match_id: matchId }),
+    body: JSON.stringify({
+      match_id: matchId,
+      hole_count: params?.hole_count,
+      logged_gross_total: params?.logged_gross_total,
+    }),
   });
 
   const raw = await res.text().catch(() => '');

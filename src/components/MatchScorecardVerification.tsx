@@ -24,7 +24,11 @@ import { resolveMatchAccessToken, updateMatchById } from '../lib/matchPlay';
 import { uploadMatchScorecardScreenshot } from '../lib/matchScorecardStorage';
 import { settingsScreenshotPickerOptions } from '../lib/settingsScreenshotPicker';
 import { invokeScorecardVerification } from '../lib/scorecardVerification';
-import { loggedGrossTotalForPlayer, matchHoleNumbers } from '../lib/matchStrokeMath';
+import {
+  loggedGrossTotalForPlayer,
+  matchHoleCount,
+  matchHoleNumbers,
+} from '../lib/matchStrokeMath';
 import type { DbMatchHoleRow } from '../lib/matchPlay';
 
 /** Stripped from production builds via `__DEV__` (same pattern as settings screenshot skip). */
@@ -126,7 +130,16 @@ export function MatchScorecardVerification({
       return;
     }
 
-    const ai = await invokeScorecardVerification(match.id, tok);
+    if (loggedGross == null) {
+      setBusy(false);
+      showAppAlert('Scores incomplete', 'Enter all hole scores before verifying your scorecard.');
+      return;
+    }
+
+    const ai = await invokeScorecardVerification(match.id, tok, {
+      hole_count: matchHoleCount(match),
+      logged_gross_total: loggedGross,
+    });
     setBusy(false);
 
     if (ai.error && !ai.verified) {
@@ -146,7 +159,7 @@ export function MatchScorecardVerification({
       ai.notes || 'The score on your screenshot does not match what you logged. Re-enter scores or upload a clearer image.'
     );
     onVerified();
-  }, [busy, verified, match.id, userId, bearer, patchVerificationFields, onVerified]);
+  }, [busy, verified, match, loggedGross, userId, bearer, patchVerificationFields, onVerified]);
 
   const onDevBypassVerify = useCallback(async () => {
     if (!ALLOW_DEV_VERIFY_BYPASS || busy || devBypassBusy || verified) return;

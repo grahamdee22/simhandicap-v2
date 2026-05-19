@@ -20,11 +20,23 @@ export function resolvedCourseForMatch(match: DbMatchRow): CourseSeed {
   return courseSeedForMatchName(match.course_name) ?? COURSE_SEEDS[0];
 }
 
+/** 9 or 18 holes in this match. */
+export function matchHoleCount(match: DbMatchRow): number {
+  return match.holes === 18 ? 18 : 9;
+}
+
 /** Real hole numbers (1–18) played in this match, in order. */
 export function matchHoleNumbers(match: DbMatchRow): number[] {
   if (match.holes === 18) return Array.from({ length: 18 }, (_, i) => i + 1);
   if (match.nine_selection === 'front') return Array.from({ length: 9 }, (_, i) => i + 1);
   return Array.from({ length: 9 }, (_, i) => i + 10);
+}
+
+/** Human-readable holes scope for scorecard verification prompts. */
+export function matchHolesPlayedDescription(match: DbMatchRow): string {
+  if (match.holes === 18) return 'full 18-hole round';
+  if (match.nine_selection === 'front') return '9-hole Front 9 round (holes 1–9 only)';
+  return '9-hole Back 9 round (holes 10–18 only)';
 }
 
 export function matchCourseParPlayed(course: CourseSeed, holeNumbers: number[]): number {

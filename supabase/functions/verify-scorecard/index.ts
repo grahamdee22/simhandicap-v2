@@ -54,13 +54,44 @@ function holeNumbersForMatch(match: {
   holes: number;
   nine_selection: string | null;
 }): number[] {
-  if (match.holes === 18) {
+  if (Number(match.holes) === 18) {
     return Array.from({ length: 18 }, (_, i) => i + 1);
   }
-  if (match.nine_selection === 'back') {
-    return Array.from({ length: 9 }, (_, i) => i + 10);
+  if (match.nine_selection === 'front') {
+    return Array.from({ length: 9 }, (_, i) => i + 1);
   }
-  return Array.from({ length: 9 }, (_, i) => i + 1);
+  return Array.from({ length: 9 }, (_, i) => i + 10);
+}
+
+function expectedHoleCount(match: { holes: number }): number {
+  return Number(match.holes) === 18 ? 18 : 9;
+}
+
+function holesPlayedDescription(match: {
+  holes: number;
+  nine_selection: string | null;
+}): string {
+  if (Number(match.holes) === 18) return 'full 18-hole round';
+  if (match.nine_selection === 'front') return '9-hole Front 9 round (holes 1–9 only)';
+  return '9-hole Back 9 round (holes 10–18 only)';
+}
+
+function buildVerificationPrompt(
+  match: { course_name: string },
+  holeCount: number,
+  holesLabel: string,
+  loggedGross: number
+): string {
+  const scope =
+    holeCount === 9
+      ? `This is a ${holesLabel}. Use the 9-hole gross total from the scorecard (Front 9 or Back 9 subtotal), not an 18-hole total if both appear.`
+      : `This is a ${holesLabel}.`;
+  return `${SCORECARD_PROMPT}
+
+${scope}
+The player logged a ${holeCount}-hole gross total of ${loggedGross} on course "${match.course_name}".
+Compare the extracted gross score to ${loggedGross} for exactly ${holeCount} holes played.
+Set verified to true only if the screenshot shows a legitimate simulator scorecard and the relevant ${holeCount}-hole gross total matches ${loggedGross}.`;
 }
 
 Deno.serve(async (req) => {
@@ -86,11 +117,23 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: 'Verification service is not configured' }, 503);
     }
 
-    const body = (await req.json()) as { match_id?: string };
+    const body = (await req.json()) as {
+      match_id?: string;
+      hole_count?: number;
+      logged_gross_total?: number;
+    };
     const matchId = body.match_id?.trim();
     if (!matchId) {
       return jsonResponse({ error: 'match_id is required' }, 400);
     }
+    const clientHoleCount =
+      typeof body.hole_count === 'number' && Number.isFinite(body.hole_count)
+        ? Math.round(body.hole_count)
+        : null;
+    const clientLoggedGross =
+      typeof body.logged_gross_total === 'number' && Number.isFinite(body.logged_gross_total)
+        ? Math.round(body.logged_gross_total)
+        : null;
 
     const userClient = createClient(supabaseUrl, supabaseAnonKey, {
       global: { headers: { Authorization: authHeader } },
@@ -145,16 +188,30 @@ Deno.serve(async (req) => {
     }
 
     const holeNums = holeNumbersForMatch(match);
-    const loggedGross = loggedGrossFromHoles(
+    const matchHoleCount = expectedHoleCount(match);
+    if (clientHoleCount != null && clientHoleCount !== matchHoleCount) {
+      return jsonResponse({ error: 'hole_count does not match this match' }, 400);
+    }
+    const loggedGrossFromDb = loggedGrossFromHoles(
       (holeRows ?? []).map((r) => ({
         hole_number: r.hole_number,
         gross_score: r.gross_score,
       })),
       holeNums
     );
-    if (loggedGross == null) {
+    if (loggedGrossFromDb == null) {
       return jsonResponse({ error: 'Enter all hole scores before verifying' }, 400);
     }
+    if (clientLoggedGross != null && clientLoggedGross !== loggedGrossFromDb) {
+      return jsonResponse(
+        { error: 'logged_gross_total does not match your entered hole scores' },
+        400
+      );
+    }
+    const loggedGross = loggedGrossFromDb;
+    const holeCountForAi = clientHoleCount ?? matchHoleCount;
+    const holesLabel = holesPlayedDescription(match);
+    const verificationPrompt = buildVerificationPrompt(match, holeCountForAi, holesLabel, loggedGross);
 
     const imageRes = await fetch(screenshotUrl);
     if (!imageRes.ok) {
@@ -194,7 +251,7 @@ Deno.serve(async (req) => {
               },
               {
                 type: 'text',
-                text: `${SCORECARD_PROMPT}\n\nThe player logged a total gross score of ${loggedGross} on course "${match.course_name}". Compare the extracted total gross score to ${loggedGross}. Set verified to true only if the screenshot shows a legitimate simulator scorecard and the total gross score matches ${loggedGross}.`,
+                text: verificationPrompt,
               },
             ],
           },
