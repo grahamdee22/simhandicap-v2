@@ -16,6 +16,11 @@ import {
 } from '../lib/leagueStandings';
 import { fetchLeagueBundle } from '../lib/leagues';
 import {
+  fetchLeagueMatchPairings,
+  formatPairingResultLine,
+} from '../lib/matchPlayTournamentPairings';
+import { fetchTeamHoleScoresForLeague } from '../lib/tournamentTeamScores';
+import {
   socialPageSectionTitleStyles,
   socialSectionHeaderStyles,
 } from '../lib/socialPageSectionTitle';
@@ -30,6 +35,21 @@ import {
   setTournamentSectionCache,
 } from '../lib/tournamentSectionCache';
 import type { FriendGroup } from '../store/useAppStore';
+
+function ordinalSuffix(n: number): string {
+  const v = n % 100;
+  if (v >= 11 && v <= 13) return 'th';
+  switch (n % 10) {
+    case 1:
+      return 'st';
+    case 2:
+      return 'nd';
+    case 3:
+      return 'rd';
+    default:
+      return 'th';
+  }
+}
 
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
 const ALLOW_DEV_CREATOR_VIEW = __DEV__;
@@ -101,6 +121,9 @@ export function GroupTournamentsSection({
   const [previewTop3, setPreviewTop3] = useState<{ name: string; rank: number }[]>(
     () => initialCache?.previewTop3 ?? []
   );
+  const [matchPreviewLine, setMatchPreviewLine] = useState<string | null>(null);
+  const [scrambleTeamLine, setScrambleTeamLine] = useState<string | null>(null);
+  const [bestBallTeamLine, setBestBallTeamLine] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const cached = getTournamentSectionCache(group.id);
@@ -110,28 +133,79 @@ export function GroupTournamentsSection({
     const synced = await syncLeagueStatuses(res.data ?? [], accessToken);
     const active = synced.find((l) => l.status === 'active' && isLeagueActive(l));
     let top3: { name: string; rank: number }[] = [];
+    let matchLine: string | null = null;
+    let scrambleLine: string | null = null;
+    let bestBallLine: string | null = null;
     if (active) {
       const bundle = await fetchLeagueBundle(active.id, accessToken);
       if (bundle.data) {
+        let teamHoleScores = undefined;
+        if (active.format === 'best_ball') {
+          const th = await fetchTeamHoleScoresForLeague(active.id, accessToken);
+          teamHoleScores = th.data ?? undefined;
+        }
         const standings = computeLeagueStandings({
           league: bundle.data.league,
           entries: bundle.data.entries,
           rounds: bundle.data.rounds,
           teams: bundle.data.teams,
           displayNames,
+          teamHoleScores,
         });
         top3 = standings.slice(0, 3).map((s) => ({
           name: s.displayName,
           rank: s.rank,
         }));
+        if (active.format === 'scramble' && authUserId) {
+          const entry = bundle.data.entries.find((e) => e.user_id === authUserId);
+          const team = entry?.league_team_id
+            ? bundle.data.teams.find((t) => t.id === entry.league_team_id)
+            : null;
+          const mine = team ? standings.find((s) => s.teamId === team.id) : null;
+          if (team && mine) {
+            scrambleLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · avg ${mine.avgNet?.toFixed(1) ?? '—'}`;
+          }
+        }
+        if (active.format === 'best_ball' && authUserId) {
+          const entry = bundle.data.entries.find((e) => e.user_id === authUserId);
+          const team = entry?.league_team_id
+            ? bundle.data.teams.find((t) => t.id === entry.league_team_id)
+            : null;
+          const mine = team ? standings.find((s) => s.teamId === team.id) : null;
+          if (team && mine) {
+            const partial = mine.hasPartialPending ? ' · partial' : '';
+            bestBallLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · avg ${mine.avgNet?.toFixed(1) ?? '—'}${partial}`;
+          }
+        }
+        if (active.format === 'match_play' && authUserId) {
+          const myEntry = bundle.data.entries.find((e) => e.user_id === authUserId);
+          if (myEntry) {
+            const pr = await fetchLeagueMatchPairings(active.id, accessToken);
+            const pairing = (pr.data ?? []).find(
+              (p) => p.player_1_entry_id === myEntry.id || p.player_2_entry_id === myEntry.id
+            );
+            if (pairing) {
+              const oppId =
+                pairing.player_1_entry_id === myEntry.id
+                  ? pairing.player_2_entry_id
+                  : pairing.player_1_entry_id;
+              const opp = bundle.data.entries.find((e) => e.id === oppId);
+              const oppName = opp ? displayNames[opp.user_id] ?? 'Opponent' : 'Opponent';
+              matchLine = formatPairingResultLine(pairing, myEntry.id, oppName);
+            }
+          }
+        }
       }
     }
     setLeagues(synced);
     setPreviewTop3(top3);
+    setMatchPreviewLine(matchLine);
+    setScrambleTeamLine(scrambleLine);
+    setBestBallTeamLine(bestBallLine);
     setTournamentSectionCache(group.id, { leagues: synced, previewTop3: top3 });
     setHasCache(true);
     setLoading(false);
-  }, [group.id, displayNames]);
+  }, [group.id, displayNames, authUserId]);
 
   useEffect(() => {
     void load();
@@ -197,6 +271,15 @@ export function GroupTournamentsSection({
               <Text style={styles.tournamentName}>{activeLeague.name}</Text>
               {activeLeague.notes?.trim() ? (
                 <Text style={styles.tournamentNotes}>{activeLeague.notes.trim()}</Text>
+              ) : null}
+              {activeLeague.format === 'match_play' && matchPreviewLine ? (
+                <Text style={styles.matchPreview}>{matchPreviewLine}</Text>
+              ) : null}
+              {activeLeague.format === 'scramble' && scrambleTeamLine ? (
+                <Text style={styles.matchPreview}>{scrambleTeamLine}</Text>
+              ) : null}
+              {activeLeague.format === 'best_ball' && bestBallTeamLine ? (
+                <Text style={styles.matchPreview}>{bestBallTeamLine}</Text>
               ) : null}
               {previewTop3.length > 0 ? (
                 <View style={styles.preview}>
@@ -339,6 +422,12 @@ const styles = StyleSheet.create({
     color: colors.muted,
     lineHeight: 18,
     marginTop: 6,
+  },
+  matchPreview: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.ink,
+    marginTop: 10,
   },
   preview: { marginTop: 10, gap: 4 },
   previewLine: { fontSize: 13, color: colors.ink },

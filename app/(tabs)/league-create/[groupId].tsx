@@ -22,38 +22,20 @@ import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, type LeagueFormat } from '../../../src/lib/leagues';
+import { generateMatchPlayPairings } from '../../../src/lib/matchPlayTournamentPairings';
+import { validateBestBallTeamSizes } from '../../../src/lib/bestBallTournament';
+import {
+  computeScrambleTeamIndex,
+  validateScrambleDesignatedScorers,
+  validateScrambleTeamSizes,
+  type ScrambleTeamDraft,
+} from '../../../src/lib/scrambleTournament';
+import type { MatchPlayPairingMethod } from '../../../src/lib/tournamentTypes';
+import { TOURNAMENT_FORMAT_COPY } from '../../../src/lib/tournamentFormatCopy';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
-const FORMATS: { key: LeagueFormat; title: string; sub: string; comingSoon?: boolean }[] = [
-  {
-    key: 'stroke',
-    title: 'Stroke Play',
-    sub: 'Total strokes win. Log your rounds — the lowest average net score over the tournament takes the title.',
-  },
-  {
-    key: 'match_play',
-    title: 'Match Play',
-    sub: 'Win holes, not strokes. Each hole is played independently — win, lose, or halve. The player who wins the most holes wins the match.',
-    comingSoon: true,
-  },
-  {
-    key: 'scramble',
-    title: 'Scramble',
-    sub: 'Everyone hits, the team picks the best shot, and you all play from there. One team score per hole.',
-    comingSoon: true,
-  },
-  {
-    key: 'best_ball',
-    title: 'Best Ball',
-    sub: 'Everyone plays their own ball the whole round. The lowest score on each hole counts for the team.',
-    comingSoon: true,
-  },
-];
-
-function isFormatComingSoon(key: LeagueFormat): boolean {
-  return FORMATS.some((f) => f.key === key && !!f.comingSoon);
-}
+const MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS = 4;
 
 function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
@@ -67,10 +49,10 @@ function defaultEndDate(): Date {
   return d;
 }
 
-function initialTeams() {
+function initialTeams(): ScrambleTeamDraft[] {
   return [
-    { id: 't1', name: 'Team 1', memberIds: [] as string[] },
-    { id: 't2', name: 'Team 2', memberIds: [] as string[] },
+    { id: 't1', name: 'Team 1', memberIds: [] as string[], designatedScorerUserId: null },
+    { id: 't2', name: 'Team 2', memberIds: [] as string[], designatedScorerUserId: null },
   ];
 }
 
@@ -98,6 +80,10 @@ export default function LeagueCreateScreen() {
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(defaultEndDate);
   const [roundsThatCount, setRoundsThatCount] = useState(4);
+  const [matchPlayPairingMethod, setMatchPlayPairingMethod] =
+    useState<MatchPlayPairingMethod>('random');
+  const [matchPlayMatchesThatCount, setMatchPlayMatchesThatCount] = useState(1);
+  const [scrambleHandicapOverride, setScrambleHandicapOverride] = useState('');
   const [useHandicap, setUseHandicap] = useState(DEFAULT_USE_HANDICAP);
   const [notes, setNotes] = useState('');
   const [teams, setTeams] = useState(initialTeams);
@@ -119,6 +105,9 @@ export default function LeagueCreateScreen() {
     setStartDate(new Date());
     setEndDate(defaultEndDate());
     setRoundsThatCount(4);
+    setMatchPlayPairingMethod('random');
+    setMatchPlayMatchesThatCount(1);
+    setScrambleHandicapOverride('');
     setUseHandicap(DEFAULT_USE_HANDICAP);
     setTeams(initialTeams());
     setSelectedMemberId(null);
@@ -142,11 +131,17 @@ export default function LeagueCreateScreen() {
     }
   }, [step]);
 
+  const teamFormatsDisabled = members.length < MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS;
+
   useEffect(() => {
-    if (isTeamFormat(format) || isFormatComingSoon(format)) {
+    if (teamFormatsDisabled && isTeamFormat(format)) {
       setFormat('stroke');
     }
-  }, [format]);
+  }, [format, teamFormatsDisabled]);
+
+  const isMatchPlay = format === 'match_play';
+  const isScramble = format === 'scramble';
+  const isBestBall = format === 'best_ball';
 
   const needsTeams = isTeamFormat(format);
 
@@ -181,12 +176,30 @@ export default function LeagueCreateScreen() {
     return members.every((m) => assignedMemberIds.has(m.userId));
   }, [needsTeams, members, assignedMemberIds]);
 
+  const syncTeamScorer = (t: ScrambleTeamDraft, memberIds: string[]): string | null => {
+    if (!isScramble) return t.designatedScorerUserId;
+    if (memberIds.length === 0) return null;
+    if (t.designatedScorerUserId && memberIds.includes(t.designatedScorerUserId)) {
+      return t.designatedScorerUserId;
+    }
+    return memberIds[0] ?? null;
+  };
+
   const onAutoBalance = () => {
     const sorted = [...members].sort((a, b) => (a.index ?? 99) - (b.index ?? 99));
-    const next = teams.map((t) => ({ ...t, memberIds: [] as string[] }));
+    const next: ScrambleTeamDraft[] = teams.map((t) => ({
+      ...t,
+      memberIds: [] as string[],
+      designatedScorerUserId: null as string | null,
+    }));
     sorted.forEach((m, i) => {
       next[i % next.length].memberIds.push(m.userId);
     });
+    if (isScramble) {
+      for (const t of next) {
+        t.designatedScorerUserId = t.memberIds[0] ?? null;
+      }
+    }
     setTeams(next);
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
@@ -194,13 +207,17 @@ export default function LeagueCreateScreen() {
 
   const assignMemberToTeam = (userId: string, teamId: string) => {
     setTeams((prev) =>
-      prev.map((t) => ({
-        ...t,
-        memberIds:
+      prev.map((t) => {
+        const memberIds =
           t.id === teamId
             ? [...t.memberIds.filter((id) => id !== userId), userId]
-            : t.memberIds.filter((id) => id !== userId),
-      }))
+            : t.memberIds.filter((id) => id !== userId);
+        return {
+          ...t,
+          memberIds,
+          designatedScorerUserId: syncTeamScorer(t, memberIds),
+        };
+      })
     );
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
@@ -208,10 +225,14 @@ export default function LeagueCreateScreen() {
 
   const removeMemberFromTeams = (userId: string) => {
     setTeams((prev) =>
-      prev.map((t) => ({
-        ...t,
-        memberIds: t.memberIds.filter((id) => id !== userId),
-      }))
+      prev.map((t) => {
+        const memberIds = t.memberIds.filter((id) => id !== userId);
+        return {
+          ...t,
+          memberIds,
+          designatedScorerUserId: syncTeamScorer(t, memberIds),
+        };
+      })
     );
     setAssignedMemberAction(null);
     setSelectedMemberId(userId);
@@ -224,9 +245,24 @@ export default function LeagueCreateScreen() {
 
   const onLaunch = async () => {
     if (!user?.id || !group) return;
-    if (isFormatComingSoon(format)) {
-      showAppAlert('Coming soon', 'This tournament format is not available yet.');
-      return;
+    if (isScramble) {
+      const sizeErr = validateScrambleTeamSizes(teams);
+      if (sizeErr) {
+        showAppAlert('Invalid teams', sizeErr);
+        return;
+      }
+      const scorerErr = validateScrambleDesignatedScorers(teams);
+      if (scorerErr) {
+        showAppAlert('Designated scorer', scorerErr);
+        return;
+      }
+    }
+    if (isBestBall) {
+      const bbErr = validateBestBallTeamSizes(teams);
+      if (bbErr) {
+        showAppAlert('Invalid teams', bbErr);
+        return;
+      }
     }
     const existing = await fetchLeaguesForGroup(groupId, googleOAuthAccessToken ?? undefined);
     if (existing.data?.some((l) => l.status === 'active')) {
@@ -241,23 +277,62 @@ export default function LeagueCreateScreen() {
         format,
         startDate: ymd(startDate),
         endDate: ymd(endDate),
-        roundsThatCount,
+        roundsThatCount: isMatchPlay ? matchPlayMatchesThatCount : roundsThatCount,
         useHandicap,
         notes: notes.trim() || null,
         createdBy: user.id,
         members,
+        matchPlayPairingMethod: isMatchPlay ? matchPlayPairingMethod : null,
+        matchPlayMatchesThatCount: isMatchPlay ? matchPlayMatchesThatCount : null,
+        scrambleHandicapOverride: isScramble
+          ? scrambleHandicapOverride.trim()
+            ? parseFloat(scrambleHandicapOverride)
+            : null
+          : null,
         teams: needsTeams
-          ? teams.map((t) => ({ name: t.name, memberUserIds: t.memberIds }))
+          ? teams.map((t) => ({
+              name: t.name,
+              memberUserIds: t.memberIds,
+              designatedScorerUserId: isScramble ? t.designatedScorerUserId : null,
+            }))
           : undefined,
       },
       googleOAuthAccessToken ?? undefined
     );
-    setBusy(false);
     if (res.error || !res.data) {
+      setBusy(false);
       showAppAlert('Could not create tournament', res.error ?? 'Unknown error');
       return;
     }
-    showAppAlert('Tournament created', 'Members will see it in their group.');
+    if (isMatchPlay && matchPlayPairingMethod === 'random') {
+      const gen = await generateMatchPlayPairings(
+        res.data.id,
+        googleOAuthAccessToken ?? undefined
+      );
+      setBusy(false);
+      if (gen.error) {
+        showAppAlert(
+          'Tournament created',
+          `Pairings could not be generated: ${gen.error}. Use Manage tournament to try again.`
+        );
+        router.replace('/(tabs)/groups' as never);
+        return;
+      }
+      const unpaired = gen.data?.players_unpaired ?? 0;
+      const msg =
+        unpaired > 0
+          ? `Random pairings created. ${unpaired} player has no opponent (odd field).`
+          : 'Random match pairings are ready.';
+      showAppAlert('Tournament created', msg);
+    } else {
+      setBusy(false);
+      showAppAlert(
+        'Tournament created',
+        isMatchPlay
+          ? 'Assign matchups from Manage tournament when ready.'
+          : 'Members will see it in their group.'
+      );
+    }
     router.replace('/(tabs)/groups' as never);
   };
 
@@ -303,9 +378,10 @@ export default function LeagueCreateScreen() {
               placeholderTextColor={colors.subtle}
             />
             <Text style={[styles.lbl, { marginTop: 16 }]}>Format</Text>
-            {FORMATS.map((f) => {
+            {TOURNAMENT_FORMAT_COPY.map((f) => {
               const on = format === f.key;
-              const disabled = !!f.comingSoon;
+              const needsFour = isTeamFormat(f.key) && teamFormatsDisabled;
+              const disabled = needsFour;
               return (
                 <Pressable
                   key={f.key}
@@ -322,8 +398,10 @@ export default function LeagueCreateScreen() {
                       {f.title}
                     </Text>
                     <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>{f.sub}</Text>
-                    {disabled ? (
-                      <Text style={styles.formatDisabledNote}>Coming soon</Text>
+                    {needsFour ? (
+                      <Text style={styles.formatDisabledNote}>
+                        Requires at least {MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS} group members.
+                      </Text>
                     ) : null}
                   </View>
                   {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
@@ -357,17 +435,81 @@ export default function LeagueCreateScreen() {
               display={Platform.OS === 'ios' ? 'spinner' : 'default'}
               onChange={(_, d) => d && setEndDate(d)}
             />
-            <Text style={styles.lbl}>Rounds that count toward standings</Text>
-            <View style={styles.stepperRow}>
-              <Pressable style={styles.stepperBtn} onPress={() => setRoundsThatCount((n) => Math.max(1, n - 1))}>
-                <Text style={styles.stepperBtnTxt}>−</Text>
-              </Pressable>
-              <Text style={styles.stepperVal}>{roundsThatCount}</Text>
-              <Pressable style={styles.stepperBtn} onPress={() => setRoundsThatCount((n) => Math.min(10, n + 1))}>
-                <Text style={styles.stepperBtnTxt}>+</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.helper}>e.g. best {roundsThatCount} of 6 rounds count</Text>
+            {isMatchPlay ? (
+              <>
+                <Text style={styles.lbl}>Pairing method</Text>
+                <Pressable
+                  style={[styles.formatCard, matchPlayPairingMethod === 'random' && styles.formatCardOn]}
+                  onPress={() => setMatchPlayPairingMethod('random')}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.formatTitle}>Random draw</Text>
+                    <Text style={styles.formatSub}>
+                      Pair players automatically when the tournament starts.
+                    </Text>
+                  </View>
+                  {matchPlayPairingMethod === 'random' ? (
+                    <IconCheckmark size={20} color={colors.accent} />
+                  ) : null}
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.formatCard,
+                    matchPlayPairingMethod === 'admin' && styles.formatCardOn,
+                  ]}
+                  onPress={() => setMatchPlayPairingMethod('admin')}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.formatTitle}>Admin assigned</Text>
+                    <Text style={styles.formatSub}>
+                      You assign opponents from Manage tournament.
+                    </Text>
+                  </View>
+                  {matchPlayPairingMethod === 'admin' ? (
+                    <IconCheckmark size={20} color={colors.accent} />
+                  ) : null}
+                </Pressable>
+                <Text style={styles.lbl}>Matches that count toward standings</Text>
+                <View style={styles.stepperRow}>
+                  <Pressable
+                    style={styles.stepperBtn}
+                    onPress={() => setMatchPlayMatchesThatCount((n) => Math.max(1, n - 1))}
+                  >
+                    <Text style={styles.stepperBtnTxt}>−</Text>
+                  </Pressable>
+                  <Text style={styles.stepperVal}>{matchPlayMatchesThatCount}</Text>
+                  <Pressable
+                    style={styles.stepperBtn}
+                    onPress={() => setMatchPlayMatchesThatCount((n) => Math.min(10, n + 1))}
+                  >
+                    <Text style={styles.stepperBtnTxt}>+</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.helper}>
+                  e.g. best {matchPlayMatchesThatCount} match result(s) count
+                </Text>
+              </>
+            ) : (
+              <>
+                <Text style={styles.lbl}>Rounds that count toward standings</Text>
+                <View style={styles.stepperRow}>
+                  <Pressable
+                    style={styles.stepperBtn}
+                    onPress={() => setRoundsThatCount((n) => Math.max(1, n - 1))}
+                  >
+                    <Text style={styles.stepperBtnTxt}>−</Text>
+                  </Pressable>
+                  <Text style={styles.stepperVal}>{roundsThatCount}</Text>
+                  <Pressable
+                    style={styles.stepperBtn}
+                    onPress={() => setRoundsThatCount((n) => Math.min(10, n + 1))}
+                  >
+                    <Text style={styles.stepperBtnTxt}>+</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.helper}>e.g. best {roundsThatCount} of 6 rounds count</Text>
+              </>
+            )}
             <View style={styles.toggleRow}>
               <Text style={styles.toggleLbl}>Use SimCap handicap</Text>
               <View style={styles.toggleRight}>
@@ -385,6 +527,24 @@ export default function LeagueCreateScreen() {
               </View>
             </View>
             <Text style={styles.helper}>Adjusts scores using each player&apos;s SimCap index</Text>
+            {isScramble ? (
+              <>
+                <Text style={[styles.lbl, { marginTop: 12 }]}>
+                  Team handicap override (optional)
+                </Text>
+                <TextInput
+                  style={styles.input}
+                  value={scrambleHandicapOverride}
+                  onChangeText={setScrambleHandicapOverride}
+                  placeholder="e.g. 12.4 — leave blank for 15%/85% formula"
+                  placeholderTextColor={colors.subtle}
+                  keyboardType="decimal-pad"
+                />
+                <Text style={styles.helper}>
+                  Default team index uses 15% of the lowest + 85% of the highest player index.
+                </Text>
+              </>
+            ) : null}
             <View
               onLayout={(e) => {
                 notesSectionYRef.current = e.nativeEvent.layout.y;
@@ -422,8 +582,11 @@ export default function LeagueCreateScreen() {
           <>
             <Text style={styles.head}>Assign Teams</Text>
             <Text style={styles.helper}>
-              Select an unassigned player, then add them to a team. Tap someone on a team to remove or
-              move them.
+              {isScramble
+                ? 'Scramble requires even-sized teams (2, 4, 6…). Pick one designated scorer per team — only they log team rounds.'
+                : isBestBall
+                  ? 'Each player logs their own round. The best score on each hole counts for the team. Standings update as teammates submit.'
+                  : 'Select an unassigned player, then add them to a team. Tap someone on a team to remove or move them.'}
             </Text>
             <Pressable style={styles.outlineBtn} onPress={onAutoBalance}>
               <Text style={styles.outlineBtnTxt}>Auto-balance</Text>
@@ -518,6 +681,43 @@ export default function LeagueCreateScreen() {
                     })
                   )}
                 </View>
+                {isScramble && t.memberIds.length >= 2 ? (
+                  <View style={styles.scorerBlock}>
+                    <Text style={styles.scorerLbl}>Designated scorer</Text>
+                    <View style={styles.scorerRow}>
+                      {t.memberIds.map((uid) => {
+                        const m = members.find((x) => x.userId === uid);
+                        const on = t.designatedScorerUserId === uid;
+                        return (
+                          <Pressable
+                            key={uid}
+                            style={[styles.scorerChip, on && styles.scorerChipOn]}
+                            onPress={() =>
+                              setTeams((prev) =>
+                                prev.map((x) =>
+                                  x.id === t.id ? { ...x, designatedScorerUserId: uid } : x
+                                )
+                              )
+                            }
+                          >
+                            <Text style={[styles.scorerChipTxt, on && styles.scorerChipTxtOn]}>
+                              {m?.displayName ?? 'Player'}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    {(() => {
+                      const idxs = t.memberIds
+                        .map((uid) => members.find((m) => m.userId === uid)?.index)
+                        .filter((v): v is number => v != null);
+                      const teamIdx = computeScrambleTeamIndex(idxs);
+                      return teamIdx != null ? (
+                        <Text style={styles.teamIdxLine}>Team index (15%/85%): {teamIdx.toFixed(1)}</Text>
+                      ) : null;
+                    })()}
+                  </View>
+                ) : null}
               </View>
             ))}
             <Pressable
@@ -525,7 +725,12 @@ export default function LeagueCreateScreen() {
               onPress={() =>
                 setTeams((prev) => [
                   ...prev,
-                  { id: `t${Date.now()}`, name: `Team ${prev.length + 1}`, memberIds: [] },
+                  {
+                    id: `t${Date.now()}`,
+                    name: `Team ${prev.length + 1}`,
+                    memberIds: [],
+                    designatedScorerUserId: null,
+                  },
                 ])
               }
             >
@@ -550,17 +755,25 @@ export default function LeagueCreateScreen() {
                 {format.replace('_', ' ')} · {ymd(startDate)} – {ymd(endDate)}
               </Text>
               <Text style={styles.summaryMeta}>
-                Best {roundsThatCount} rounds · Handicap {useHandicap ? 'on' : 'off'}
+                Best{' '}
+                {isMatchPlay ? matchPlayMatchesThatCount : roundsThatCount}{' '}
+                {isMatchPlay ? 'match(es)' : 'rounds'} · Handicap {useHandicap ? 'on' : 'off'}
               </Text>
               {notes.trim() ? (
                 <Text style={styles.summaryMeta}>Notes: {notes.trim()}</Text>
               ) : null}
               {needsTeams
-                ? teams.map((t) => (
-                    <Text key={t.id} style={styles.summaryMeta}>
-                      {t.name}: {t.memberIds.length} players
-                    </Text>
-                  ))
+                ? teams.map((t) => {
+                    const scorer = members.find((m) => m.userId === t.designatedScorerUserId);
+                    return (
+                      <Text key={t.id} style={styles.summaryMeta}>
+                        {t.name}: {t.memberIds.length} players
+                        {isScramble && scorer
+                          ? ` · scorer: ${scorer.displayName.replace(' (you)', '')}`
+                          : ''}
+                      </Text>
+                    );
+                  })
                 : null}
             </View>
             <Pressable style={styles.primaryBtn} disabled={busy} onPress={() => void onLaunch()}>
@@ -747,4 +960,19 @@ const styles = StyleSheet.create({
   },
   summaryLine: { fontSize: 18, fontWeight: '700', color: colors.ink },
   summaryMeta: { fontSize: 13, color: colors.muted, marginTop: 6 },
+  scorerBlock: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  scorerLbl: { fontSize: 11, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', marginBottom: 8 },
+  scorerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  scorerChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.bg,
+  },
+  scorerChipOn: { backgroundColor: colors.header, borderColor: colors.header },
+  scorerChipTxt: { fontSize: 12, fontWeight: '600', color: colors.ink },
+  scorerChipTxtOn: { color: '#fff' },
+  teamIdxLine: { fontSize: 12, color: colors.muted, marginTop: 8 },
 });

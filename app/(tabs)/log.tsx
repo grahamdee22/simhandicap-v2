@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
 import { DatePlayedField } from '../../src/components/DatePlayedField';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
@@ -489,11 +490,13 @@ export default function LogRoundScreen() {
           router.replace('/(tabs)/analyze');
         } else {
           const optedIn = activeTournaments.filter(
-            (t) => !t.logOptInDisabled && tournamentApply[t.leagueId] !== false
+            (t) => tournamentApply[t.leagueId] !== false
           );
-          const hasIndividualOptIn = optedIn.some((t) => t.format === 'stroke');
-          const hasTeamOptIn = optedIn.some((t) => isTeamLeagueFormat(t.format));
-          const excludesFromSimcapIndex = hasTeamOptIn && !hasIndividualOptIn;
+          const hasScrambleOptIn = optedIn.some((t) => t.format === 'scramble');
+          const hasIndexCountingOptIn = optedIn.some(
+            (t) => t.format === 'stroke' || t.format === 'best_ball'
+          );
+          const excludesFromSimcapIndex = hasScrambleOptIn && !hasIndexCountingOptIn;
 
           const saved = await addRound({
             ...base,
@@ -519,19 +522,52 @@ export default function LogRoundScreen() {
               simIndex: saved.simcapIndexAtTime ?? saved.indexAfter ?? null,
               selections: activeTournaments.map((t) => ({
                 leagueId: t.leagueId,
-                apply: !t.logOptInDisabled && tournamentApply[t.leagueId] !== false,
+                apply: tournamentApply[t.leagueId] !== false,
               })),
               displayNames,
               accessToken: saveAccessToken,
             });
-            if (leagueResults.length > 0) {
-              const hit = leagueResults[0];
+            const pendingHoleResults = leagueResults.filter((r) => r.needsHoleByHoleEntry);
+            const completedLeagueResults = leagueResults.filter((r) => !r.needsHoleByHoleEntry);
+
+            if (completedLeagueResults.length > 0) {
+              const hit = completedLeagueResults[0];
               const place = ordinalPlace(hit.position);
               const isTeamFmt = isTeamLeagueFormat(hit.format);
               leagueBanner =
                 isTeamFmt && hit.teamName
                   ? `This round counts toward Team ${hit.teamName}'s score! You're currently in ${place} place.`
                   : `This round counts toward ${hit.leagueName}! You're currently in ${place} place.`;
+            }
+
+            if (pendingHoleResults.length > 0) {
+              const [first, ...rest] = pendingHoleResults;
+              router.replace({
+                pathname: '/(tabs)/tournament-holes/[leagueRoundId]',
+                params: {
+                  leagueRoundId: first.leagueRoundId,
+                  leagueId: first.leagueId,
+                  format: first.format,
+                  grossScore: String(saved.grossScore),
+                  courseId: snap.courseId,
+                  leagueName: first.leagueName,
+                  ...(rest.length > 0
+                    ? {
+                        queue: JSON.stringify(
+                          rest.map((r) => ({
+                            leagueRoundId: r.leagueRoundId,
+                            leagueId: r.leagueId,
+                            format: r.format,
+                            leagueName: r.leagueName,
+                            grossScore: String(saved.grossScore),
+                            courseId: snap.courseId,
+                          }))
+                        ),
+                      }
+                    : {}),
+                },
+              } as never);
+              return;
             }
           }
           router.replace(
@@ -563,6 +599,7 @@ export default function LogRoundScreen() {
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
+          <PendingTournamentHolesBanner gutter={0} />
           <View style={isWide ? styles.pickRow : undefined}>
             <View style={isWide ? styles.pickCol : undefined}>
               <Text style={styles.sectionLabel}>Sim platform</Text>
@@ -786,20 +823,6 @@ export default function LogRoundScreen() {
               <Text style={styles.tournamentLoading}>Checking active tournaments…</Text>
             ) : (
               activeTournaments.map((t) => {
-                if (t.logOptInDisabled) {
-                  return (
-                    <View
-                      key={t.leagueId}
-                      style={[styles.tournamentCard, styles.tournamentCardDisabled]}
-                    >
-                      <Text style={[styles.tournamentQ, styles.tournamentQDisabled]}>
-                        {t.leagueName}
-                      </Text>
-                      <Text style={styles.tournamentMeta}>{t.groupName}</Text>
-                      <Text style={styles.tournamentComingSoon}>Coming soon</Text>
-                    </View>
-                  );
-                }
                 const apply = tournamentApply[t.leagueId] !== false;
                 return (
                   <View key={t.leagueId} style={styles.tournamentCard}>
@@ -829,9 +852,15 @@ export default function LogRoundScreen() {
                         </Text>
                       </Pressable>
                     </View>
-                    {isTeamLeagueFormat(t.format) ? (
+                    {t.format === 'scramble' ? (
                       <Text style={styles.tournamentTeamNote}>
-                        Scramble/Best Ball rounds won&apos;t affect your personal SimCap index.
+                        Only the designated scorer can apply rounds. Scramble won&apos;t affect your
+                        SimCap index.
+                      </Text>
+                    ) : null}
+                    {t.format === 'best_ball' ? (
+                      <Text style={styles.tournamentTeamNote}>
+                        Best Ball rounds count toward your SimCap index.
                       </Text>
                     ) : null}
                   </View>

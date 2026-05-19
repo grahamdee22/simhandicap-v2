@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { IconCalendarOutline } from '../../src/components/SvgUiIcons';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
 import { formatDifferentialDisplay, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
@@ -489,6 +490,8 @@ export default function AnalyzeScreen() {
             slice of your history.
           </Text>
         </View>
+
+        <PendingTournamentHolesBanner gutter={gutter} />
 
         {leagueBanner ? (
           <View

@@ -24,6 +24,12 @@ import {
   updateLeague,
   type LeagueBundle,
 } from '../../../src/lib/leagues';
+import {
+  fetchLeagueMatchPairings,
+  formatPairingStatusLabel,
+  generateMatchPlayPairings,
+  type DbLeagueMatchPairingRow,
+} from '../../../src/lib/matchPlayTournamentPairings';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
@@ -37,6 +43,7 @@ export default function LeagueManageScreen() {
   const groups = useAppStore((s) => s.groups);
 
   const [bundle, setBundle] = useState<LeagueBundle | null>(null);
+  const [pairings, setPairings] = useState<DbLeagueMatchPairingRow[]>([]);
   const [name, setName] = useState('');
   const [endDate, setEndDate] = useState(new Date());
   const [busy, setBusy] = useState(false);
@@ -54,6 +61,12 @@ export default function LeagueManageScreen() {
       setBundle(res.data);
       setName(res.data.league.name);
       setEndDate(new Date(`${res.data.league.end_date}T12:00:00`));
+      if (res.data.league.format === 'match_play') {
+        const pr = await fetchLeagueMatchPairings(leagueId, googleOAuthAccessToken ?? undefined);
+        setPairings(pr.data ?? []);
+      } else {
+        setPairings([]);
+      }
     }
   }, [leagueId]);
 
@@ -90,6 +103,31 @@ export default function LeagueManageScreen() {
     setBusy(false);
     if (res.error) showAppAlert('Could not end', res.error);
     else router.replace(`/(tabs)/league/${leagueId}` as never);
+  };
+
+  const displayNames = useMemo(() => {
+    const m: Record<string, string> = {};
+    for (const mem of group?.members ?? []) {
+      if (mem.userId) m[mem.userId] = mem.displayName.replace(' (you)', '');
+    }
+    return m;
+  }, [group?.members]);
+
+  const onRegeneratePairings = async () => {
+    const ok = await confirmDestructive(
+      'Regenerate pairings?',
+      'This removes current matchups and creates a new random draw.',
+      'Regenerate'
+    );
+    if (!ok) return;
+    setBusy(true);
+    const res = await generateMatchPlayPairings(leagueId, googleOAuthAccessToken ?? undefined);
+    setBusy(false);
+    if (res.error) showAppAlert('Could not regenerate', res.error);
+    else {
+      showAppAlert('Pairings updated', 'New random matchups are ready.');
+      void load();
+    }
   };
 
   const onDelete = async () => {
@@ -150,6 +188,34 @@ export default function LeagueManageScreen() {
           <Text style={styles.outlineBtnTxt}>Save end date</Text>
         </Pressable>
 
+        {bundle.league.format === 'match_play' ? (
+          <View style={{ marginTop: 24 }}>
+            <Text style={styles.lbl}>Match pairings</Text>
+            {pairings.length === 0 ? (
+              <Text style={styles.helper}>No pairings yet.</Text>
+            ) : (
+              pairings.map((p) => {
+                const e1 = bundle.entries.find((e) => e.id === p.player_1_entry_id);
+                const e2 = bundle.entries.find((e) => e.id === p.player_2_entry_id);
+                const n1 = e1 ? displayNames[e1.user_id] ?? 'Player' : 'Player';
+                const n2 = e2 ? displayNames[e2.user_id] ?? 'Player' : 'Player';
+                return (
+                  <Text key={p.id} style={styles.pairingLine}>
+                    {n1} vs {n2} · {formatPairingStatusLabel(p.status)}
+                  </Text>
+                );
+              })
+            )}
+            <Pressable
+              style={[styles.outlineBtn, { marginTop: 10 }]}
+              disabled={busy}
+              onPress={() => void onRegeneratePairings()}
+            >
+              <Text style={styles.outlineBtnTxt}>Regenerate random pairings</Text>
+            </Pressable>
+          </View>
+        ) : null}
+
         <Pressable style={[styles.outlineBtn, { marginTop: 24 }]} disabled={busy} onPress={() => void endEarly()}>
           <Text style={styles.outlineBtnTxt}>End tournament early</Text>
         </Pressable>
@@ -183,6 +249,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   outlineBtnTxt: { color: colors.accentDark, fontWeight: '700' },
+  helper: { fontSize: 13, color: colors.muted, marginBottom: 8 },
+  pairingLine: { fontSize: 14, color: colors.ink, marginBottom: 6 },
   dangerBtn: {
     marginTop: 32,
     paddingVertical: 14,

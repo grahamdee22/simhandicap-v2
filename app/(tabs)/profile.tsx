@@ -5,6 +5,7 @@ import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, Te
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { DualIndexChart } from '../../src/components/DualIndexChart';
 import { IconAddCircleOutline, IconCheckmark, IconChevronForward } from '../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../src/lib/alertCompat';
@@ -202,6 +203,7 @@ export default function ProfileScreen() {
           paddingBottom: insets.bottom + 32,
         }}
       >
+        <PendingTournamentHolesBanner gutter={0} />
         <Text style={[styles.sub, isWide && styles.subLg]}>
           {signedIn
             ? 'Rounds, profile, and settings sync to your SimCap account in the cloud.'

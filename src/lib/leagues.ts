@@ -7,6 +7,12 @@ import { supabase } from './supabase';
 import { currentIndexFromRounds } from '../store/useAppStore';
 import type { GroupMember } from '../store/useAppStore';
 import type { SimRound } from '../store/useAppStore';
+import { isUserDesignatedScorerForTeam } from './scrambleTournament';
+import { isHoleByHoleLeagueFormat } from './tournamentTypes';
+import type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
+
+export type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
+export { isHoleByHoleLeagueFormat, teamFormatRequires18Holes } from './tournamentTypes';
 
 export const LEAGUE_FORMATS = ['stroke', 'match_play', 'scramble', 'best_ball'] as const;
 export type LeagueFormat = (typeof LEAGUE_FORMATS)[number];
@@ -25,6 +31,9 @@ export type DbLeagueRow = {
   created_by: string;
   status: LeagueStatus;
   notes: string | null;
+  match_play_pairing_method: MatchPlayPairingMethod | null;
+  match_play_matches_that_count: number | null;
+  scramble_handicap_override: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -33,6 +42,7 @@ export type DbLeagueTeamRow = {
   id: string;
   league_id: string;
   name: string;
+  designated_scorer_id: string | null;
   created_at: string;
 };
 
@@ -45,6 +55,9 @@ export type DbLeagueEntryRow = {
   points: number;
   net_score: number | null;
   position: number | null;
+  mp_wins?: number;
+  mp_losses?: number;
+  mp_halved?: number;
 };
 
 export type DbLeagueRoundRow = {
@@ -57,6 +70,7 @@ export type DbLeagueRoundRow = {
   net_score: number;
   counted: boolean;
   player_opted_in: boolean;
+  hole_entry_status: HoleEntryStatus;
   created_at: string;
 };
 
@@ -66,8 +80,6 @@ export type ActiveTournamentOption = {
   groupId: string;
   groupName: string;
   format: LeagueFormat;
-  /** Shown on Log Round but cannot opt in (e.g. match play). */
-  logOptInDisabled?: boolean;
 };
 
 export function isTeamLeagueFormat(format: LeagueFormat): boolean {
@@ -252,7 +264,15 @@ export type CreateLeagueInput = {
   notes?: string | null;
   createdBy: string;
   members: GroupMember[];
-  teams?: { name: string; memberUserIds: string[] }[];
+  teams?: {
+    name: string;
+    memberUserIds: string[];
+    /** Scramble: sole player who may log team rounds (PRD §6.2). */
+    designatedScorerUserId?: string | null;
+  }[];
+  matchPlayPairingMethod?: MatchPlayPairingMethod | null;
+  matchPlayMatchesThatCount?: number | null;
+  scrambleHandicapOverride?: number | null;
 };
 
 export async function createLeague(
@@ -271,6 +291,12 @@ export async function createLeague(
     created_by: input.createdBy,
     notes: input.notes?.trim() ? input.notes.trim() : null,
     status: 'active' as const,
+    match_play_pairing_method:
+      input.format === 'match_play' ? (input.matchPlayPairingMethod ?? null) : null,
+    match_play_matches_that_count:
+      input.format === 'match_play' ? (input.matchPlayMatchesThatCount ?? null) : null,
+    scramble_handicap_override:
+      input.format === 'scramble' ? (input.scrambleHandicapOverride ?? null) : null,
   };
 
   let league: DbLeagueRow | null = null;
@@ -314,7 +340,13 @@ export async function createLeague(
             'Content-Type': 'application/json',
             Prefer: 'return=representation',
           },
-          body: JSON.stringify([{ league_id: league.id, name: team.name }]),
+          body: JSON.stringify([
+            {
+              league_id: league.id,
+              name: team.name,
+              designated_scorer_id: team.designatedScorerUserId ?? null,
+            },
+          ]),
         });
         if (!res.ok) return { data: null, error: await res.text().catch(() => res.statusText) };
         const rows = (await res.json()) as DbLeagueTeamRow[];
@@ -322,7 +354,11 @@ export async function createLeague(
       } else if (supabase) {
         const { data, error } = await supabase
           .from('league_teams')
-          .insert({ league_id: league.id, name: team.name })
+          .insert({
+            league_id: league.id,
+            name: team.name,
+            designated_scorer_id: team.designatedScorerUserId ?? null,
+          })
           .select('*')
           .single();
         if (error) return { data: null, error: error.message };
@@ -386,9 +422,13 @@ export function netScoreForLeagueRound(gross: number, useHandicap: boolean, simI
   return Math.max(1, gross - strokes);
 }
 
-/** Rounds that count in standings (player opted in at log time). */
+/** Rounds that count in standings (opted in + hole scorecard complete). */
 export function leagueRoundsForStandings(rounds: DbLeagueRoundRow[]): DbLeagueRoundRow[] {
-  return rounds.filter((r) => r.player_opted_in === true);
+  return rounds.filter(
+    (r) =>
+      r.player_opted_in === true &&
+      (r.hole_entry_status === 'complete' || r.hole_entry_status == null)
+  );
 }
 
 /** Active tournaments the user can apply a round to (by group membership + league entry). */
@@ -413,6 +453,15 @@ export async function fetchActiveTournamentsForUser(params: {
       const bundleRes = await fetchLeagueBundle(league.id, params.accessToken);
       if (!bundleRes.data) continue;
       if (!bundleRes.data.entries.some((e) => e.user_id === params.userId)) continue;
+
+      if (league.format === 'scramble') {
+        const entry = bundleRes.data.entries.find((e) => e.user_id === params.userId);
+        const team = entry?.league_team_id
+          ? bundleRes.data.teams.find((t) => t.id === entry.league_team_id)
+          : null;
+        if (!isUserDesignatedScorerForTeam(team, params.userId)) continue;
+      }
+
       seen.add(league.id);
       out.push({
         leagueId: league.id,
@@ -420,7 +469,6 @@ export async function fetchActiveTournamentsForUser(params: {
         groupId: group.id,
         groupName: group.name,
         format: league.format,
-        logOptInDisabled: league.format === 'match_play',
       });
     }
   }
@@ -432,9 +480,12 @@ export async function fetchActiveTournamentsForUser(params: {
 export type LeagueRoundRecordResult = {
   leagueName: string;
   leagueId: string;
+  leagueRoundId: string;
   position: number;
   teamName: string | null;
   format: LeagueFormat;
+  holeEntryStatus: HoleEntryStatus;
+  needsHoleByHoleEntry: boolean;
 };
 
 /** Record league_round rows only for tournaments the player opted into at log time. */
@@ -458,11 +509,18 @@ export async function recordOptedInLeagueRounds(params: {
     const bundleRes = await fetchLeagueBundle(leagueId, params.accessToken);
     if (!bundleRes.data) continue;
     const { league } = bundleRes.data;
-    if (league.format === 'match_play') continue;
 
     const entry = bundleRes.data.entries.find((e) => e.user_id === params.userId);
     if (!entry) continue;
 
+    if (league.format === 'scramble') {
+      const team = entry.league_team_id
+        ? bundleRes.data.teams.find((t) => t.id === entry.league_team_id)
+        : null;
+      if (!isUserDesignatedScorerForTeam(team, params.userId)) continue;
+    }
+
+    const needsHoles = isHoleByHoleLeagueFormat(league.format);
     const net = netScoreForLeagueRound(params.grossScore, league.use_handicap, params.simIndex);
     const row = {
       league_id: league.id,
@@ -473,23 +531,37 @@ export async function recordOptedInLeagueRounds(params: {
       net_score: net,
       counted: true,
       player_opted_in: true,
+      hole_entry_status: needsHoles ? ('pending_holes' as const) : ('complete' as const),
     };
+
+    let leagueRoundId: string | null = null;
 
     if (params.accessToken) {
       const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
-      await fetch(`${supabaseUrl}/rest/v1/league_rounds`, {
+      const res = await fetch(`${supabaseUrl}/rest/v1/league_rounds`, {
         method: 'POST',
         headers: {
           apikey: supabaseAnonKey,
           Authorization: `Bearer ${params.accessToken}`,
           'Content-Type': 'application/json',
-          Prefer: 'return=minimal',
+          Prefer: 'return=representation',
         },
         body: JSON.stringify([row]),
       });
+      if (!res.ok) continue;
+      const inserted = (await res.json()) as DbLeagueRoundRow[];
+      leagueRoundId = inserted[0]?.id ?? null;
     } else if (supabase) {
-      await supabase.from('league_rounds').insert(row);
+      const { data: inserted, error: insErr } = await supabase
+        .from('league_rounds')
+        .insert(row)
+        .select('id')
+        .single();
+      if (insErr || !inserted) continue;
+      leagueRoundId = inserted.id as string;
     }
+
+    if (!leagueRoundId) continue;
 
     const refreshed = await fetchLeagueBundle(league.id, params.accessToken);
     if (!refreshed.data) continue;
@@ -513,9 +585,12 @@ export async function recordOptedInLeagueRounds(params: {
     results.push({
       leagueName: league.name,
       leagueId: league.id,
+      leagueRoundId,
       position: mine?.rank ?? standings.length,
       teamName,
       format: league.format,
+      holeEntryStatus: needsHoles ? 'pending_holes' : 'complete',
+      needsHoleByHoleEntry: needsHoles,
     });
   }
 

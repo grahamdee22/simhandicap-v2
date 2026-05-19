@@ -10,10 +10,16 @@ import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import {
   fetchLeagueBundle,
-  fetchMatchWinsForLeague,
   syncLeagueStatuses,
   type LeagueBundle,
 } from '../../../src/lib/leagues';
+import {
+  fetchLeagueMatchPairings,
+  formatPairingResultLine,
+  type DbLeagueMatchPairingRow,
+} from '../../../src/lib/matchPlayTournamentPairings';
+import { fetchTeamHoleScoresForLeague } from '../../../src/lib/tournamentTeamScores';
+import type { DbTournamentTeamHoleScoreRow } from '../../../src/lib/tournamentTypes';
 import {
   computeLeagueStandings,
   formatLeagueDateRange,
@@ -35,7 +41,8 @@ export default function LeagueDetailScreen() {
 
   const [bundle, setBundle] = useState<LeagueBundle | null>(null);
   const [loading, setLoading] = useState(true);
-  const [matchWins, setMatchWins] = useState<Record<string, number>>({});
+  const [pairings, setPairings] = useState<DbLeagueMatchPairingRow[]>([]);
+  const [teamHoleScores, setTeamHoleScores] = useState<DbTournamentTeamHoleScoreRow[]>([]);
 
   const group = useMemo(
     () => groups.find((g) => g.id === bundle?.league.group_id),
@@ -60,12 +67,24 @@ export default function LeagueDetailScreen() {
       const league = synced[0] ?? res.data.league;
       setBundle({ ...res.data, league });
       if (league.format === 'match_play') {
-        const ids = res.data.entries.map((e) => e.user_id);
-        const wins = await fetchMatchWinsForLeague(league, ids, googleOAuthAccessToken ?? undefined);
-        setMatchWins(wins);
+        const pr = await fetchLeagueMatchPairings(league.id, googleOAuthAccessToken ?? undefined);
+        setPairings(pr.data ?? []);
+        setTeamHoleScores([]);
+      } else if (league.format === 'best_ball') {
+        setPairings([]);
+        const th = await fetchTeamHoleScoresForLeague(
+          league.id,
+          googleOAuthAccessToken ?? undefined
+        );
+        setTeamHoleScores(th.data ?? []);
+      } else {
+        setPairings([]);
+        setTeamHoleScores([]);
       }
     } else {
       setBundle(null);
+      setPairings([]);
+      setTeamHoleScores([]);
     }
     setLoading(false);
   }, [leagueId]);
@@ -88,14 +107,61 @@ export default function LeagueDetailScreen() {
       rounds: bundle.rounds,
       teams: bundle.teams,
       displayNames,
-      matchWinsByUser: matchWins,
+      teamHoleScores:
+        bundle.league.format === 'best_ball' ? teamHoleScores : undefined,
     });
-  }, [bundle, displayNames, matchWins]);
+  }, [bundle, displayNames, teamHoleScores]);
+
+  const myEntry = useMemo(() => {
+    if (!bundle || !user?.id) return null;
+    return bundle.entries.find((e) => e.user_id === user.id) ?? null;
+  }, [bundle, user?.id]);
+
+  const myPairing = useMemo(() => {
+    if (!myEntry) return null;
+    return (
+      pairings.find(
+        (p) => p.player_1_entry_id === myEntry.id || p.player_2_entry_id === myEntry.id
+      ) ?? null
+    );
+  }, [pairings, myEntry]);
+
+  const myOpponentName = useMemo(() => {
+    if (!myPairing || !myEntry || !bundle) return null;
+    const oppEntryId =
+      myPairing.player_1_entry_id === myEntry.id
+        ? myPairing.player_2_entry_id
+        : myPairing.player_1_entry_id;
+    const opp = bundle.entries.find((e) => e.id === oppEntryId);
+    return opp ? displayNames[opp.user_id] ?? 'Opponent' : 'Opponent';
+  }, [myPairing, myEntry, bundle, displayNames]);
 
   const myStanding = useMemo(() => {
     if (!user?.id) return null;
     return standings.find((s) => s.userId === user.id) ?? null;
   }, [standings, user?.id]);
+
+  const myTeamStanding = useMemo(() => {
+    if (!bundle || !user?.id) return null;
+    if (bundle.league.format !== 'scramble' && bundle.league.format !== 'best_ball') return null;
+    const entry = bundle.entries.find((e) => e.user_id === user.id);
+    if (!entry?.league_team_id) return null;
+    return standings.find((s) => s.teamId === entry.league_team_id) ?? null;
+  }, [bundle, standings, user?.id]);
+
+  const myScrambleTeam = useMemo(() => {
+    if (!bundle || !user?.id || bundle.league.format !== 'scramble') return null;
+    const entry = bundle.entries.find((e) => e.user_id === user.id);
+    return entry?.league_team_id
+      ? bundle.teams.find((t) => t.id === entry.league_team_id) ?? null
+      : null;
+  }, [bundle, user?.id]);
+
+  const isScrambleScorer = useMemo(() => {
+    if (!myScrambleTeam || !user?.id) return false;
+    if (!myScrambleTeam.designated_scorer_id) return true;
+    return myScrambleTeam.designated_scorer_id === user.id;
+  }, [myScrambleTeam, user?.id]);
 
   if (loading) {
     return (
@@ -147,6 +213,19 @@ export default function LeagueDetailScreen() {
           <Text style={styles.notes}>{league.notes.trim()}</Text>
         ) : null}
 
+        {league.format === 'match_play' && myPairing && myEntry && myOpponentName ? (
+          <Pressable
+            style={styles.matchCard}
+            onPress={() => router.push(`/(tabs)/league-match/${myPairing.id}` as never)}
+          >
+            <Text style={styles.matchCardTitle}>Your match</Text>
+            <Text style={styles.matchCardLine}>
+              {formatPairingResultLine(myPairing, myEntry.id, myOpponentName)}
+            </Text>
+            <Text style={styles.matchCardLink}>Match details →</Text>
+          </Pressable>
+        ) : null}
+
         {completed ? (
           <View style={styles.podium}>
             {standings[0] ? (
@@ -174,44 +253,122 @@ export default function LeagueDetailScreen() {
         ) : null}
 
         <View style={styles.tableCard}>
-          <View style={styles.tableHead}>
-            <Text style={[styles.th, styles.colRank]}>#</Text>
-            <Text style={[styles.th, styles.colName]}>Player</Text>
-            <Text style={[styles.th, styles.colR]}>Rds</Text>
-            <Text style={[styles.th, styles.colScore]}>
-              {league.format === 'match_play' ? 'Wins' : 'Avg net'}
-            </Text>
-          </View>
-          {standings.map((s) => (
-            <View key={s.entryId} style={styles.tr}>
-              <Text style={[styles.td, styles.colRank]}>{s.rank}</Text>
-              <View style={[styles.colName, styles.nameCol]}>
-                <Text style={styles.tdName}>{s.displayName}</Text>
+          {league.format === 'match_play' ? (
+            <>
+              <View style={styles.tableHead}>
+                <Text style={[styles.th, styles.colRank]}>#</Text>
+                <Text style={[styles.th, styles.colNameMp]}>Player</Text>
+                <Text style={[styles.th, styles.colMp]}>MP</Text>
+                <Text style={[styles.th, styles.colMp]}>W</Text>
+                <Text style={[styles.th, styles.colMp]}>L</Text>
+                <Text style={[styles.th, styles.colMp]}>H</Text>
+                <Text style={[styles.th, styles.colPts]}>Pts</Text>
+              </View>
+              {standings.map((s) => (
+                <View key={s.entryId} style={styles.tr}>
+                  <Text style={[styles.td, styles.colRank]}>{s.rank}</Text>
+                  <Text style={[styles.td, styles.colNameMp]} numberOfLines={1}>
+                    {s.displayName}
+                  </Text>
+                  <Text style={[styles.td, styles.colMp]}>{s.roundsPlayed}</Text>
+                  <Text style={[styles.td, styles.colMp]}>{s.mpWins ?? 0}</Text>
+                  <Text style={[styles.td, styles.colMp]}>{s.mpLosses ?? 0}</Text>
+                  <Text style={[styles.td, styles.colMp]}>{s.mpHalved ?? 0}</Text>
+                  <Text style={[styles.td, styles.colPts]}>{s.points}</Text>
+                </View>
+              ))}
+            </>
+          ) : (
+            <>
+              <View style={styles.tableHead}>
+                <Text style={[styles.th, styles.colRank]}>#</Text>
+                <Text style={[styles.th, styles.colName]}>Player</Text>
+                <Text style={[styles.th, styles.colR]}>Rds</Text>
+                <Text style={[styles.th, styles.colScore]}>Avg net</Text>
+              </View>
+              {standings.map((s) => (
+                <View key={s.entryId} style={styles.tr}>
+                  <Text style={[styles.td, styles.colRank]}>{s.rank}</Text>
+                  <View style={[styles.colName, styles.nameCol]}>
+                    <Text style={styles.tdName}>{s.displayName}</Text>
                 {s.isTeam && s.memberNames.length > 0 ? (
                   <Text style={styles.tdSub}>{s.memberNames.join(', ')}</Text>
                 ) : null}
-              </View>
-              <Text style={[styles.td, styles.colR]}>{s.roundsPlayed}</Text>
-              <Text style={[styles.td, styles.colScore]}>
-                {league.format === 'match_play'
-                  ? String(s.points)
-                  : s.avgNet != null
-                    ? s.avgNet.toFixed(1)
-                    : '—'}
-              </Text>
-            </View>
-          ))}
+                {s.isTeam && s.designatedScorerName ? (
+                  <Text style={styles.tdSub}>Scorer: {s.designatedScorerName}</Text>
+                ) : null}
+                {s.isTeam && s.hasPartialPending ? (
+                  <Text style={styles.tdPartial}>Partial — waiting on teammates</Text>
+                ) : null}
+                  </View>
+                  <Text style={[styles.td, styles.colR]}>{s.roundsPlayed}</Text>
+                  <Text style={[styles.td, styles.colScore]}>
+                    {s.avgNet != null ? s.avgNet.toFixed(1) : '—'}
+                  </Text>
+                </View>
+              ))}
+            </>
+          )}
         </View>
 
-        {myStanding || user?.id ? (
+        {myStanding || myTeamStanding || user?.id ? (
           <View style={styles.myStats}>
             <Text style={styles.myStatsTitle}>My stats</Text>
-            <Text style={styles.myStatsLine}>
-              Position: {myStanding?.rank ?? '—'} · Rounds: {myStanding?.roundsPlayed ?? 0}
-            </Text>
-            {league.format !== 'match_play' && myStanding?.avgNet != null ? (
-              <Text style={styles.myStatsLine}>Avg net: {myStanding.avgNet.toFixed(1)}</Text>
-            ) : null}
+            {league.format === 'scramble' && myTeamStanding ? (
+              <>
+                <Text style={styles.myStatsLine}>
+                  Team: {myTeamStanding.displayName} · Position: {myTeamStanding.rank} · Rounds:{' '}
+                  {myTeamStanding.roundsPlayed}
+                </Text>
+                {myTeamStanding.avgNet != null ? (
+                  <Text style={styles.myStatsLine}>
+                    Team avg net: {myTeamStanding.avgNet.toFixed(1)}
+                  </Text>
+                ) : null}
+                {!isScrambleScorer ? (
+                  <Text style={styles.myStatsLine}>
+                    Your team&apos;s designated scorer logs rounds for the crew.
+                  </Text>
+                ) : null}
+              </>
+            ) : league.format === 'best_ball' && myTeamStanding ? (
+              <>
+                <Text style={styles.myStatsLine}>
+                  Team: {myTeamStanding.displayName} · Position: {myTeamStanding.rank} · Rounds:{' '}
+                  {myTeamStanding.roundsPlayed}
+                </Text>
+                {myTeamStanding.avgNet != null ? (
+                  <Text style={styles.myStatsLine}>
+                    Team avg net: {myTeamStanding.avgNet.toFixed(1)}
+                  </Text>
+                ) : null}
+                {myTeamStanding.hasPartialPending ? (
+                  <Text style={styles.myStatsLine}>
+                    Your team has a partial scorecard — standings update when all teammates submit.
+                  </Text>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Text style={styles.myStatsLine}>
+                  Position: {myStanding?.rank ?? myTeamStanding?.rank ?? '—'} ·{' '}
+                  {league.format === 'match_play'
+                    ? `Matches: ${myStanding?.roundsPlayed ?? 0} · Points: ${myStanding?.points ?? 0}`
+                    : `Rounds: ${myStanding?.roundsPlayed ?? myTeamStanding?.roundsPlayed ?? 0}`}
+                </Text>
+                {league.format === 'match_play' && myStanding ? (
+                  <Text style={styles.myStatsLine}>
+                    W–L–H: {myStanding.mpWins ?? 0}–{myStanding.mpLosses ?? 0}–{myStanding.mpHalved ?? 0}
+                  </Text>
+                ) : null}
+                {league.format !== 'match_play' &&
+                (myStanding?.avgNet != null || myTeamStanding?.avgNet != null) ? (
+                  <Text style={styles.myStatsLine}>
+                    Avg net: {(myStanding?.avgNet ?? myTeamStanding?.avgNet)?.toFixed(1)}
+                  </Text>
+                ) : null}
+              </>
+            )}
           </View>
         ) : null}
 
@@ -291,11 +448,26 @@ const styles = StyleSheet.create({
   td: { fontSize: 13, color: colors.ink },
   tdName: { fontSize: 14, fontWeight: '600', color: colors.ink },
   tdSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
+  tdPartial: { fontSize: 11, color: '#9a5a00', marginTop: 2, fontWeight: '600' },
   colRank: { width: 28 },
   colName: { flex: 1 },
+  colNameMp: { flex: 1, paddingRight: 4 },
   colR: { width: 36, textAlign: 'center' },
+  colMp: { width: 28, textAlign: 'center', fontSize: 12 },
+  colPts: { width: 32, textAlign: 'right', fontSize: 12 },
   colScore: { width: 56, textAlign: 'right' },
   nameCol: { paddingRight: 8 },
+  matchCard: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    backgroundColor: colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  matchCardTitle: { fontSize: 12, fontWeight: '700', color: colors.sage, textTransform: 'uppercase' },
+  matchCardLine: { fontSize: 15, fontWeight: '600', color: colors.ink, marginTop: 6 },
+  matchCardLink: { fontSize: 13, fontWeight: '700', color: colors.sage, marginTop: 8 },
   myStats: {
     marginTop: 16,
     padding: 14,

@@ -8,6 +8,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "check": "tsc --noEmit",
+    "test": "tsx --test src/lib/__tests__/*.test.ts",
     "build": "npm run export:web",
     "export:web": "expo export --platform web && node -e \"const fs=require('fs');fs.copyFileSync('dist/index.html','dist/200.html');fs.copyFileSync('_headers','dist/_headers');fs.copyFileSync('_redirects','dist/_redirects');fs.copyFileSync('reset-password.html','dist/reset-password.html');if(fs.existsSync('public')){fs.cpSync('public','dist',{recursive:true})}\"",
     "deploy:surge": "npm run check && npm run export:web && surge dist"
@@ -48,6 +49,7 @@
     "@types/react": "~19.1.0",
     "react-test-renderer": "19.1.0",
     "surge": "^0.27.3",
+    "tsx": "^4.19.4",
     "typescript": "~5.9.2"
   },
   "private": true

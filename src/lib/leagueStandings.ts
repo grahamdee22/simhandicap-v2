@@ -1,3 +1,9 @@
+import {
+  aggregateBestBallTeamRounds,
+  bestBallStandingsScores,
+} from './bestBallTournament';
+import { designatedScorerLabel } from './scrambleTournament';
+import type { DbTournamentTeamHoleScoreRow } from './tournamentTypes';
 import type { DbLeagueRow, DbLeagueEntryRow, DbLeagueRoundRow, DbLeagueTeamRow, LeagueFormat } from './leagues';
 import { leagueRoundsForStandings } from './leagues';
 
@@ -14,6 +20,13 @@ export type LeagueStandingRow = {
   avgNet: number | null;
   points: number;
   isTeam: boolean;
+  /** Scramble: who logs team rounds */
+  designatedScorerName?: string | null;
+  /** Best ball: waiting on teammate hole cards */
+  hasPartialPending?: boolean;
+  mpWins?: number;
+  mpLosses?: number;
+  mpHalved?: number;
 };
 
 function bestNAverage(scores: number[], roundsThatCount: number): { best: number | null; avg: number | null } {
@@ -32,15 +45,18 @@ export function computeLeagueStandings(params: {
   rounds: DbLeagueRoundRow[];
   teams: DbLeagueTeamRow[];
   displayNames: Record<string, string>;
-  matchWinsByUser?: Record<string, number>;
+  teamHoleScores?: DbTournamentTeamHoleScoreRow[];
 }): LeagueStandingRow[] {
-  const { league, entries, teams, displayNames, matchWinsByUser } = params;
+  const { league, entries, teams, displayNames } = params;
   const rounds = leagueRoundsForStandings(params.rounds);
   const isTeamFormat = league.format === 'scramble' || league.format === 'best_ball';
 
   if (league.format === 'match_play') {
     const rows: LeagueStandingRow[] = entries.map((e) => {
-      const wins = matchWinsByUser?.[e.user_id] ?? Number(e.points) ?? 0;
+      const mpWins = e.mp_wins ?? 0;
+      const mpLosses = e.mp_losses ?? 0;
+      const mpHalved = e.mp_halved ?? 0;
+      const matchesPlayed = mpWins + mpLosses + mpHalved;
       return {
         rank: 0,
         entryId: e.id,
@@ -49,14 +65,22 @@ export function computeLeagueStandings(params: {
         teamId: e.league_team_id,
         teamName: null,
         memberNames: [],
-        roundsPlayed: wins,
+        roundsPlayed: matchesPlayed,
         bestNet: null,
         avgNet: null,
-        points: wins,
+        points: Number(e.points) ?? 0,
         isTeam: false,
+        mpWins,
+        mpLosses,
+        mpHalved,
       };
     });
-    rows.sort((a, b) => b.points - a.points || a.displayName.localeCompare(b.displayName));
+    rows.sort(
+      (a, b) =>
+        b.points - a.points ||
+        (b.mpWins ?? 0) - (a.mpWins ?? 0) ||
+        a.displayName.localeCompare(b.displayName)
+    );
     return rows.map((r, i) => ({ ...r, rank: i + 1 }));
   }
 
@@ -70,15 +94,36 @@ export function computeLeagueStandings(params: {
       membersByTeam.set(e.league_team_id, list);
     }
     const scoresByTeam = new Map<string, number[]>();
-    for (const r of rounds) {
-      if (!r.league_team_id) continue;
-      const list = scoresByTeam.get(r.league_team_id) ?? [];
-      list.push(Number(r.net_score));
-      scoresByTeam.set(r.league_team_id, list);
+    const partialByTeam = new Map<string, boolean>();
+
+    if (league.format === 'best_ball' && params.teamHoleScores?.length) {
+      for (const t of teams) {
+        const aggregates = aggregateBestBallTeamRounds(
+          params.teamHoleScores,
+          t.id,
+          league.use_handicap
+        );
+        const { scores, hasPartialPending } = bestBallStandingsScores(
+          aggregates,
+          league.use_handicap
+        );
+        scoresByTeam.set(t.id, scores);
+        partialByTeam.set(t.id, hasPartialPending);
+      }
+    } else {
+      for (const r of rounds) {
+        if (!r.league_team_id) continue;
+        const list = scoresByTeam.get(r.league_team_id) ?? [];
+        list.push(Number(r.net_score));
+        scoresByTeam.set(r.league_team_id, list);
+      }
     }
+
     const rows: LeagueStandingRow[] = teams.map((t) => {
       const scores = scoresByTeam.get(t.id) ?? [];
       const { best, avg } = bestNAverage(scores, league.rounds_that_count);
+      const scorerName =
+        league.format === 'scramble' ? designatedScorerLabel(t, displayNames) : null;
       return {
         rank: 0,
         entryId: t.id,
@@ -92,6 +137,8 @@ export function computeLeagueStandings(params: {
         avgNet: avg,
         points: 0,
         isTeam: true,
+        designatedScorerName: scorerName,
+        hasPartialPending: partialByTeam.get(t.id) ?? false,
       };
     });
     rows.sort((a, b) => {

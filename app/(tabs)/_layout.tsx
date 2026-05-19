@@ -257,6 +257,22 @@ export default function TabLayout() {
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
+      <Tabs.Screen
+        name="tournament-holes/[leagueRoundId]"
+        options={{
+          href: null,
+          title: 'Tournament scorecard',
+          headerRight: HeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
+        name="league-match/[pairingId]"
+        options={{
+          href: null,
+          title: 'Match',
+          headerRight: HeaderInstagramAndSimCap,
+        }}
+      />
     </Tabs>
   );
 }

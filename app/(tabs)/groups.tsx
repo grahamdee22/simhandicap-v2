@@ -19,6 +19,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
 import { isSocialGroupCreator } from '../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { GroupTournamentsSection } from '../../src/components/GroupTournamentsSection';
 import { MatchPlayHub } from '../../src/components/MatchPlayHub';
 import { IconPlus } from '../../src/components/SvgUiIcons';
@@ -61,7 +62,7 @@ const SOCIAL_SECTION_INFO_COPY: Record<
   tournaments: {
     title: 'Tournaments',
     body:
-      'Run a tournament for your crew. The group creator can set up stroke play or match play competitions with standings that update as rounds are logged.',
+      'Run a tournament for your crew. The group creator can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards.',
   },
   net: {
     title: 'Crew Match Calculator',
@@ -608,6 +609,7 @@ export default function GroupsScreen() {
             contentContainerStyle={{ paddingTop: 22, paddingBottom: insets.bottom + 16 }}
             showsVerticalScrollIndicator={false}
           >
+            <PendingTournamentHolesBanner gutter={gutter} />
             {inboundInviteCards.length > 0 ? (
               <View style={[styles.inboundCardsWrap, { marginHorizontal: gutter }]}>{inboundInviteCards}</View>
             ) : null}

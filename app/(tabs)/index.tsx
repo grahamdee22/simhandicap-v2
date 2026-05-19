@@ -5,6 +5,7 @@ import { Modal, Platform, Pressable as RNPressable, ScrollView, StyleSheet, Text
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { HomeHeroInstagramButton } from '../../src/components/HeaderInstagramSimCap';
 import {
   IconChevronForward,
@@ -269,6 +270,7 @@ export default function HomeScreen() {
           {...(Platform.OS === 'android' ? { overScrollMode: 'never' as const } : {})}
           showsVerticalScrollIndicator={false}
         >
+        <PendingTournamentHolesBanner gutter={gutter} />
         <Fragment>
         {homeSplit ? (
           <>
