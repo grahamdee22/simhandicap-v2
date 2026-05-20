@@ -1,18 +1,19 @@
 /**
- * Match Play tournament helpers (hole W/L/H — not Social `matches` hub).
- * Pairing standings: Phase 4 — see docs/PHASE4_MATCH_PLAY_PAIRINGS.md
+ * Match Play tournament helpers (gross hole entry — not Social `matches` hub).
  */
 
+import {
+  compareMatchPlayGrossHoles,
+  countComparedMatchPlayHoles,
+  formatMatchPlayStatus,
+  type MatchPlayRoundSummary,
+} from './matchPlayGrossCompare';
 import { invokeTournamentEdgeFunction } from './tournamentApi';
 import type { TournamentHoleInput } from './tournamentHoleScores';
 import type { MatchPlayHoleResult } from './tournamentTypes';
 
-export type MatchPlayRoundSummary = {
-  wins: number;
-  losses: number;
-  halved: number;
-  net_holes: number;
-};
+export type { MatchPlayRoundSummary } from './matchPlayGrossCompare';
+export { compareMatchPlayGrossHoles, countComparedMatchPlayHoles, formatMatchPlayStatus };
 
 export type CalculateMatchPlayResultResponse = {
   ok: boolean;
@@ -26,13 +27,17 @@ export type CalculateMatchPlayResultResponse = {
     pairing_id?: string;
     status?: string;
     winner_entry_id?: string | null;
+    awaiting_opponent?: boolean;
+    holes_won_p1?: number;
+    holes_won_p2?: number;
+    holes_halved?: number;
   } | null;
   pairing_error?: string | null;
   note?: string;
   error?: string;
 };
 
-/** Running match score from player's W/L/H perspective (e.g. +3 = "3 UP"). */
+/** Running match score from W/L/H (e.g. after server computed results). */
 export function computeMatchPlayRunningScore(holes: TournamentHoleInput[]): MatchPlayRoundSummary {
   let wins = 0;
   let losses = 0;
@@ -53,23 +58,6 @@ export function computeMatchPlayRunningScore(holes: TournamentHoleInput[]): Matc
   };
 }
 
-/** Display string e.g. "3 UP through 12" or "1 DOWN through 9" or "ALL SQUARE through 18". */
-export function formatMatchPlayStatus(summary: MatchPlayRoundSummary, throughHole: number): string {
-  const { net_holes: net } = summary;
-  const through = Math.min(18, Math.max(0, throughHole));
-  if (net === 0) {
-    return through > 0 ? `ALL SQUARE through ${through}` : 'ALL SQUARE';
-  }
-  if (net > 0) return `${net} UP through ${through}`;
-  return `${Math.abs(net)} DOWN through ${through}`;
-}
-
-export function cycleMatchPlayResult(current: MatchPlayHoleResult | null): MatchPlayHoleResult {
-  if (current === 'W') return 'L';
-  if (current === 'L') return 'H';
-  return 'W';
-}
-
 export async function invokeCalculateMatchPlayResult(
   leagueRoundId: string,
   accessToken?: string
@@ -84,7 +72,7 @@ export async function invokeCalculateMatchPlayResult(
   return { data, error: null };
 }
 
-/** Tournament match-play points (PRD §2.3) — for Phase 4 standings. */
+/** Tournament match-play points (PRD §2.3). */
 export function matchPlayPointsFromResult(result: 'win' | 'loss' | 'halve'): number {
   if (result === 'win') return 2;
   if (result === 'halve') return 1;

@@ -61,9 +61,10 @@ export function aggregateBestBallTeamRounds(
 /** Scores that count toward best-ball standings (complete team cards only). */
 export function bestBallStandingsScores(
   aggregates: BestBallTeamRoundAggregate[],
-  useHandicap: boolean
-): { scores: number[]; hasPartialPending: boolean } {
-  const scores: number[] = [];
+  _useHandicap: boolean
+): { netScores: number[]; grossScores: number[]; hasPartialPending: boolean } {
+  const netScores: number[] = [];
+  const grossScores: number[] = [];
   let hasPartialPending = false;
   for (const a of aggregates) {
     if (a.isPartial) {
@@ -71,9 +72,10 @@ export function bestBallStandingsScores(
       continue;
     }
     if (a.holesRecorded < 18) continue;
-    scores.push(useHandicap ? a.netTotal : a.grossTotal);
+    netScores.push(a.netTotal);
+    grossScores.push(a.grossTotal);
   }
-  return { scores, hasPartialPending };
+  return { netScores, grossScores, hasPartialPending };
 }
 
 export function formatBestBallPartialNote(

@@ -163,7 +163,7 @@ export function GroupTournamentsSection({
             : null;
           const mine = team ? standings.find((s) => s.teamId === team.id) : null;
           if (team && mine) {
-            scrambleLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · avg ${mine.avgNet?.toFixed(1) ?? '—'}`;
+            scrambleLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · low net ${mine.lowNet?.toFixed(1) ?? '—'}`;
           }
         }
         if (active.format === 'best_ball' && authUserId) {
@@ -174,7 +174,7 @@ export function GroupTournamentsSection({
           const mine = team ? standings.find((s) => s.teamId === team.id) : null;
           if (team && mine) {
             const partial = mine.hasPartialPending ? ' · partial' : '';
-            bestBallLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · avg ${mine.avgNet?.toFixed(1) ?? '—'}${partial}`;
+            bestBallLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · low net ${mine.lowNet?.toFixed(1) ?? '—'}${partial}`;
           }
         }
         if (active.format === 'match_play' && authUserId) {

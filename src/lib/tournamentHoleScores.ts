@@ -7,7 +7,6 @@ import type { LeagueFormat } from './leagues';
 import { restRpcPost, restSelect, resolveTournamentAccessToken } from './tournamentApi';
 import {
   isHoleByHoleLeagueFormat,
-  isMatchPlayHoleResult,
   TOURNAMENT_HOLE_COUNT,
   type DbTournamentHoleScoreRow,
   type MatchPlayHoleResult,
@@ -64,9 +63,24 @@ export function countFilledHoles(
 
 export function isHoleComplete(hole: TournamentHoleInput, format: LeagueFormat): boolean {
   if (format === 'match_play') {
-    return hole.result != null && isMatchPlayHoleResult(hole.result);
+    return hole.gross_score != null && Number.isFinite(hole.gross_score);
   }
   return hole.gross_score != null && Number.isFinite(hole.gross_score);
+}
+
+type PendingHolesListener = () => void;
+const pendingHolesListeners = new Set<PendingHolesListener>();
+
+/** Notify tab banners to refresh after a scorecard is submitted. */
+export function subscribePendingTournamentHoles(listener: PendingHolesListener): () => void {
+  pendingHolesListeners.add(listener);
+  return () => pendingHolesListeners.delete(listener);
+}
+
+export function notifyPendingTournamentHolesUpdated(): void {
+  for (const listener of pendingHolesListeners) {
+    listener();
+  }
 }
 
 export function isScorecardComplete(holes: TournamentHoleInput[], format: LeagueFormat): boolean {
@@ -122,6 +136,9 @@ export async function upsertTournamentHoleScores(
 
   if (error) return { data: null, error };
   if (!data) return { data: null, error: 'Empty response from server' };
+  if (data.hole_entry_status === 'complete') {
+    notifyPendingTournamentHolesUpdated();
+  }
   return { data, error: null };
 }
 

@@ -16,6 +16,7 @@ import {
 import {
   fetchLeagueMatchPairings,
   formatPairingResultLine,
+  pairingPlayerNames,
   type DbLeagueMatchPairingRow,
 } from '../../../src/lib/matchPlayTournamentPairings';
 import { fetchTeamHoleScoresForLeague } from '../../../src/lib/tournamentTeamScores';
@@ -213,6 +214,26 @@ export default function LeagueDetailScreen() {
           <Text style={styles.notes}>{league.notes.trim()}</Text>
         ) : null}
 
+        {league.format === 'match_play' && pairings.length > 0 ? (
+          <View style={styles.pairingsCard}>
+            <Text style={styles.pairingsTitle}>Match pairings</Text>
+            {pairings.map((p) => {
+              const { name1, name2 } = pairingPlayerNames(p, bundle.entries, displayNames);
+              return (
+                <Pressable
+                  key={p.id}
+                  style={styles.pairingRow}
+                  onPress={() => router.push(`/(tabs)/league-match/${p.id}` as never)}
+                >
+                  <Text style={styles.pairingLine}>
+                    {name1} vs {name2}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        ) : null}
+
         {league.format === 'match_play' && myPairing && myEntry && myOpponentName ? (
           <Pressable
             style={styles.matchCard}
@@ -284,7 +305,14 @@ export default function LeagueDetailScreen() {
                 <Text style={[styles.th, styles.colRank]}>#</Text>
                 <Text style={[styles.th, styles.colName]}>Player</Text>
                 <Text style={[styles.th, styles.colR]}>Rds</Text>
-                <Text style={[styles.th, styles.colScore]}>Avg net</Text>
+                {league.format === 'scramble' || league.format === 'best_ball' ? (
+                  <>
+                    <Text style={[styles.th, styles.colGross]}>Gross</Text>
+                    <Text style={[styles.th, styles.colScore]}>Low net</Text>
+                  </>
+                ) : (
+                  <Text style={[styles.th, styles.colScore]}>Low net</Text>
+                )}
               </View>
               {standings.map((s) => (
                 <View key={s.entryId} style={styles.tr}>
@@ -302,9 +330,20 @@ export default function LeagueDetailScreen() {
                 ) : null}
                   </View>
                   <Text style={[styles.td, styles.colR]}>{s.roundsPlayed}</Text>
-                  <Text style={[styles.td, styles.colScore]}>
-                    {s.avgNet != null ? s.avgNet.toFixed(1) : '—'}
-                  </Text>
+                  {league.format === 'scramble' || league.format === 'best_ball' ? (
+                    <>
+                      <Text style={[styles.td, styles.colGross]}>
+                        {s.bestGross != null ? s.bestGross.toFixed(0) : '—'}
+                      </Text>
+                      <Text style={[styles.td, styles.colScore]}>
+                        {s.lowNet != null ? s.lowNet.toFixed(1) : '—'}
+                      </Text>
+                    </>
+                  ) : (
+                    <Text style={[styles.td, styles.colScore]}>
+                      {s.lowNet != null ? s.lowNet.toFixed(1) : '—'}
+                    </Text>
+                  )}
                 </View>
               ))}
             </>
@@ -320,9 +359,9 @@ export default function LeagueDetailScreen() {
                   Team: {myTeamStanding.displayName} · Position: {myTeamStanding.rank} · Rounds:{' '}
                   {myTeamStanding.roundsPlayed}
                 </Text>
-                {myTeamStanding.avgNet != null ? (
+                {myTeamStanding.lowNet != null ? (
                   <Text style={styles.myStatsLine}>
-                    Team avg net: {myTeamStanding.avgNet.toFixed(1)}
+                    Team low net: {myTeamStanding.lowNet.toFixed(1)}
                   </Text>
                 ) : null}
                 {!isScrambleScorer ? (
@@ -337,9 +376,9 @@ export default function LeagueDetailScreen() {
                   Team: {myTeamStanding.displayName} · Position: {myTeamStanding.rank} · Rounds:{' '}
                   {myTeamStanding.roundsPlayed}
                 </Text>
-                {myTeamStanding.avgNet != null ? (
+                {myTeamStanding.lowNet != null ? (
                   <Text style={styles.myStatsLine}>
-                    Team avg net: {myTeamStanding.avgNet.toFixed(1)}
+                    Team low net: {myTeamStanding.lowNet.toFixed(1)}
                   </Text>
                 ) : null}
                 {myTeamStanding.hasPartialPending ? (
@@ -362,9 +401,9 @@ export default function LeagueDetailScreen() {
                   </Text>
                 ) : null}
                 {league.format !== 'match_play' &&
-                (myStanding?.avgNet != null || myTeamStanding?.avgNet != null) ? (
+                (myStanding?.lowNet != null || myTeamStanding?.lowNet != null) ? (
                   <Text style={styles.myStatsLine}>
-                    Avg net: {(myStanding?.avgNet ?? myTeamStanding?.avgNet)?.toFixed(1)}
+                    Low net: {(myStanding?.lowNet ?? myTeamStanding?.lowNet)?.toFixed(1)}
                   </Text>
                 ) : null}
               </>
@@ -456,7 +495,25 @@ const styles = StyleSheet.create({
   colMp: { width: 28, textAlign: 'center', fontSize: 12 },
   colPts: { width: 32, textAlign: 'right', fontSize: 12 },
   colScore: { width: 56, textAlign: 'right' },
+  colGross: { width: 48, textAlign: 'right' },
   nameCol: { paddingRight: 8 },
+  pairingsCard: {
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: 14,
+    marginBottom: 16,
+    gap: 8,
+  },
+  pairingsTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.sage,
+    textTransform: 'uppercase',
+  },
+  pairingRow: { paddingVertical: 4 },
+  pairingLine: { fontSize: 15, fontWeight: '600', color: colors.ink },
   matchCard: {
     marginBottom: 16,
     padding: 14,

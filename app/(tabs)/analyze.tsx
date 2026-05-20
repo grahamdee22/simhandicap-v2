@@ -491,7 +491,9 @@ export default function AnalyzeScreen() {
           </Text>
         </View>
 
-        <PendingTournamentHolesBanner gutter={gutter} />
+        <View style={{ marginTop: 12 }}>
+          <PendingTournamentHolesBanner gutter={gutter} />
+        </View>
 
         {leagueBanner ? (
           <View

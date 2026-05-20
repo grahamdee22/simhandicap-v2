@@ -2,11 +2,13 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { jsonResponse, optionsResponse } from '../_shared/http.ts';
 
 /**
- * Summarize W/L/H hole results and apply to league_match_pairings when the scorecard is complete.
+ * Apply a completed gross scorecard to match play pairings.
+ * W/L/H and standings update when both players have submitted.
  */
 
-type HoleResultRow = {
+type HoleGrossRow = {
   hole_number: number;
+  gross_score: number | null;
   result: string | null;
 };
 
@@ -29,7 +31,9 @@ type ApplyRpcResult = {
   holes_won_p1?: number;
   holes_won_p2?: number;
   holes_halved?: number;
-  submitter_net_holes?: number;
+  awaiting_opponent?: boolean;
+  complete_rounds?: number;
+  points_awarded?: boolean;
 };
 
 Deno.serve(async (req) => {
@@ -43,9 +47,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL') ?? '';
     const supabaseAnonKey = Deno.env.get('SUPABASE_ANON_KEY') ?? '';
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
 
-    if (!supabaseUrl || !supabaseAnonKey || !serviceRoleKey) {
+    if (!supabaseUrl || !supabaseAnonKey) {
       return jsonResponse({ error: 'Server configuration error' }, 500);
     }
 
@@ -101,13 +104,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    const admin = createClient(supabaseUrl, serviceRoleKey, {
-      auth: { persistSession: false, autoRefreshToken: false },
-    });
-
-    const { data: holes, error: holesErr } = await admin
+    const { data: holes, error: holesErr } = await userClient
       .from('tournament_hole_scores')
-      .select('hole_number, result')
+      .select('hole_number, gross_score, result')
       .eq('league_round_id', leagueRoundId)
       .order('hole_number');
 
@@ -115,27 +114,10 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: holesErr.message }, 500);
     }
 
-    const rows = (holes ?? []) as HoleResultRow[];
-    let wins = 0;
-    let losses = 0;
-    let halved = 0;
-    let running = 0;
-
-    for (const h of rows) {
-      const r = h.result?.toUpperCase();
-      if (r === 'W') {
-        wins += 1;
-        running += 1;
-      } else if (r === 'L') {
-        losses += 1;
-        running -= 1;
-      } else if (r === 'H') {
-        halved += 1;
-      }
-    }
-
-    const holesComplete = rows.length;
-    const readyForStandings = holesComplete >= 18 && leagueRound.hole_entry_status === 'complete';
+    const rows = (holes ?? []) as HoleGrossRow[];
+    const grossCount = rows.filter((h) => h.gross_score != null).length;
+    const readyForStandings =
+      grossCount >= 18 && leagueRound.hole_entry_status === 'complete';
 
     let pairingApply: ApplyRpcResult | null = null;
     let pairingError: string | null = null;
@@ -152,21 +134,36 @@ Deno.serve(async (req) => {
       }
     }
 
+    let wins = 0;
+    let losses = 0;
+    let halved = 0;
+    for (const h of rows) {
+      const r = h.result?.toUpperCase();
+      if (r === 'W') wins += 1;
+      else if (r === 'L') losses += 1;
+      else if (r === 'H') halved += 1;
+    }
+
     return jsonResponse({
       ok: true,
       league_round_id: leagueRoundId,
-      holes_recorded: holesComplete,
+      holes_recorded: grossCount,
       hole_entry_status: leagueRound.hole_entry_status,
       round_summary: {
         wins,
         losses,
         halved,
-        net_holes: running,
+        net_holes: wins - losses,
       },
       ready_for_standings: readyForStandings,
-      pairing_standings_updated: !!pairingApply && !pairingError,
+      pairing_standings_updated:
+        !!pairingApply && !pairingError && pairingApply.awaiting_opponent === false,
       pairing: pairingApply,
       pairing_error: pairingError,
+      note:
+        pairingApply?.awaiting_opponent === true
+          ? 'Waiting for your opponent to submit their scorecard.'
+          : undefined,
     });
   } catch (e) {
     console.error('[calculate-match-play-result]', e);

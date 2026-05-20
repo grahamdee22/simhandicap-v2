@@ -17,7 +17,10 @@ export type LeagueStandingRow = {
   memberNames: string[];
   roundsPlayed: number;
   bestNet: number | null;
-  avgNet: number | null;
+  /** Best N average net (displayed as "Low Net"). */
+  lowNet: number | null;
+  /** Team formats: best gross among counting rounds. */
+  bestGross: number | null;
   points: number;
   isTeam: boolean;
   /** Scramble: who logs team rounds */
@@ -67,7 +70,8 @@ export function computeLeagueStandings(params: {
         memberNames: [],
         roundsPlayed: matchesPlayed,
         bestNet: null,
-        avgNet: null,
+        lowNet: null,
+        bestGross: null,
         points: Number(e.points) ?? 0,
         isTeam: false,
         mpWins,
@@ -93,7 +97,8 @@ export function computeLeagueStandings(params: {
       list.push(displayNames[e.user_id] ?? 'Golfer');
       membersByTeam.set(e.league_team_id, list);
     }
-    const scoresByTeam = new Map<string, number[]>();
+    const netByTeam = new Map<string, number[]>();
+    const grossByTeam = new Map<string, number[]>();
     const partialByTeam = new Map<string, boolean>();
 
     if (league.format === 'best_ball' && params.teamHoleScores?.length) {
@@ -103,25 +108,31 @@ export function computeLeagueStandings(params: {
           t.id,
           league.use_handicap
         );
-        const { scores, hasPartialPending } = bestBallStandingsScores(
+        const { netScores, grossScores, hasPartialPending } = bestBallStandingsScores(
           aggregates,
           league.use_handicap
         );
-        scoresByTeam.set(t.id, scores);
+        netByTeam.set(t.id, netScores);
+        grossByTeam.set(t.id, grossScores);
         partialByTeam.set(t.id, hasPartialPending);
       }
     } else {
       for (const r of rounds) {
         if (!r.league_team_id) continue;
-        const list = scoresByTeam.get(r.league_team_id) ?? [];
-        list.push(Number(r.net_score));
-        scoresByTeam.set(r.league_team_id, list);
+        const nets = netByTeam.get(r.league_team_id) ?? [];
+        nets.push(Number(r.net_score));
+        netByTeam.set(r.league_team_id, nets);
+        const grosses = grossByTeam.get(r.league_team_id) ?? [];
+        grosses.push(Number(r.gross_score));
+        grossByTeam.set(r.league_team_id, grosses);
       }
     }
 
     const rows: LeagueStandingRow[] = teams.map((t) => {
-      const scores = scoresByTeam.get(t.id) ?? [];
-      const { best, avg } = bestNAverage(scores, league.rounds_that_count);
+      const netScores = netByTeam.get(t.id) ?? [];
+      const grossScores = grossByTeam.get(t.id) ?? [];
+      const { best: bestNet, avg: lowNet } = bestNAverage(netScores, league.rounds_that_count);
+      const { best: bestGross } = bestNAverage(grossScores, league.rounds_that_count);
       const scorerName =
         league.format === 'scramble' ? designatedScorerLabel(t, displayNames) : null;
       return {
@@ -132,9 +143,10 @@ export function computeLeagueStandings(params: {
         teamId: t.id,
         teamName: t.name,
         memberNames: membersByTeam.get(t.id) ?? [],
-        roundsPlayed: scores.length,
-        bestNet: best,
-        avgNet: avg,
+        roundsPlayed: netScores.length,
+        bestNet,
+        lowNet,
+        bestGross,
         points: 0,
         isTeam: true,
         designatedScorerName: scorerName,
@@ -142,8 +154,8 @@ export function computeLeagueStandings(params: {
       };
     });
     rows.sort((a, b) => {
-      const av = a.avgNet ?? 999;
-      const bv = b.avgNet ?? 999;
+      const av = a.lowNet ?? 999;
+      const bv = b.lowNet ?? 999;
       if (av !== bv) return av - bv;
       return a.displayName.localeCompare(b.displayName);
     });
@@ -151,15 +163,21 @@ export function computeLeagueStandings(params: {
   }
 
   const teamMap = teamById(teams);
-  const scoresByUser = new Map<string, number[]>();
+  const netByUser = new Map<string, number[]>();
+  const grossByUser = new Map<string, number[]>();
   for (const r of rounds) {
-    const list = scoresByUser.get(r.user_id) ?? [];
-    list.push(Number(r.net_score));
-    scoresByUser.set(r.user_id, list);
+    const nets = netByUser.get(r.user_id) ?? [];
+    nets.push(Number(r.net_score));
+    netByUser.set(r.user_id, nets);
+    const grosses = grossByUser.get(r.user_id) ?? [];
+    grosses.push(Number(r.gross_score));
+    grossByUser.set(r.user_id, grosses);
   }
   const rows: LeagueStandingRow[] = entries.map((e) => {
-    const scores = scoresByUser.get(e.user_id) ?? [];
-    const { best, avg } = bestNAverage(scores, league.rounds_that_count);
+    const netScores = netByUser.get(e.user_id) ?? [];
+    const grossScores = grossByUser.get(e.user_id) ?? [];
+    const { best: bestNet, avg: lowNet } = bestNAverage(netScores, league.rounds_that_count);
+    const { best: bestGross } = bestNAverage(grossScores, league.rounds_that_count);
     return {
       rank: 0,
       entryId: e.id,
@@ -168,16 +186,17 @@ export function computeLeagueStandings(params: {
       teamId: e.league_team_id,
       teamName: e.league_team_id ? teamMap.get(e.league_team_id)?.name ?? null : null,
       memberNames: [],
-      roundsPlayed: scores.length,
-      bestNet: best,
-      avgNet: avg,
+      roundsPlayed: netScores.length,
+      bestNet,
+      lowNet,
+      bestGross,
       points: 0,
       isTeam: false,
     };
   });
   rows.sort((a, b) => {
-    const av = a.avgNet ?? 999;
-    const bv = b.avgNet ?? 999;
+    const av = a.lowNet ?? 999;
+    const bv = b.lowNet ?? 999;
     if (av !== bv) return av - bv;
     return a.displayName.localeCompare(b.displayName);
   });

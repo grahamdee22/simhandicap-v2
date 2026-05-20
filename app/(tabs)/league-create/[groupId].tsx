@@ -22,7 +22,10 @@ import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, type LeagueFormat } from '../../../src/lib/leagues';
-import { generateMatchPlayPairings } from '../../../src/lib/matchPlayTournamentPairings';
+import {
+  generateMatchPlayPairings,
+  saveAdminMatchPlayPairings,
+} from '../../../src/lib/matchPlayTournamentPairings';
 import { validateBestBallTeamSizes } from '../../../src/lib/bestBallTournament';
 import {
   computeScrambleTeamIndex,
@@ -41,7 +44,17 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-type WizardStep = 'basic' | 'settings' | 'teams' | 'review';
+type WizardStep = 'basic' | 'settings' | 'teams' | 'pairings' | 'review';
+
+type MatchPlayMatchDraft = {
+  id: string;
+  player1UserId: string | null;
+  player2UserId: string | null;
+};
+
+function initialMatches(): MatchPlayMatchDraft[] {
+  return [{ id: 'm1', player1UserId: null, player2UserId: null }];
+}
 
 function defaultEndDate(): Date {
   const d = new Date();
@@ -87,6 +100,7 @@ export default function LeagueCreateScreen() {
   const [useHandicap, setUseHandicap] = useState(DEFAULT_USE_HANDICAP);
   const [notes, setNotes] = useState('');
   const [teams, setTeams] = useState(initialTeams);
+  const [matches, setMatches] = useState(initialMatches);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [assignedMemberAction, setAssignedMemberAction] = useState<{
     userId: string;
@@ -110,6 +124,7 @@ export default function LeagueCreateScreen() {
     setScrambleHandicapOverride('');
     setUseHandicap(DEFAULT_USE_HANDICAP);
     setTeams(initialTeams());
+    setMatches(initialMatches());
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
     setBusy(false);
@@ -144,16 +159,28 @@ export default function LeagueCreateScreen() {
   const isBestBall = format === 'best_ball';
 
   const needsTeams = isTeamFormat(format);
+  const needsAdminPairings = isMatchPlay && matchPlayPairingMethod === 'admin';
 
   const assignedMemberIds = useMemo(() => new Set(teams.flatMap((t) => t.memberIds)), [teams]);
+
+  const pairedMemberIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const m of matches) {
+      if (m.player1UserId) ids.add(m.player1UserId);
+      if (m.player2UserId) ids.add(m.player2UserId);
+    }
+    return ids;
+  }, [matches]);
 
   const unassignedMembers = useMemo(
     () => members.filter((m) => !assignedMemberIds.has(m.userId)),
     [members, assignedMemberIds]
   );
   const stepSequence = useMemo((): WizardStep[] => {
-    return needsTeams ? ['basic', 'settings', 'teams', 'review'] : ['basic', 'settings', 'review'];
-  }, [needsTeams]);
+    if (needsTeams) return ['basic', 'settings', 'teams', 'review'];
+    if (needsAdminPairings) return ['basic', 'settings', 'pairings', 'review'];
+    return ['basic', 'settings', 'review'];
+  }, [needsTeams, needsAdminPairings]);
 
   const stepNumber = Math.max(1, stepSequence.indexOf(step) + 1);
   const totalSteps = stepSequence.length;
@@ -172,9 +199,12 @@ export default function LeagueCreateScreen() {
   }, [step, stepSequence]);
 
   const allAssigned = useMemo(() => {
-    if (!needsTeams) return true;
-    return members.every((m) => assignedMemberIds.has(m.userId));
-  }, [needsTeams, members, assignedMemberIds]);
+    if (needsTeams) return members.every((m) => assignedMemberIds.has(m.userId));
+    if (needsAdminPairings) return members.every((m) => pairedMemberIds.has(m.userId));
+    return true;
+  }, [needsTeams, needsAdminPairings, members, assignedMemberIds, pairedMemberIds]);
+
+  const emptyTeams = useMemo(() => teams.filter((t) => t.memberIds.length === 0), [teams]);
 
   const syncTeamScorer = (t: ScrambleTeamDraft, memberIds: string[]): string | null => {
     if (!isScramble) return t.designatedScorerUserId;
@@ -243,8 +273,51 @@ export default function LeagueCreateScreen() {
     setSelectedMemberId((prev) => (prev === userId ? null : userId));
   };
 
+  const unassignedForPairings = useMemo(
+    () => members.filter((m) => !pairedMemberIds.has(m.userId)),
+    [members, pairedMemberIds]
+  );
+
+  const assignPlayerToMatch = (userId: string, matchId: string, slot: 'player1' | 'player2') => {
+    setMatches((prev) => {
+      const cleared = prev.map((m) => ({
+        ...m,
+        player1UserId: m.player1UserId === userId ? null : m.player1UserId,
+        player2UserId: m.player2UserId === userId ? null : m.player2UserId,
+      }));
+      return cleared.map((m) => {
+        if (m.id !== matchId) return m;
+        if (slot === 'player1') return { ...m, player1UserId: userId };
+        return { ...m, player2UserId: userId };
+      });
+    });
+    setSelectedMemberId(null);
+  };
+
+  const removePlayerFromMatches = (userId: string) => {
+    setMatches((prev) =>
+      prev.map((m) => ({
+        ...m,
+        player1UserId: m.player1UserId === userId ? null : m.player1UserId,
+        player2UserId: m.player2UserId === userId ? null : m.player2UserId,
+      }))
+    );
+    setSelectedMemberId(userId);
+  };
+
   const onLaunch = async () => {
     if (!user?.id || !group) return;
+    if (needsTeams && emptyTeams.length > 0) {
+      showAppAlert(
+        'Empty teams',
+        `Delete ${emptyTeams.length} empty team${emptyTeams.length === 1 ? '' : 's'} before launching.`
+      );
+      return;
+    }
+    if (needsAdminPairings && !allAssigned) {
+      showAppAlert('Pairings incomplete', 'Every player must be assigned to a match before launching.');
+      return;
+    }
     if (isScramble) {
       const sizeErr = validateScrambleTeamSizes(teams);
       if (sizeErr) {
@@ -324,14 +397,30 @@ export default function LeagueCreateScreen() {
           ? `Random pairings created. ${unpaired} player has no opponent (odd field).`
           : 'Random match pairings are ready.';
       showAppAlert('Tournament created', msg);
+    } else if (isMatchPlay && matchPlayPairingMethod === 'admin') {
+      const pairingPayload = matches
+        .filter((m) => m.player1UserId && m.player2UserId)
+        .map((m) => ({
+          player_1_user_id: m.player1UserId!,
+          player_2_user_id: m.player2UserId!,
+        }));
+      const save = await saveAdminMatchPlayPairings(
+        res.data.id,
+        pairingPayload,
+        googleOAuthAccessToken ?? undefined
+      );
+      setBusy(false);
+      if (save.error) {
+        showAppAlert(
+          'Tournament created',
+          `Pairings could not be saved: ${save.error}. Use Manage tournament to assign matchups.`
+        );
+      } else {
+        showAppAlert('Tournament created', 'Match pairings are ready.');
+      }
     } else {
       setBusy(false);
-      showAppAlert(
-        'Tournament created',
-        isMatchPlay
-          ? 'Assign matchups from Manage tournament when ready.'
-          : 'Members will see it in their group.'
-      );
+      showAppAlert('Tournament created', 'Members will see it in their group.');
     }
     router.replace('/(tabs)/groups' as never);
   };
@@ -462,7 +551,7 @@ export default function LeagueCreateScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.formatTitle}>Admin assigned</Text>
                     <Text style={styles.formatSub}>
-                      You assign opponents from Manage tournament.
+                      You pick who plays who on the next step.
                     </Text>
                   </View>
                   {matchPlayPairingMethod === 'admin' ? (
@@ -530,18 +619,19 @@ export default function LeagueCreateScreen() {
             {isScramble ? (
               <>
                 <Text style={[styles.lbl, { marginTop: 12 }]}>
-                  Team handicap override (optional)
+                  Override team handicap (optional)
                 </Text>
                 <TextInput
                   style={styles.input}
                   value={scrambleHandicapOverride}
                   onChangeText={setScrambleHandicapOverride}
-                  placeholder="e.g. 12.4 — leave blank for 15%/85% formula"
+                  placeholder="Leave blank for automatic calculation"
                   placeholderTextColor={colors.subtle}
                   keyboardType="decimal-pad"
                 />
                 <Text style={styles.helper}>
-                  Default team index uses 15% of the lowest + 85% of the highest player index.
+                  SimCap calculates team handicap automatically using the 15%/85% formula. Only change
+                  this if your group uses a custom handicap.
                 </Text>
               </>
             ) : null}
@@ -571,7 +661,9 @@ export default function LeagueCreateScreen() {
             </View>
             <Pressable
               style={styles.primaryBtn}
-              onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
+              onPress={() =>
+                goToStep(needsTeams ? 'teams' : needsAdminPairings ? 'pairings' : 'review')
+              }
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
             </Pressable>
@@ -614,13 +706,23 @@ export default function LeagueCreateScreen() {
             <Text style={[styles.sectionLbl, { marginTop: 16 }]}>Teams</Text>
             {teams.map((t) => (
               <View key={t.id} style={styles.teamBucket}>
-                <TextInput
-                  style={styles.teamNameInput}
-                  value={t.name}
-                  onChangeText={(v) =>
-                    setTeams((prev) => prev.map((x) => (x.id === t.id ? { ...x, name: v } : x)))
-                  }
-                />
+                <View style={styles.teamBucketHead}>
+                  <TextInput
+                    style={[styles.teamNameInput, { flex: 1 }]}
+                    value={t.name}
+                    onChangeText={(v) =>
+                      setTeams((prev) => prev.map((x) => (x.id === t.id ? { ...x, name: v } : x)))
+                    }
+                  />
+                  {t.memberIds.length === 0 && teams.length > 2 ? (
+                    <Pressable
+                      style={styles.deleteTeamBtn}
+                      onPress={() => setTeams((prev) => prev.filter((x) => x.id !== t.id))}
+                    >
+                      <Text style={styles.deleteTeamBtnTxt}>Delete</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
                 {selectedMemberId && unassignedMembers.some((m) => m.userId === selectedMemberId) ? (
                   <Pressable
                     style={styles.addToTeamBtn}
@@ -720,22 +822,138 @@ export default function LeagueCreateScreen() {
                 ) : null}
               </View>
             ))}
+            {!allAssigned ? (
+              <Pressable
+                style={styles.outlineBtn}
+                onPress={() =>
+                  setTeams((prev) => [
+                    ...prev,
+                    {
+                      id: `t${Date.now()}`,
+                      name: `Team ${prev.length + 1}`,
+                      memberIds: [],
+                      designatedScorerUserId: null,
+                    },
+                  ])
+                }
+              >
+                <Text style={styles.outlineBtnTxt}>Add team +</Text>
+              </Pressable>
+            ) : null}
             <Pressable
-              style={styles.outlineBtn}
-              onPress={() =>
-                setTeams((prev) => [
-                  ...prev,
-                  {
-                    id: `t${Date.now()}`,
-                    name: `Team ${prev.length + 1}`,
-                    memberIds: [],
-                    designatedScorerUserId: null,
-                  },
-                ])
-              }
+              style={[styles.primaryBtn, !allAssigned && styles.btnDisabled]}
+              disabled={!allAssigned}
+              onPress={() => goToStep('review')}
             >
-              <Text style={styles.outlineBtnTxt}>Add team +</Text>
+              <Text style={styles.primaryBtnTxt}>Continue</Text>
             </Pressable>
+          </>
+        ) : null}
+
+        {step === 'pairings' && needsAdminPairings ? (
+          <>
+            <Text style={styles.head}>Assign matchups</Text>
+            <Text style={styles.helper}>
+              Select an unassigned player, then add them to a match. Each match needs two players.
+            </Text>
+
+            <Text style={styles.sectionLbl}>Unassigned players</Text>
+            {unassignedForPairings.length === 0 ? (
+              <Text style={styles.helper}>Everyone has a match.</Text>
+            ) : (
+              unassignedForPairings.map((m) => (
+                <Pressable
+                  key={m.userId}
+                  style={[styles.memberRow, selectedMemberId === m.userId && styles.memberRowOn]}
+                  onPress={() => selectUnassignedMember(m.userId)}
+                >
+                  <View style={styles.memberAv}>
+                    <Text style={styles.memberAvTxt}>{m.initials}</Text>
+                  </View>
+                  <Text style={styles.memberName}>{m.displayName}</Text>
+                  <Text style={styles.memberIdx}>{m.index != null ? m.index.toFixed(1) : '—'}</Text>
+                </Pressable>
+              ))
+            )}
+
+            <Text style={[styles.sectionLbl, { marginTop: 16 }]}>Matches</Text>
+            {matches.map((match, idx) => {
+              const p1 = members.find((m) => m.userId === match.player1UserId);
+              const p2 = members.find((m) => m.userId === match.player2UserId);
+              return (
+                <View key={match.id} style={styles.teamBucket}>
+                  <Text style={styles.matchLbl}>Match {idx + 1}</Text>
+                  <View style={styles.matchSlots}>
+                    <View style={styles.matchSlot}>
+                      <Text style={styles.matchSlotLbl}>Player 1</Text>
+                      {p1 ? (
+                        <Pressable
+                          style={styles.chip}
+                          onPress={() => removePlayerFromMatches(p1.userId)}
+                        >
+                          <Text style={styles.chipTxt}>{p1.displayName}</Text>
+                        </Pressable>
+                      ) : selectedMemberId &&
+                        unassignedForPairings.some((m) => m.userId === selectedMemberId) ? (
+                        <Pressable
+                          style={styles.addToTeamBtn}
+                          onPress={() => assignPlayerToMatch(selectedMemberId, match.id, 'player1')}
+                        >
+                          <Text style={styles.addToTeamBtnTxt}>Add player</Text>
+                        </Pressable>
+                      ) : (
+                        <Text style={styles.teamEmptyTxt}>—</Text>
+                      )}
+                    </View>
+                    <Text style={styles.matchVs}>vs</Text>
+                    <View style={styles.matchSlot}>
+                      <Text style={styles.matchSlotLbl}>Player 2</Text>
+                      {p2 ? (
+                        <Pressable
+                          style={styles.chip}
+                          onPress={() => removePlayerFromMatches(p2.userId)}
+                        >
+                          <Text style={styles.chipTxt}>{p2.displayName}</Text>
+                        </Pressable>
+                      ) : selectedMemberId &&
+                        unassignedForPairings.some((m) => m.userId === selectedMemberId) ? (
+                        <Pressable
+                          style={styles.addToTeamBtn}
+                          onPress={() => assignPlayerToMatch(selectedMemberId, match.id, 'player2')}
+                        >
+                          <Text style={styles.addToTeamBtnTxt}>Add player</Text>
+                        </Pressable>
+                      ) : (
+                        <Text style={styles.teamEmptyTxt}>—</Text>
+                      )}
+                    </View>
+                  </View>
+                  {matches.length > 1 &&
+                  !match.player1UserId &&
+                  !match.player2UserId ? (
+                    <Pressable
+                      style={styles.deleteTeamBtn}
+                      onPress={() => setMatches((prev) => prev.filter((x) => x.id !== match.id))}
+                    >
+                      <Text style={styles.deleteTeamBtnTxt}>Delete empty match</Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              );
+            })}
+            {!allAssigned ? (
+              <Pressable
+                style={styles.outlineBtn}
+                onPress={() =>
+                  setMatches((prev) => [
+                    ...prev,
+                    { id: `m${Date.now()}`, player1UserId: null, player2UserId: null },
+                  ])
+                }
+              >
+                <Text style={styles.outlineBtnTxt}>Add match +</Text>
+              </Pressable>
+            ) : null}
             <Pressable
               style={[styles.primaryBtn, !allAssigned && styles.btnDisabled]}
               disabled={!allAssigned}
@@ -774,6 +992,19 @@ export default function LeagueCreateScreen() {
                       </Text>
                     );
                   })
+                : null}
+              {needsAdminPairings
+                ? matches
+                    .filter((m) => m.player1UserId && m.player2UserId)
+                    .map((m, i) => {
+                      const n1 = members.find((x) => x.userId === m.player1UserId)?.displayName;
+                      const n2 = members.find((x) => x.userId === m.player2UserId)?.displayName;
+                      return (
+                        <Text key={m.id} style={styles.summaryMeta}>
+                          Match {i + 1}: {n1} vs {n2}
+                        </Text>
+                      );
+                    })
                 : null}
             </View>
             <Pressable style={styles.primaryBtn} disabled={busy} onPress={() => void onLaunch()}>
@@ -975,4 +1206,18 @@ const styles = StyleSheet.create({
   scorerChipTxt: { fontSize: 12, fontWeight: '600', color: colors.ink },
   scorerChipTxtOn: { color: '#fff' },
   teamIdxLine: { fontSize: 12, color: colors.muted, marginTop: 8 },
+  teamBucketHead: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
+  deleteTeamBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  deleteTeamBtnTxt: { fontSize: 12, fontWeight: '700', color: colors.danger },
+  matchLbl: { fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 8 },
+  matchSlots: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  matchSlot: { flex: 1, gap: 6 },
+  matchSlotLbl: { fontSize: 11, fontWeight: '600', color: colors.muted, textTransform: 'uppercase' },
+  matchVs: { fontSize: 13, fontWeight: '700', color: colors.muted, paddingTop: 16 },
 });

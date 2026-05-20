@@ -79,16 +79,34 @@ describe('best ball aggregation', () => {
   it('excludes partial rounds from standings scores', () => {
     const rows = Array.from({ length: 18 }, (_, i) => holeRow(i + 1, 4, true));
     const agg = aggregateBestBallTeamRounds(rows, teamId, false);
-    const { scores, hasPartialPending } = bestBallStandingsScores(agg, false);
-    assert.equal(scores.length, 0);
+    const { netScores, hasPartialPending } = bestBallStandingsScores(agg, false);
+    assert.equal(netScores.length, 0);
     assert.equal(hasPartialPending, true);
   });
 
   it('includes complete team rounds', () => {
     const rows = Array.from({ length: 18 }, (_, i) => holeRow(i + 1, 4, false));
     const agg = aggregateBestBallTeamRounds(rows, teamId, false);
-    const { scores } = bestBallStandingsScores(agg, false);
-    assert.deepEqual(scores, [72]);
+    const { netScores, grossScores } = bestBallStandingsScores(agg, false);
+    assert.deepEqual(netScores, [72]);
+    assert.deepEqual(grossScores, [72]);
+  });
+});
+
+describe('match play gross comparison', () => {
+  it('compares gross scores hole by hole', async () => {
+    const { compareMatchPlayGrossHoles } = await import('../matchPlayGrossCompare');
+    const mine = Array.from({ length: 18 }, (_, i) => ({
+      hole_number: i + 1,
+      gross_score: i < 9 ? 4 : 5,
+    }));
+    const theirs = Array.from({ length: 18 }, (_, i) => ({
+      hole_number: i + 1,
+      gross_score: 5,
+    }));
+    const { summary } = compareMatchPlayGrossHoles(mine, theirs);
+    assert.ok(summary.wins > 0);
+    assert.ok(summary.net_holes > 0);
   });
 });
 

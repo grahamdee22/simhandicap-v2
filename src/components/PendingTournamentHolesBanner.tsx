@@ -1,12 +1,15 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../lib/constants';
 import { googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
 import { resolveSocialGroupsAccessToken } from '../lib/socialGroups';
 import { isSupabaseConfigured } from '../lib/supabase';
-import { listPendingTournamentHoleRounds } from '../lib/tournamentHoleScores';
+import {
+  listPendingTournamentHoleRounds,
+  subscribePendingTournamentHoles,
+} from '../lib/tournamentHoleScores';
 import type { PendingTournamentHoleRound } from '../lib/tournamentTypes';
 
 type Props = {
@@ -36,6 +39,8 @@ export function PendingTournamentHolesBanner({ gutter }: Props) {
       void load();
     }, [load])
   );
+
+  useEffect(() => subscribePendingTournamentHoles(() => void load()), [load]);
 
   if (loading && pending.length === 0) return null;
   if (pending.length === 0) return null;

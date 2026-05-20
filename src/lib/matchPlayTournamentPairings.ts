@@ -28,6 +28,16 @@ export type GeneratePairingsResult = {
   players_unpaired: number;
 };
 
+export type SaveAdminPairingsResult = {
+  league_id: string;
+  pairings_created: number;
+};
+
+export type AdminMatchPlayPairingInput = {
+  player_1_user_id: string;
+  player_2_user_id: string;
+};
+
 export type ApplyMatchPlayRoundResult = {
   pairing_id: string;
   status: LeagueMatchPairingStatus;
@@ -55,6 +65,32 @@ export async function generateMatchPlayPairings(
   return restRpcPost<GeneratePairingsResult>(token, 'generate_match_play_pairings', {
     p_league_id: leagueId,
   });
+}
+
+export async function saveAdminMatchPlayPairings(
+  leagueId: string,
+  pairings: AdminMatchPlayPairingInput[],
+  accessToken?: string
+): Promise<{ data: SaveAdminPairingsResult | null; error: string | null }> {
+  const token = await resolveTournamentAccessToken(accessToken);
+  if (!token) return { data: null, error: 'Not signed in' };
+  return restRpcPost<SaveAdminPairingsResult>(token, 'save_admin_match_play_pairings', {
+    p_league_id: leagueId,
+    p_pairings: pairings,
+  });
+}
+
+export function pairingPlayerNames(
+  pairing: DbLeagueMatchPairingRow,
+  entries: { id: string; user_id: string }[],
+  displayNames: Record<string, string>
+): { name1: string; name2: string } {
+  const e1 = entries.find((e) => e.id === pairing.player_1_entry_id);
+  const e2 = entries.find((e) => e.id === pairing.player_2_entry_id);
+  return {
+    name1: e1 ? displayNames[e1.user_id] ?? 'Player' : 'Player',
+    name2: e2 ? displayNames[e2.user_id] ?? 'Player' : 'Player',
+  };
 }
 
 export async function applyMatchPlayLeagueRound(

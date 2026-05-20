@@ -5,8 +5,12 @@ import { colors } from '../../lib/constants';
 import type { LeagueFormat } from '../../lib/leagues';
 import type { TournamentHoleInput } from '../../lib/tournamentHoleScores';
 import { sumGrossFromHoles } from '../../lib/tournamentHoleScores';
-import { computeMatchPlayRunningScore, formatMatchPlayStatus } from '../../lib/matchPlayTournament';
-import { MatchPlayHoleToggle } from './MatchPlayHoleToggle';
+import {
+  compareMatchPlayGrossHoles,
+  computeMatchPlayRunningScore,
+  countComparedMatchPlayHoles,
+  formatMatchPlayStatus,
+} from '../../lib/matchPlayTournament';
 
 type Props = {
   format: LeagueFormat;
@@ -14,6 +18,8 @@ type Props = {
   holes: TournamentHoleInput[];
   onChangeHole: (holeNumber: number, patch: Partial<TournamentHoleInput>) => void;
   teamScoreLabel?: string;
+  /** Match play: opponent gross scores for live comparison when available */
+  opponentHoles?: TournamentHoleInput[] | null;
 };
 
 function cellColors(gross: number | null | undefined, par: number): { bg: string; border: string } {
@@ -76,45 +82,37 @@ function HoleRow({
           const holeNum = idx + 1;
           const par = pars[idx] ?? 4;
           const hole = holes[idx];
-          const colorsForCell =
-            format === 'match_play' ? { bg: colors.surface, border: colors.pillBorder } : cellColors(hole?.gross_score, par);
+          const colorsForCell = cellColors(hole?.gross_score, par);
 
           return (
             <View key={holeNum} style={styles.cell}>
               <Text style={styles.holeNum}>{holeNum}</Text>
               <Text style={styles.par}>Par {par}</Text>
-              {format === 'match_play' ? (
-                <MatchPlayHoleToggle
-                  value={hole?.result ?? null}
-                  onChange={(result) => onChangeHole(holeNum, { result })}
-                />
-              ) : (
-                <TextInput
-                  style={[
-                    styles.input,
-                    {
-                      backgroundColor: colorsForCell.bg,
-                      borderColor: colorsForCell.border,
-                      color:
-                        colorsForCell.bg === '#1a5c3e' || colorsForCell.bg === '#c45c5c'
-                          ? '#fff'
-                          : colors.ink,
-                    },
-                  ]}
-                  keyboardType="number-pad"
-                  maxLength={2}
-                  value={hole?.gross_score != null ? String(hole.gross_score) : ''}
-                  onChangeText={(t) => {
-                    const n = parseInt(t.replace(/\D/g, ''), 10);
-                    onChangeHole(holeNum, {
-                      gross_score: t.trim() === '' ? null : Number.isFinite(n) ? n : null,
-                      is_team_score: format === 'scramble',
-                    });
-                  }}
-                  placeholder="—"
-                  placeholderTextColor={colors.subtle}
-                />
-              )}
+              <TextInput
+                style={[
+                  styles.input,
+                  {
+                    backgroundColor: colorsForCell.bg,
+                    borderColor: colorsForCell.border,
+                    color:
+                      colorsForCell.bg === '#1a5c3e' || colorsForCell.bg === '#c45c5c'
+                        ? '#fff'
+                        : colors.ink,
+                  },
+                ]}
+                keyboardType="number-pad"
+                maxLength={2}
+                value={hole?.gross_score != null ? String(hole.gross_score) : ''}
+                onChangeText={(t) => {
+                  const n = parseInt(t.replace(/\D/g, ''), 10);
+                  onChangeHole(holeNum, {
+                    gross_score: t.trim() === '' ? null : Number.isFinite(n) ? n : null,
+                    is_team_score: format === 'scramble',
+                  });
+                }}
+                placeholder="—"
+                placeholderTextColor={colors.subtle}
+              />
             </View>
           );
         })}
@@ -132,21 +130,48 @@ export function TournamentHoleScorecard({
   holes,
   onChangeHole,
   teamScoreLabel,
+  opponentHoles,
 }: Props) {
   const grandTotal = sumGrossFromHoles(holes);
-  const matchSummary = useMemo(
-    () => (format === 'match_play' ? computeMatchPlayRunningScore(holes) : null),
-    [format, holes]
-  );
-  const filledMp = holes.filter((h) => h.result != null).length;
+
+  const matchComparison = useMemo(() => {
+    if (format !== 'match_play' || !opponentHoles?.length) return null;
+    return compareMatchPlayGrossHoles(holes, opponentHoles);
+  }, [format, holes, opponentHoles]);
+
+  const matchSummary = useMemo(() => {
+    if (format !== 'match_play') return null;
+    if (matchComparison && countComparedMatchPlayHoles(holes, opponentHoles ?? []) > 0) {
+      return matchComparison.summary;
+    }
+    const fromResults = computeMatchPlayRunningScore(holes);
+    if (fromResults.wins + fromResults.losses + fromResults.halved > 0) return fromResults;
+    return null;
+  }, [format, holes, opponentHoles, matchComparison]);
+
+  const throughHoles = useMemo(() => {
+    if (format !== 'match_play') return 0;
+    if (opponentHoles?.length) {
+      return countComparedMatchPlayHoles(holes, opponentHoles);
+    }
+    return holes.filter((h) => h.result != null).length;
+  }, [format, holes, opponentHoles]);
+
+  const matchStatusText = useMemo(() => {
+    if (format !== 'match_play') return null;
+    if (matchSummary && throughHoles > 0) {
+      return formatMatchPlayStatus(matchSummary, throughHoles);
+    }
+    const filled = holes.filter((h) => h.gross_score != null).length;
+    if (filled > 0 && !opponentHoles?.length) {
+      return 'Submit your scorecard — match status updates when your opponent submits.';
+    }
+    return null;
+  }, [format, matchSummary, throughHoles, holes, opponentHoles]);
 
   return (
     <View style={styles.card}>
-      {format === 'match_play' && matchSummary ? (
-        <Text style={styles.matchStatus}>
-          {formatMatchPlayStatus(matchSummary, filledMp)}
-        </Text>
-      ) : null}
+      {matchStatusText ? <Text style={styles.matchStatus}>{matchStatusText}</Text> : null}
       <HoleRow
         label="Front 9"
         startHole={0}
@@ -168,12 +193,10 @@ export function TournamentHoleScorecard({
         holes={holes}
         onChangeHole={onChangeHole}
       />
-      {format !== 'match_play' ? (
-        <View style={styles.grandTotal}>
-          <Text style={styles.grandLbl}>Total</Text>
-          <Text style={styles.grandVal}>{grandTotal ?? '—'}</Text>
-        </View>
-      ) : null}
+      <View style={styles.grandTotal}>
+        <Text style={styles.grandLbl}>Total</Text>
+        <Text style={styles.grandVal}>{grandTotal ?? '—'}</Text>
+      </View>
     </View>
   );
 }

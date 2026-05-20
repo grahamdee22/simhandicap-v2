@@ -22,6 +22,10 @@ import { formatLeagueFormatLabel } from '../../../src/lib/leagueStandings';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { formatBestBallPartialNote } from '../../../src/lib/bestBallTournament';
 import { invokeCalculateMatchPlayResult } from '../../../src/lib/matchPlayTournament';
+import {
+  fetchLeagueMatchPairings,
+  opponentEntryIdForPairing,
+} from '../../../src/lib/matchPlayTournamentPairings';
 import { invokeCalculateTeamHoleScores } from '../../../src/lib/tournamentTeamScores';
 import {
   emptyTournamentHoleDraft,
@@ -32,6 +36,7 @@ import {
   upsertTournamentHoleScores,
   type TournamentHoleInput,
 } from '../../../src/lib/tournamentHoleScores';
+import type { DbLeagueMatchPairingRow } from '../../../src/lib/matchPlayTournamentPairings';
 import { useResponsive } from '../../../src/lib/responsive';
 
 type QueueItem = {
@@ -87,6 +92,7 @@ export default function TournamentHolesScreen() {
   const [busy, setBusy] = useState(false);
   const [format, setFormat] = useState<LeagueFormat>(formatParam ?? 'stroke');
   const [holes, setHoles] = useState<TournamentHoleInput[]>(() => emptyTournamentHoleDraft());
+  const [opponentHoles, setOpponentHoles] = useState<TournamentHoleInput[] | null>(null);
   const [scrambleBlocked, setScrambleBlocked] = useState<string | null>(null);
 
   const course = useMemo(() => getCourseById(courseId), [courseId]);
@@ -100,14 +106,16 @@ export default function TournamentHolesScreen() {
   const load = useCallback(async () => {
     setLoading(true);
     const token = googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+    let bundle = null as Awaited<ReturnType<typeof fetchLeagueBundle>>['data'];
 
     if (leagueId) {
       const bundleRes = await fetchLeagueBundle(leagueId, token);
-      if (bundleRes.data) {
-        setFormat(bundleRes.data.league.format);
-        if (bundleRes.data.league.format === 'scramble' && user?.id) {
-          const entry = bundleRes.data.entries.find((e) => e.user_id === user.id);
-          const team = bundleRes.data.teams.find((t) => t.id === entry?.league_team_id);
+      bundle = bundleRes.data ?? null;
+      if (bundle) {
+        setFormat(bundle.league.format);
+        if (bundle.league.format === 'scramble' && user?.id) {
+          const entry = bundle.entries.find((e) => e.user_id === user.id);
+          const team = bundle.teams.find((t) => t.id === entry?.league_team_id);
           if (team?.designated_scorer_id && team.designated_scorer_id !== user.id) {
             setScrambleBlocked('Only the designated scorer can enter team hole scores for this tournament.');
           } else {
@@ -123,6 +131,31 @@ export default function TournamentHolesScreen() {
     } else {
       setHoles(emptyTournamentHoleDraft());
     }
+
+    setOpponentHoles(null);
+    if (bundle?.league.format === 'match_play' && user?.id && leagueId) {
+      const entry = bundle.entries.find((e) => e.user_id === user.id);
+      const pr = await fetchLeagueMatchPairings(leagueId, token);
+      const myPairing: DbLeagueMatchPairingRow | undefined = pr.data?.find(
+        (p) =>
+          entry &&
+          (p.player_1_entry_id === entry.id || p.player_2_entry_id === entry.id)
+      );
+      if (myPairing && entry) {
+        const oppEntryId = opponentEntryIdForPairing(myPairing, entry.id);
+        const oppEntry = bundle.entries.find((e) => e.id === oppEntryId);
+        const oppRound = bundle.rounds.find(
+          (r) => r.user_id === oppEntry?.user_id && r.hole_entry_status === 'complete'
+        );
+        if (oppRound) {
+          const oppScores = await fetchTournamentHoleScores(oppRound.id, token);
+          if (oppScores.data?.length) {
+            setOpponentHoles(rowsToHoleDraft(oppScores.data));
+          }
+        }
+      }
+    }
+
     setLoading(false);
   }, [leagueRoundId, leagueId, user?.id]);
 
@@ -275,6 +308,7 @@ export default function TournamentHolesScreen() {
           pars={pars}
           holes={holes}
           onChangeHole={onChangeHole}
+          opponentHoles={format === 'match_play' ? opponentHoles : undefined}
           teamScoreLabel={
             format === 'scramble'
               ? 'Team score — one gross per hole for your crew'
