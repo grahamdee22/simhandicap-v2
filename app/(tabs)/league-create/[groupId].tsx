@@ -22,10 +22,11 @@ import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, type LeagueFormat } from '../../../src/lib/leagues';
+import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
 import {
-  generateMatchPlayPairings,
-  saveAdminMatchPlayPairings,
-} from '../../../src/lib/matchPlayTournamentPairings';
+  isBracketPlayerCount,
+  MATCH_PLAY_BRACKET_SIZE_ERROR,
+} from '../../../src/lib/matchPlayBracket';
 import { validateBestBallTeamSizes } from '../../../src/lib/bestBallTournament';
 import {
   computeScrambleTeamIndex,
@@ -33,7 +34,6 @@ import {
   validateScrambleTeamSizes,
   type ScrambleTeamDraft,
 } from '../../../src/lib/scrambleTournament';
-import type { MatchPlayPairingMethod } from '../../../src/lib/tournamentTypes';
 import { TOURNAMENT_FORMAT_COPY } from '../../../src/lib/tournamentFormatCopy';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
@@ -44,17 +44,7 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-type WizardStep = 'basic' | 'settings' | 'teams' | 'pairings' | 'review';
-
-type MatchPlayMatchDraft = {
-  id: string;
-  player1UserId: string | null;
-  player2UserId: string | null;
-};
-
-function initialMatches(): MatchPlayMatchDraft[] {
-  return [{ id: 'm1', player1UserId: null, player2UserId: null }];
-}
+type WizardStep = 'basic' | 'settings' | 'teams' | 'review';
 
 function defaultEndDate(): Date {
   const d = new Date();
@@ -93,14 +83,10 @@ export default function LeagueCreateScreen() {
   const [startDate, setStartDate] = useState(new Date());
   const [endDate, setEndDate] = useState(defaultEndDate);
   const [roundsThatCount, setRoundsThatCount] = useState(4);
-  const [matchPlayPairingMethod, setMatchPlayPairingMethod] =
-    useState<MatchPlayPairingMethod>('random');
-  const [matchPlayMatchesThatCount, setMatchPlayMatchesThatCount] = useState(1);
   const [scrambleHandicapOverride, setScrambleHandicapOverride] = useState('');
   const [useHandicap, setUseHandicap] = useState(DEFAULT_USE_HANDICAP);
   const [notes, setNotes] = useState('');
   const [teams, setTeams] = useState(initialTeams);
-  const [matches, setMatches] = useState(initialMatches);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [assignedMemberAction, setAssignedMemberAction] = useState<{
     userId: string;
@@ -119,12 +105,9 @@ export default function LeagueCreateScreen() {
     setStartDate(new Date());
     setEndDate(defaultEndDate());
     setRoundsThatCount(4);
-    setMatchPlayPairingMethod('random');
-    setMatchPlayMatchesThatCount(1);
     setScrambleHandicapOverride('');
     setUseHandicap(DEFAULT_USE_HANDICAP);
     setTeams(initialTeams());
-    setMatches(initialMatches());
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
     setBusy(false);
@@ -159,18 +142,17 @@ export default function LeagueCreateScreen() {
   const isBestBall = format === 'best_ball';
 
   const needsTeams = isTeamFormat(format);
-  const needsAdminPairings = isMatchPlay && matchPlayPairingMethod === 'admin';
+  const bracketEligible = isBracketPlayerCount(members.length);
+
+  const seededUserIds = useMemo(
+    () =>
+      [...members]
+        .sort((a, b) => (a.index ?? 99) - (b.index ?? 99))
+        .map((m) => m.userId),
+    [members]
+  );
 
   const assignedMemberIds = useMemo(() => new Set(teams.flatMap((t) => t.memberIds)), [teams]);
-
-  const pairedMemberIds = useMemo(() => {
-    const ids = new Set<string>();
-    for (const m of matches) {
-      if (m.player1UserId) ids.add(m.player1UserId);
-      if (m.player2UserId) ids.add(m.player2UserId);
-    }
-    return ids;
-  }, [matches]);
 
   const unassignedMembers = useMemo(
     () => members.filter((m) => !assignedMemberIds.has(m.userId)),
@@ -178,9 +160,8 @@ export default function LeagueCreateScreen() {
   );
   const stepSequence = useMemo((): WizardStep[] => {
     if (needsTeams) return ['basic', 'settings', 'teams', 'review'];
-    if (needsAdminPairings) return ['basic', 'settings', 'pairings', 'review'];
     return ['basic', 'settings', 'review'];
-  }, [needsTeams, needsAdminPairings]);
+  }, [needsTeams]);
 
   const stepNumber = Math.max(1, stepSequence.indexOf(step) + 1);
   const totalSteps = stepSequence.length;
@@ -200,11 +181,17 @@ export default function LeagueCreateScreen() {
 
   const allAssigned = useMemo(() => {
     if (needsTeams) return members.every((m) => assignedMemberIds.has(m.userId));
-    if (needsAdminPairings) return members.every((m) => pairedMemberIds.has(m.userId));
     return true;
-  }, [needsTeams, needsAdminPairings, members, assignedMemberIds, pairedMemberIds]);
+  }, [needsTeams, members, assignedMemberIds]);
 
   const emptyTeams = useMemo(() => teams.filter((t) => t.memberIds.length === 0), [teams]);
+
+  const teamsStepCanContinue = useMemo(() => {
+    if (!needsTeams) return true;
+    if (emptyTeams.length > 0) return false;
+    if (!allAssigned) return false;
+    return teams.every((t) => t.memberIds.length >= 2);
+  }, [needsTeams, emptyTeams, allAssigned, teams]);
 
   const syncTeamScorer = (t: ScrambleTeamDraft, memberIds: string[]): string | null => {
     if (!isScramble) return t.designatedScorerUserId;
@@ -273,38 +260,6 @@ export default function LeagueCreateScreen() {
     setSelectedMemberId((prev) => (prev === userId ? null : userId));
   };
 
-  const unassignedForPairings = useMemo(
-    () => members.filter((m) => !pairedMemberIds.has(m.userId)),
-    [members, pairedMemberIds]
-  );
-
-  const assignPlayerToMatch = (userId: string, matchId: string, slot: 'player1' | 'player2') => {
-    setMatches((prev) => {
-      const cleared = prev.map((m) => ({
-        ...m,
-        player1UserId: m.player1UserId === userId ? null : m.player1UserId,
-        player2UserId: m.player2UserId === userId ? null : m.player2UserId,
-      }));
-      return cleared.map((m) => {
-        if (m.id !== matchId) return m;
-        if (slot === 'player1') return { ...m, player1UserId: userId };
-        return { ...m, player2UserId: userId };
-      });
-    });
-    setSelectedMemberId(null);
-  };
-
-  const removePlayerFromMatches = (userId: string) => {
-    setMatches((prev) =>
-      prev.map((m) => ({
-        ...m,
-        player1UserId: m.player1UserId === userId ? null : m.player1UserId,
-        player2UserId: m.player2UserId === userId ? null : m.player2UserId,
-      }))
-    );
-    setSelectedMemberId(userId);
-  };
-
   const onLaunch = async () => {
     if (!user?.id || !group) return;
     if (needsTeams && emptyTeams.length > 0) {
@@ -314,8 +269,8 @@ export default function LeagueCreateScreen() {
       );
       return;
     }
-    if (needsAdminPairings && !allAssigned) {
-      showAppAlert('Pairings incomplete', 'Every player must be assigned to a match before launching.');
+    if (isMatchPlay && !bracketEligible) {
+      showAppAlert('Invalid field', MATCH_PLAY_BRACKET_SIZE_ERROR);
       return;
     }
     if (isScramble) {
@@ -350,13 +305,13 @@ export default function LeagueCreateScreen() {
         format,
         startDate: ymd(startDate),
         endDate: ymd(endDate),
-        roundsThatCount: isMatchPlay ? matchPlayMatchesThatCount : roundsThatCount,
+        roundsThatCount: isMatchPlay ? 1 : roundsThatCount,
         useHandicap,
         notes: notes.trim() || null,
         createdBy: user.id,
         members,
-        matchPlayPairingMethod: isMatchPlay ? matchPlayPairingMethod : null,
-        matchPlayMatchesThatCount: isMatchPlay ? matchPlayMatchesThatCount : null,
+        matchPlayPairingMethod: isMatchPlay ? 'bracket' : null,
+        matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
         scrambleHandicapOverride: isScramble
           ? scrambleHandicapOverride.trim()
             ? parseFloat(scrambleHandicapOverride)
@@ -377,46 +332,20 @@ export default function LeagueCreateScreen() {
       showAppAlert('Could not create tournament', res.error ?? 'Unknown error');
       return;
     }
-    if (isMatchPlay && matchPlayPairingMethod === 'random') {
-      const gen = await generateMatchPlayPairings(
+    if (isMatchPlay) {
+      const bracket = await generateMatchPlayBracket(
         res.data.id,
+        seededUserIds,
         googleOAuthAccessToken ?? undefined
       );
       setBusy(false);
-      if (gen.error) {
+      if (bracket.error) {
         showAppAlert(
           'Tournament created',
-          `Pairings could not be generated: ${gen.error}. Use Manage tournament to try again.`
-        );
-        router.replace('/(tabs)/groups' as never);
-        return;
-      }
-      const unpaired = gen.data?.players_unpaired ?? 0;
-      const msg =
-        unpaired > 0
-          ? `Random pairings created. ${unpaired} player has no opponent (odd field).`
-          : 'Random match pairings are ready.';
-      showAppAlert('Tournament created', msg);
-    } else if (isMatchPlay && matchPlayPairingMethod === 'admin') {
-      const pairingPayload = matches
-        .filter((m) => m.player1UserId && m.player2UserId)
-        .map((m) => ({
-          player_1_user_id: m.player1UserId!,
-          player_2_user_id: m.player2UserId!,
-        }));
-      const save = await saveAdminMatchPlayPairings(
-        res.data.id,
-        pairingPayload,
-        googleOAuthAccessToken ?? undefined
-      );
-      setBusy(false);
-      if (save.error) {
-        showAppAlert(
-          'Tournament created',
-          `Pairings could not be saved: ${save.error}. Use Manage tournament to assign matchups.`
+          `Bracket could not be generated: ${bracket.error}. Use Manage tournament to try again.`
         );
       } else {
-        showAppAlert('Tournament created', 'Match pairings are ready.');
+        showAppAlert('Tournament created', 'Bracket is ready — lowest index is the #1 seed.');
       }
     } else {
       setBusy(false);
@@ -470,7 +399,8 @@ export default function LeagueCreateScreen() {
             {TOURNAMENT_FORMAT_COPY.map((f) => {
               const on = format === f.key;
               const needsFour = isTeamFormat(f.key) && teamFormatsDisabled;
-              const disabled = needsFour;
+              const needsBracketCount = f.key === 'match_play' && !bracketEligible;
+              const disabled = needsFour || needsBracketCount;
               return (
                 <Pressable
                   key={f.key}
@@ -491,6 +421,9 @@ export default function LeagueCreateScreen() {
                       <Text style={styles.formatDisabledNote}>
                         Requires at least {MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS} group members.
                       </Text>
+                    ) : null}
+                    {needsBracketCount ? (
+                      <Text style={styles.formatDisabledNote}>{MATCH_PLAY_BRACKET_SIZE_ERROR}</Text>
                     ) : null}
                   </View>
                   {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
@@ -525,59 +458,23 @@ export default function LeagueCreateScreen() {
               onChange={(_, d) => d && setEndDate(d)}
             />
             {isMatchPlay ? (
-              <>
-                <Text style={styles.lbl}>Pairing method</Text>
-                <Pressable
-                  style={[styles.formatCard, matchPlayPairingMethod === 'random' && styles.formatCardOn]}
-                  onPress={() => setMatchPlayPairingMethod('random')}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.formatTitle}>Random draw</Text>
-                    <Text style={styles.formatSub}>
-                      Pair players automatically when the tournament starts.
-                    </Text>
-                  </View>
-                  {matchPlayPairingMethod === 'random' ? (
-                    <IconCheckmark size={20} color={colors.accent} />
-                  ) : null}
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.formatCard,
-                    matchPlayPairingMethod === 'admin' && styles.formatCardOn,
-                  ]}
-                  onPress={() => setMatchPlayPairingMethod('admin')}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.formatTitle}>Admin assigned</Text>
-                    <Text style={styles.formatSub}>
-                      You pick who plays who on the next step.
-                    </Text>
-                  </View>
-                  {matchPlayPairingMethod === 'admin' ? (
-                    <IconCheckmark size={20} color={colors.accent} />
-                  ) : null}
-                </Pressable>
-                <Text style={styles.lbl}>Matches that count toward standings</Text>
-                <View style={styles.stepperRow}>
-                  <Pressable
-                    style={styles.stepperBtn}
-                    onPress={() => setMatchPlayMatchesThatCount((n) => Math.max(1, n - 1))}
-                  >
-                    <Text style={styles.stepperBtnTxt}>−</Text>
-                  </Pressable>
-                  <Text style={styles.stepperVal}>{matchPlayMatchesThatCount}</Text>
-                  <Pressable
-                    style={styles.stepperBtn}
-                    onPress={() => setMatchPlayMatchesThatCount((n) => Math.min(10, n + 1))}
-                  >
-                    <Text style={styles.stepperBtnTxt}>+</Text>
-                  </Pressable>
-                </View>
+              <View style={styles.bracketInfo}>
+                <Text style={styles.bracketInfoTitle}>Single-elimination bracket</Text>
                 <Text style={styles.helper}>
-                  e.g. best {matchPlayMatchesThatCount} match result(s) count
+                  Players are seeded by SimCap index (#1 = lowest). The bracket is generated
+                  automatically when you launch.
                 </Text>
-              </>
+                <Text style={styles.helper}>
+                  Seeds:{' '}
+                  {seededUserIds
+                    .map((uid, i) => {
+                      const m = members.find((x) => x.userId === uid);
+                      const idx = m?.index != null ? m.index.toFixed(1) : '—';
+                      return `#${i + 1} ${m?.displayName ?? 'Player'} (${idx})`;
+                    })
+                    .join(' · ')}
+                </Text>
+              </View>
             ) : (
               <>
                 <Text style={styles.lbl}>Rounds that count toward standings</Text>
@@ -661,9 +558,7 @@ export default function LeagueCreateScreen() {
             </View>
             <Pressable
               style={styles.primaryBtn}
-              onPress={() =>
-                goToStep(needsTeams ? 'teams' : needsAdminPairings ? 'pairings' : 'review')
-              }
+              onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
             </Pressable>
@@ -840,123 +735,16 @@ export default function LeagueCreateScreen() {
                 <Text style={styles.outlineBtnTxt}>Add team +</Text>
               </Pressable>
             ) : null}
-            <Pressable
-              style={[styles.primaryBtn, !allAssigned && styles.btnDisabled]}
-              disabled={!allAssigned}
-              onPress={() => goToStep('review')}
-            >
-              <Text style={styles.primaryBtnTxt}>Continue</Text>
-            </Pressable>
-          </>
-        ) : null}
-
-        {step === 'pairings' && needsAdminPairings ? (
-          <>
-            <Text style={styles.head}>Assign matchups</Text>
-            <Text style={styles.helper}>
-              Select an unassigned player, then add them to a match. Each match needs two players.
-            </Text>
-
-            <Text style={styles.sectionLbl}>Unassigned players</Text>
-            {unassignedForPairings.length === 0 ? (
-              <Text style={styles.helper}>Everyone has a match.</Text>
-            ) : (
-              unassignedForPairings.map((m) => (
-                <Pressable
-                  key={m.userId}
-                  style={[styles.memberRow, selectedMemberId === m.userId && styles.memberRowOn]}
-                  onPress={() => selectUnassignedMember(m.userId)}
-                >
-                  <View style={styles.memberAv}>
-                    <Text style={styles.memberAvTxt}>{m.initials}</Text>
-                  </View>
-                  <Text style={styles.memberName}>{m.displayName}</Text>
-                  <Text style={styles.memberIdx}>{m.index != null ? m.index.toFixed(1) : '—'}</Text>
-                </Pressable>
-              ))
-            )}
-
-            <Text style={[styles.sectionLbl, { marginTop: 16 }]}>Matches</Text>
-            {matches.map((match, idx) => {
-              const p1 = members.find((m) => m.userId === match.player1UserId);
-              const p2 = members.find((m) => m.userId === match.player2UserId);
-              return (
-                <View key={match.id} style={styles.teamBucket}>
-                  <Text style={styles.matchLbl}>Match {idx + 1}</Text>
-                  <View style={styles.matchSlots}>
-                    <View style={styles.matchSlot}>
-                      <Text style={styles.matchSlotLbl}>Player 1</Text>
-                      {p1 ? (
-                        <Pressable
-                          style={styles.chip}
-                          onPress={() => removePlayerFromMatches(p1.userId)}
-                        >
-                          <Text style={styles.chipTxt}>{p1.displayName}</Text>
-                        </Pressable>
-                      ) : selectedMemberId &&
-                        unassignedForPairings.some((m) => m.userId === selectedMemberId) ? (
-                        <Pressable
-                          style={styles.addToTeamBtn}
-                          onPress={() => assignPlayerToMatch(selectedMemberId, match.id, 'player1')}
-                        >
-                          <Text style={styles.addToTeamBtnTxt}>Add player</Text>
-                        </Pressable>
-                      ) : (
-                        <Text style={styles.teamEmptyTxt}>—</Text>
-                      )}
-                    </View>
-                    <Text style={styles.matchVs}>vs</Text>
-                    <View style={styles.matchSlot}>
-                      <Text style={styles.matchSlotLbl}>Player 2</Text>
-                      {p2 ? (
-                        <Pressable
-                          style={styles.chip}
-                          onPress={() => removePlayerFromMatches(p2.userId)}
-                        >
-                          <Text style={styles.chipTxt}>{p2.displayName}</Text>
-                        </Pressable>
-                      ) : selectedMemberId &&
-                        unassignedForPairings.some((m) => m.userId === selectedMemberId) ? (
-                        <Pressable
-                          style={styles.addToTeamBtn}
-                          onPress={() => assignPlayerToMatch(selectedMemberId, match.id, 'player2')}
-                        >
-                          <Text style={styles.addToTeamBtnTxt}>Add player</Text>
-                        </Pressable>
-                      ) : (
-                        <Text style={styles.teamEmptyTxt}>—</Text>
-                      )}
-                    </View>
-                  </View>
-                  {matches.length > 1 &&
-                  !match.player1UserId &&
-                  !match.player2UserId ? (
-                    <Pressable
-                      style={styles.deleteTeamBtn}
-                      onPress={() => setMatches((prev) => prev.filter((x) => x.id !== match.id))}
-                    >
-                      <Text style={styles.deleteTeamBtnTxt}>Delete empty match</Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              );
-            })}
-            {!allAssigned ? (
-              <Pressable
-                style={styles.outlineBtn}
-                onPress={() =>
-                  setMatches((prev) => [
-                    ...prev,
-                    { id: `m${Date.now()}`, player1UserId: null, player2UserId: null },
-                  ])
-                }
-              >
-                <Text style={styles.outlineBtnTxt}>Add match +</Text>
-              </Pressable>
+            {emptyTeams.length > 0 ? (
+              <Text style={styles.helper}>
+                Delete empty teams before continuing ({emptyTeams.length} empty).
+              </Text>
+            ) : !teamsStepCanContinue && allAssigned ? (
+              <Text style={styles.helper}>Each team needs at least 2 players.</Text>
             ) : null}
             <Pressable
-              style={[styles.primaryBtn, !allAssigned && styles.btnDisabled]}
-              disabled={!allAssigned}
+              style={[styles.primaryBtn, !teamsStepCanContinue && styles.btnDisabled]}
+              disabled={!teamsStepCanContinue}
               onPress={() => goToStep('review')}
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
@@ -973,9 +761,9 @@ export default function LeagueCreateScreen() {
                 {format.replace('_', ' ')} · {ymd(startDate)} – {ymd(endDate)}
               </Text>
               <Text style={styles.summaryMeta}>
-                Best{' '}
-                {isMatchPlay ? matchPlayMatchesThatCount : roundsThatCount}{' '}
-                {isMatchPlay ? 'match(es)' : 'rounds'} · Handicap {useHandicap ? 'on' : 'off'}
+                {isMatchPlay
+                  ? `Bracket · ${members.length} players · Handicap ${useHandicap ? 'on' : 'off'}`
+                  : `Best ${roundsThatCount} rounds · Handicap ${useHandicap ? 'on' : 'off'}`}
               </Text>
               {notes.trim() ? (
                 <Text style={styles.summaryMeta}>Notes: {notes.trim()}</Text>
@@ -993,18 +781,16 @@ export default function LeagueCreateScreen() {
                     );
                   })
                 : null}
-              {needsAdminPairings
-                ? matches
-                    .filter((m) => m.player1UserId && m.player2UserId)
-                    .map((m, i) => {
-                      const n1 = members.find((x) => x.userId === m.player1UserId)?.displayName;
-                      const n2 = members.find((x) => x.userId === m.player2UserId)?.displayName;
-                      return (
-                        <Text key={m.id} style={styles.summaryMeta}>
-                          Match {i + 1}: {n1} vs {n2}
-                        </Text>
-                      );
-                    })
+              {isMatchPlay
+                ? seededUserIds.map((uid, i) => {
+                    const m = members.find((x) => x.userId === uid);
+                    return (
+                      <Text key={uid} style={styles.summaryMeta}>
+                        Seed {i + 1}: {m?.displayName ?? 'Player'}
+                        {m?.index != null ? ` (${m.index.toFixed(1)})` : ''}
+                      </Text>
+                    );
+                  })
                 : null}
             </View>
             <Pressable style={styles.primaryBtn} disabled={busy} onPress={() => void onLaunch()}>
@@ -1220,4 +1006,14 @@ const styles = StyleSheet.create({
   matchSlot: { flex: 1, gap: 6 },
   matchSlotLbl: { fontSize: 11, fontWeight: '600', color: colors.muted, textTransform: 'uppercase' },
   matchVs: { fontSize: 13, fontWeight: '700', color: colors.muted, paddingTop: 16 },
+  bracketInfo: {
+    marginTop: 8,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: colors.bg,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+  },
+  bracketInfoTitle: { fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 6 },
 });

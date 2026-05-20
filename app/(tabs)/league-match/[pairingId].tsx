@@ -197,7 +197,23 @@ export default function LeagueMatchDetailScreen() {
           </Text>
         ) : null}
         {pairing.status === 'halved' ? (
-          <Text style={styles.resultLine}>Match halved — 1 point each</Text>
+          <Text style={styles.resultLine}>
+            {bundle?.league.match_play_pairing_method === 'bracket' && pairing.winner_entry_id
+              ? `Match halved — ${
+                  pairing.winner_entry_id === pairing.player_1_entry_id ? name1 : name2
+                } advances (lower seed tiebreaker)`
+              : 'Match halved — 1 point each'}
+          </Text>
+        ) : null}
+
+        {bundle?.league.match_play_pairing_method === 'bracket' ? (
+          <View style={styles.tiebreakBox}>
+            <Text style={styles.tiebreakTitle}>Bracket tiebreaker</Text>
+            <Text style={styles.tiebreakLine}>
+              If a match is halved after 18 holes, the player with the lower seed (better SimCap
+              index) advances to the next round.
+            </Text>
+          </View>
         ) : null}
 
         {holeGrid ? (
@@ -351,4 +367,14 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   backBtnTxt: { fontSize: 15, fontWeight: '600', color: colors.sage },
+  tiebreakBox: {
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#fff8e6',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#e6c84a',
+    marginBottom: 16,
+  },
+  tiebreakTitle: { fontSize: 12, fontWeight: '700', color: colors.sage, textTransform: 'uppercase' },
+  tiebreakLine: { fontSize: 13, color: colors.ink, marginTop: 6, lineHeight: 18 },
 });

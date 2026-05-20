@@ -8,7 +8,7 @@ export const TOURNAMENT_HOLE_COUNT = 18 as const;
 
 export type HoleEntryStatus = 'complete' | 'pending_holes';
 
-export type MatchPlayPairingMethod = 'random' | 'admin';
+export type MatchPlayPairingMethod = 'random' | 'admin' | 'bracket';
 
 export type MatchPlayHoleResult = 'W' | 'L' | 'H';
 

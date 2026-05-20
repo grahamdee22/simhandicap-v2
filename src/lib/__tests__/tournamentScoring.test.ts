@@ -110,6 +110,101 @@ describe('match play gross comparison', () => {
   });
 });
 
+describe('league auto-completion', () => {
+  it('completes match play when all pairings are resolved', async () => {
+    const { isLeagueReadyToAutoComplete } = await import('../leagueCompletion');
+    const league = {
+      format: 'match_play',
+      rounds_that_count: 1,
+      use_handicap: true,
+    } as import('../leagues').DbLeagueRow;
+    assert.equal(
+      isLeagueReadyToAutoComplete({
+        league,
+        teams: [],
+        entries: [],
+        rounds: [],
+        pairings: [
+          {
+            id: 'p1',
+            status: 'complete',
+          } as import('../matchPlayTournamentPairings').DbLeagueMatchPairingRow,
+        ],
+      }),
+      true
+    );
+    assert.equal(
+      isLeagueReadyToAutoComplete({
+        league,
+        teams: [],
+        entries: [],
+        rounds: [],
+        pairings: [{ id: 'p1', status: 'scheduled' } as import('../matchPlayTournamentPairings').DbLeagueMatchPairingRow],
+      }),
+      false
+    );
+  });
+
+  it('completes bracket match play when final has a winner', async () => {
+    const { isLeagueReadyToAutoComplete } = await import('../leagueCompletion');
+    const league = {
+      format: 'match_play',
+      match_play_pairing_method: 'bracket',
+      rounds_that_count: 1,
+      use_handicap: true,
+    } as import('../leagues').DbLeagueRow;
+    const final = {
+      id: 'f',
+      bracket_round: 'final',
+      status: 'halved',
+      winner_entry_id: 'e1',
+    } as import('../matchPlayPairingTypes').DbLeagueMatchPairingRow;
+    assert.equal(
+      isLeagueReadyToAutoComplete({
+        league,
+        teams: [],
+        entries: [],
+        rounds: [],
+        pairings: [final, { id: 'r1', status: 'scheduled' } as typeof final],
+      }),
+      true
+    );
+    assert.equal(
+      isLeagueReadyToAutoComplete({
+        league,
+        teams: [],
+        entries: [],
+        rounds: [],
+        pairings: [{ ...final, status: 'scheduled', winner_entry_id: null }],
+      }),
+      false
+    );
+  });
+
+  it('completes scramble when every team has enough rounds', async () => {
+    const { isLeagueReadyToAutoComplete } = await import('../leagueCompletion');
+    const league = {
+      format: 'scramble',
+      rounds_that_count: 2,
+      use_handicap: true,
+    } as import('../leagues').DbLeagueRow;
+    const teams = [
+      { id: 't1', league_id: 'l', name: 'A', designated_scorer_id: null, created_at: '' },
+      { id: 't2', league_id: 'l', name: 'B', designated_scorer_id: null, created_at: '' },
+    ] as import('../leagues').DbLeagueTeamRow[];
+    const rounds = [
+      { league_team_id: 't1', player_opted_in: true, hole_entry_status: 'complete', user_id: 'u1' },
+      { league_team_id: 't1', player_opted_in: true, hole_entry_status: 'complete', user_id: 'u1' },
+      { league_team_id: 't2', player_opted_in: true, hole_entry_status: 'complete', user_id: 'u2' },
+      { league_team_id: 't2', player_opted_in: true, hole_entry_status: 'complete', user_id: 'u2' },
+    ] as import('../leagues').DbLeagueRoundRow[];
+    assert.equal(
+      isLeagueReadyToAutoComplete({ league, teams, entries: [], rounds }),
+      true
+    );
+  });
+});
+
 describe('best ball team size', () => {
   it('requires at least two players per team', () => {
     assert.match(

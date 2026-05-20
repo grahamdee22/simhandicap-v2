@@ -6,8 +6,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { isSocialGroupCreator } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { MatchPlayBracketSection } from '../../../src/components/MatchPlayBracketSection';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
+import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import {
   fetchLeagueBundle,
   syncLeagueStatuses,
@@ -62,21 +64,20 @@ export default function LeagueDetailScreen() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const res = await fetchLeagueBundle(leagueId, googleOAuthAccessToken ?? undefined);
+    const accessToken =
+      googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+    const res = await fetchLeagueBundle(leagueId, accessToken);
     if (res.data) {
-      const synced = await syncLeagueStatuses([res.data.league], googleOAuthAccessToken ?? undefined);
+      const synced = await syncLeagueStatuses([res.data.league], accessToken);
       const league = synced[0] ?? res.data.league;
       setBundle({ ...res.data, league });
       if (league.format === 'match_play') {
-        const pr = await fetchLeagueMatchPairings(league.id, googleOAuthAccessToken ?? undefined);
+        const pr = await fetchLeagueMatchPairings(league.id, accessToken);
         setPairings(pr.data ?? []);
         setTeamHoleScores([]);
       } else if (league.format === 'best_ball') {
         setPairings([]);
-        const th = await fetchTeamHoleScoresForLeague(
-          league.id,
-          googleOAuthAccessToken ?? undefined
-        );
+        const th = await fetchTeamHoleScoresForLeague(league.id, accessToken);
         setTeamHoleScores(th.data ?? []);
       } else {
         setPairings([]);
@@ -182,6 +183,9 @@ export default function LeagueDetailScreen() {
 
   const { league } = bundle;
   const completed = league.status === 'completed' || !isLeagueActive(league);
+  const isBracketMp = league.format === 'match_play' && league.match_play_pairing_method === 'bracket';
+  const isLegacyMp = league.format === 'match_play' && !isBracketMp;
+  const playerCount = bundle.entries.length;
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -214,27 +218,44 @@ export default function LeagueDetailScreen() {
           <Text style={styles.notes}>{league.notes.trim()}</Text>
         ) : null}
 
-        {league.format === 'match_play' && pairings.length > 0 ? (
+        {isBracketMp ? (
+          <MatchPlayBracketSection
+            pairings={pairings}
+            entries={bundle.entries}
+            displayNames={displayNames}
+            currentBracketRound={league.current_bracket_round}
+            myEntryId={myEntry?.id ?? null}
+            playerCount={playerCount}
+          />
+        ) : null}
+
+        {isLegacyMp ? (
           <View style={styles.pairingsCard}>
             <Text style={styles.pairingsTitle}>Match pairings</Text>
-            {pairings.map((p) => {
-              const { name1, name2 } = pairingPlayerNames(p, bundle.entries, displayNames);
-              return (
-                <Pressable
-                  key={p.id}
-                  style={styles.pairingRow}
-                  onPress={() => router.push(`/(tabs)/league-match/${p.id}` as never)}
-                >
-                  <Text style={styles.pairingLine}>
-                    {name1} vs {name2}
-                  </Text>
-                </Pressable>
-              );
-            })}
+            {pairings.length === 0 ? (
+              <Text style={styles.pairingsEmpty}>
+                No pairings yet. The group creator can assign matchups from Manage tournament.
+              </Text>
+            ) : (
+              pairings.map((p) => {
+                const { name1, name2 } = pairingPlayerNames(p, bundle.entries, displayNames);
+                return (
+                  <Pressable
+                    key={p.id}
+                    style={styles.pairingRow}
+                    onPress={() => router.push(`/(tabs)/league-match/${p.id}` as never)}
+                  >
+                    <Text style={styles.pairingLine}>
+                      {name1} vs. {name2}
+                    </Text>
+                  </Pressable>
+                );
+              })
+            )}
           </View>
         ) : null}
 
-        {league.format === 'match_play' && myPairing && myEntry && myOpponentName ? (
+        {isLegacyMp && myPairing && myEntry && myOpponentName ? (
           <Pressable
             style={styles.matchCard}
             onPress={() => router.push(`/(tabs)/league-match/${myPairing.id}` as never)}
@@ -247,7 +268,7 @@ export default function LeagueDetailScreen() {
           </Pressable>
         ) : null}
 
-        {completed ? (
+        {completed && !isBracketMp ? (
           <View style={styles.podium}>
             {standings[0] ? (
               <View style={[styles.trophyCard, styles.trophyCardGold]}>
@@ -273,8 +294,9 @@ export default function LeagueDetailScreen() {
           </View>
         ) : null}
 
+        {league.format !== 'match_play' || isLegacyMp ? (
         <View style={styles.tableCard}>
-          {league.format === 'match_play' ? (
+          {isLegacyMp ? (
             <>
               <View style={styles.tableHead}>
                 <Text style={[styles.th, styles.colRank]}>#</Text>
@@ -299,7 +321,7 @@ export default function LeagueDetailScreen() {
                 </View>
               ))}
             </>
-          ) : (
+          ) : league.format !== 'match_play' ? (
             <>
               <View style={styles.tableHead}>
                 <Text style={[styles.th, styles.colRank]}>#</Text>
@@ -347,10 +369,11 @@ export default function LeagueDetailScreen() {
                 </View>
               ))}
             </>
-          )}
+          ) : null}
         </View>
+        ) : null}
 
-        {myStanding || myTeamStanding || user?.id ? (
+        {(myStanding || myTeamStanding || user?.id) && !isBracketMp ? (
           <View style={styles.myStats}>
             <Text style={styles.myStatsTitle}>My stats</Text>
             {league.format === 'scramble' && myTeamStanding ? (
@@ -514,6 +537,7 @@ const styles = StyleSheet.create({
   },
   pairingRow: { paddingVertical: 4 },
   pairingLine: { fontSize: 15, fontWeight: '600', color: colors.ink },
+  pairingsEmpty: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   matchCard: {
     marginBottom: 16,
     padding: 14,

@@ -20,7 +20,7 @@ export const TOURNAMENT_FORMAT_COPY: TournamentFormatCopy[] = [
   {
     key: 'match_play',
     title: 'Match Play',
-    sub: 'Win holes, not strokes. Each hole is played independently — win, lose, or halve. The player who wins the most holes wins the match. Used in the Ryder Cup.',
+    sub: 'Single-elimination bracket seeded by SimCap index. Win holes to advance — the bracket is the standings. Requires exactly 2, 3, 4, or 8 players.',
   },
   {
     key: 'scramble',

@@ -7,7 +7,11 @@ import { supabase } from './supabase';
 import { currentIndexFromRounds } from '../store/useAppStore';
 import type { GroupMember } from '../store/useAppStore';
 import type { SimRound } from '../store/useAppStore';
+import { isLeagueReadyToAutoComplete } from './leagueCompletion';
+import { fetchLeagueMatchPairings } from './matchPlayTournamentPairings';
 import { isUserDesignatedScorerForTeam } from './scrambleTournament';
+import { fetchTeamHoleScoresForLeague } from './tournamentTeamScores';
+import { resolveTournamentAccessToken } from './tournamentApi';
 import { isHoleByHoleLeagueFormat } from './tournamentTypes';
 import type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
 
@@ -33,6 +37,7 @@ export type DbLeagueRow = {
   notes: string | null;
   match_play_pairing_method: MatchPlayPairingMethod | null;
   match_play_matches_that_count: number | null;
+  current_bracket_round: 'r1' | 'semifinal' | 'final' | null;
   scramble_handicap_override: number | null;
   created_at: string;
   updated_at: string;
@@ -58,6 +63,7 @@ export type DbLeagueEntryRow = {
   mp_wins?: number;
   mp_losses?: number;
   mp_halved?: number;
+  bracket_seed?: number | null;
 };
 
 export type DbLeagueRoundRow = {
@@ -197,11 +203,42 @@ export async function syncLeagueStatuses(
   accessToken?: string
 ): Promise<DbLeagueRow[]> {
   const today = new Date().toISOString().slice(0, 10);
+  const token = (await resolveTournamentAccessToken(accessToken)) ?? accessToken;
   const out = [...leagues];
+
   for (let i = 0; i < out.length; i++) {
     const l = out[i];
-    if (l.status === 'active' && l.end_date < today) {
-      await updateLeague(l.id, { status: 'completed' }, accessToken);
+    if (l.status !== 'active') continue;
+
+    let shouldComplete = l.end_date < today;
+
+    if (!shouldComplete) {
+      const bundleRes = await fetchLeagueBundle(l.id, token);
+      if (bundleRes.data) {
+        let pairings: Awaited<ReturnType<typeof fetchLeagueMatchPairings>>['data'] = [];
+        let teamHoleScores: Awaited<ReturnType<typeof fetchTeamHoleScoresForLeague>>['data'] = [];
+
+        if (l.format === 'match_play') {
+          const pr = await fetchLeagueMatchPairings(l.id, token);
+          pairings = pr.data ?? [];
+        } else if (l.format === 'best_ball') {
+          const th = await fetchTeamHoleScoresForLeague(l.id, token);
+          teamHoleScores = th.data ?? [];
+        }
+
+        shouldComplete = isLeagueReadyToAutoComplete({
+          league: l,
+          teams: bundleRes.data.teams,
+          entries: bundleRes.data.entries,
+          rounds: bundleRes.data.rounds,
+          pairings: pairings ?? undefined,
+          teamHoleScores: teamHoleScores ?? undefined,
+        });
+      }
+    }
+
+    if (shouldComplete) {
+      await updateLeague(l.id, { status: 'completed' }, token);
       out[i] = { ...l, status: 'completed' };
     }
   }

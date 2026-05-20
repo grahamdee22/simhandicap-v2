@@ -2,25 +2,29 @@
  * Match play tournament pairings (not Social `matches`).
  */
 
-import { restRpcPost, restSelect } from './tournamentApi';
-import { resolveTournamentAccessToken } from './tournamentApi';
+import { supabase } from './supabase';
+import {
+  formatPairingResultLine,
+  formatPairingStatusLabel,
+  myHolesWonInPairing,
+  opponentEntryIdForPairing,
+  pairingPlayerNames,
+} from './matchPlayPairingDisplay';
+import type {
+  BracketRound,
+  DbLeagueMatchPairingRow,
+  LeagueMatchPairingStatus,
+} from './matchPlayPairingTypes';
+import { restRpcPost, restSelect, resolveTournamentAccessToken } from './tournamentApi';
 
-export type LeagueMatchPairingStatus = 'scheduled' | 'in_progress' | 'complete' | 'halved';
-
-export type DbLeagueMatchPairingRow = {
-  id: string;
-  league_id: string;
-  player_1_entry_id: string;
-  player_2_entry_id: string;
-  status: LeagueMatchPairingStatus;
-  winner_entry_id: string | null;
-  holes_won_p1: number;
-  holes_won_p2: number;
-  holes_halved: number;
-  scheduled_at: string | null;
-  completed_at: string | null;
-  created_at: string;
-};
+export type { BracketRound, DbLeagueMatchPairingRow, LeagueMatchPairingStatus } from './matchPlayPairingTypes';
+export {
+  formatPairingResultLine,
+  formatPairingStatusLabel,
+  myHolesWonInPairing,
+  opponentEntryIdForPairing,
+  pairingPlayerNames,
+} from './matchPlayPairingDisplay';
 
 export type GeneratePairingsResult = {
   league_id: string;
@@ -31,6 +35,13 @@ export type GeneratePairingsResult = {
 export type SaveAdminPairingsResult = {
   league_id: string;
   pairings_created: number;
+};
+
+export type GenerateBracketResult = {
+  league_id: string;
+  player_count: number;
+  pairings_created: number;
+  current_bracket_round: BracketRound;
 };
 
 export type AdminMatchPlayPairingInput = {
@@ -52,8 +63,34 @@ export async function fetchLeagueMatchPairings(
   leagueId: string,
   accessToken?: string
 ): Promise<{ data: DbLeagueMatchPairingRow[] | null; error: string | null }> {
-  const path = `league_match_pairings?league_id=eq.${encodeURIComponent(leagueId)}&order=created_at.asc`;
-  return restSelect<DbLeagueMatchPairingRow>(path, accessToken);
+  const token = await resolveTournamentAccessToken(accessToken);
+  if (token) {
+    const path = `league_match_pairings?league_id=eq.${encodeURIComponent(leagueId)}&order=bracket_round.asc,bracket_slot.asc,created_at.asc`;
+    return restSelect<DbLeagueMatchPairingRow>(path, token);
+  }
+  if (!supabase) return { data: null, error: 'Supabase is not configured' };
+  const { data, error } = await supabase
+    .from('league_match_pairings')
+    .select('*')
+    .eq('league_id', leagueId)
+    .order('bracket_round', { ascending: true })
+    .order('bracket_slot', { ascending: true })
+    .order('created_at', { ascending: true });
+  if (error) return { data: null, error: error.message };
+  return { data: (data ?? []) as DbLeagueMatchPairingRow[], error: null };
+}
+
+export async function generateMatchPlayBracket(
+  leagueId: string,
+  seededUserIds: string[],
+  accessToken?: string
+): Promise<{ data: GenerateBracketResult | null; error: string | null }> {
+  const token = await resolveTournamentAccessToken(accessToken);
+  if (!token) return { data: null, error: 'Not signed in' };
+  return restRpcPost<GenerateBracketResult>(token, 'generate_match_play_bracket', {
+    p_league_id: leagueId,
+    p_seeded_user_ids: seededUserIds,
+  });
 }
 
 export async function generateMatchPlayPairings(
@@ -80,19 +117,6 @@ export async function saveAdminMatchPlayPairings(
   });
 }
 
-export function pairingPlayerNames(
-  pairing: DbLeagueMatchPairingRow,
-  entries: { id: string; user_id: string }[],
-  displayNames: Record<string, string>
-): { name1: string; name2: string } {
-  const e1 = entries.find((e) => e.id === pairing.player_1_entry_id);
-  const e2 = entries.find((e) => e.id === pairing.player_2_entry_id);
-  return {
-    name1: e1 ? displayNames[e1.user_id] ?? 'Player' : 'Player',
-    name2: e2 ? displayNames[e2.user_id] ?? 'Player' : 'Player',
-  };
-}
-
 export async function applyMatchPlayLeagueRound(
   leagueRoundId: string,
   accessToken?: string
@@ -104,56 +128,3 @@ export async function applyMatchPlayLeagueRound(
   });
 }
 
-export function opponentEntryIdForPairing(
-  pairing: DbLeagueMatchPairingRow,
-  myEntryId: string
-): string | null {
-  if (pairing.player_1_entry_id === myEntryId) return pairing.player_2_entry_id;
-  if (pairing.player_2_entry_id === myEntryId) return pairing.player_1_entry_id;
-  return null;
-}
-
-export function myHolesWonInPairing(
-  pairing: DbLeagueMatchPairingRow,
-  myEntryId: string
-): number {
-  if (pairing.player_1_entry_id === myEntryId) return pairing.holes_won_p1;
-  if (pairing.player_2_entry_id === myEntryId) return pairing.holes_won_p2;
-  return 0;
-}
-
-export function formatPairingStatusLabel(status: LeagueMatchPairingStatus): string {
-  switch (status) {
-    case 'scheduled':
-      return 'Scheduled';
-    case 'in_progress':
-      return 'In progress';
-    case 'complete':
-      return 'Complete';
-    case 'halved':
-      return 'Halved';
-    default:
-      return status;
-  }
-}
-
-export function formatPairingResultLine(
-  pairing: DbLeagueMatchPairingRow,
-  myEntryId: string,
-  opponentName: string
-): string {
-  if (pairing.status === 'scheduled') {
-    return `vs ${opponentName} · not started`;
-  }
-  if (pairing.status === 'in_progress') {
-    const mine = myHolesWonInPairing(pairing, myEntryId);
-    const theirs =
-      pairing.player_1_entry_id === myEntryId ? pairing.holes_won_p2 : pairing.holes_won_p1;
-    return `vs ${opponentName} · ${mine}–${theirs} (${pairing.holes_halved} halved)`;
-  }
-  if (pairing.status === 'halved') {
-    return `vs ${opponentName} · match halved`;
-  }
-  const won = pairing.winner_entry_id === myEntryId;
-  return won ? `Beat ${opponentName}` : `Lost to ${opponentName}`;
-}
