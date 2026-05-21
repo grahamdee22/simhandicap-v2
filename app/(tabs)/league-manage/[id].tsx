@@ -28,7 +28,6 @@ import {
 import {
   fetchLeagueMatchPairings,
   formatPairingStatusLabel,
-  generateMatchPlayPairings,
   type DbLeagueMatchPairingRow,
 } from '../../../src/lib/matchPlayTournamentPairings';
 import { useResponsive } from '../../../src/lib/responsive';
@@ -117,23 +116,6 @@ export default function LeagueManageScreen() {
     return m;
   }, [group?.members]);
 
-  const onRegeneratePairings = async () => {
-    const ok = await confirmDestructive(
-      'Regenerate pairings?',
-      'This removes current matchups and creates a new random draw.',
-      'Regenerate'
-    );
-    if (!ok) return;
-    setBusy(true);
-    const res = await generateMatchPlayPairings(leagueId, googleOAuthAccessToken ?? undefined);
-    setBusy(false);
-    if (res.error) showAppAlert('Could not regenerate', res.error);
-    else {
-      showAppAlert('Pairings updated', 'New random matchups are ready.');
-      void load();
-    }
-  };
-
   const onDelete = async () => {
     const ok = await confirmDestructive(
       'Delete tournament?',
@@ -210,13 +192,6 @@ export default function LeagueManageScreen() {
                 );
               })
             )}
-            <Pressable
-              style={[styles.outlineBtn, { marginTop: 10 }]}
-              disabled={busy}
-              onPress={() => void onRegeneratePairings()}
-            >
-              <Text style={styles.outlineBtnTxt}>Regenerate random pairings</Text>
-            </Pressable>
           </View>
         ) : null}
 

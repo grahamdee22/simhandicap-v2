@@ -404,6 +404,13 @@ export default function GroupsScreen() {
     [g, authUserId]
   );
 
+  const creatorUserId = g?.createdByUserId?.trim().toLowerCase() ?? '';
+  const memberIsCreator = useCallback(
+    (userId: string | undefined) =>
+      !!userId && !!creatorUserId && userId.trim().toLowerCase() === creatorUserId,
+    [creatorUserId]
+  );
+
   const leagueDisplayNames = useMemo(() => {
     const m: Record<string, string> = {};
     for (const mem of g?.members ?? []) {
@@ -753,7 +760,9 @@ export default function GroupsScreen() {
                             <Text style={[styles.lbName, m.isYou && styles.lbNameMe]} numberOfLines={1}>
                               {m.displayName}
                             </Text>
-                            {m.isAdmin ? (
+                            {memberIsCreator(m.userId) ? (
+                              <Text style={styles.creatorBadge}>Creator</Text>
+                            ) : m.isAdmin ? (
                               <Text style={styles.adminBadge}>Admin</Text>
                             ) : null}
                           </View>
@@ -1171,6 +1180,13 @@ const styles = StyleSheet.create({
   lbNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
   lbName: { fontSize: 12, fontWeight: '600', color: colors.ink, flexShrink: 1 },
   lbNameMe: { color: colors.accentDark },
+  creatorBadge: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.ink,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
   adminBadge: {
     fontSize: 9,
     fontWeight: '700',

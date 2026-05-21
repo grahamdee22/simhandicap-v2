@@ -20,19 +20,19 @@ const SLIDES = [
     key: '1',
     headline: 'Your handicap, for the simulator',
     body:
-      'SimCap tracks your index across every round you play on GSPro, Trackman, Foresight, Full Swing, E6 and more. Just log your score and sim settings after each round.',
+      'SimCap tracks your index across every round you play on GSPro, Trackman, Foresight, Full Swing, E6, Garmin and more. Just log your score and sim settings after each round.',
   },
   {
     key: '2',
-    headline: 'Real handicaps, built for sim',
+    headline: 'Compete with your crew',
     body:
-      "Enter your score along with your sim settings — putting mode, pin placement, wind, mulligans — and we'll calculate a fair differential every time.",
+      'Create groups, challenge friends to head-to-head matches, and run tournaments — stroke play, scramble, best ball, or single elimination match play. SimCap handles the scoring.',
   },
   {
     key: '3',
-    headline: 'Test your skills online',
+    headline: 'Every round makes it smarter',
     body:
-      'Issue direct challenges or post an open match for anyone to accept. Track scores hole by hole in real time.',
+      'The more rounds logged across the SimCap community, the more accurately we calibrate difficulty across platforms and courses. Your index gets fairer over time.',
   },
 ] as const;
 
