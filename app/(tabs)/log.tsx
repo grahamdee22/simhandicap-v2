@@ -21,6 +21,7 @@ import {
   type PuttingMode,
   type Wind,
 } from '../../src/lib/handicap';
+import { pinOptionsForPlatform } from '../../src/lib/pinPlacement';
 import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
@@ -61,13 +62,6 @@ const WIND_OPTS: { key: Wind; dn: string; ds: string }[] = [
 const MULL_OPTS: { key: Mulligans; dn: string; ds: string }[] = [
   { key: 'off', dn: 'Off', ds: 'None' },
   { key: 'on', dn: 'On', ds: 'Allowed' },
-];
-
-const PIN_OPTS: { key: PinDay; dn: string; ds: string }[] = [
-  { key: 'thu', dn: 'Thu', ds: 'Round 1' },
-  { key: 'fri', dn: 'Fri', ds: 'Round 2' },
-  { key: 'sat', dn: 'Sat', ds: 'Round 3' },
-  { key: 'sun', dn: 'Sun', ds: 'Round 4' },
 ];
 
 /** Set true to log gross resolution in dev tools when saving a round. */
@@ -300,6 +294,15 @@ export default function LogRoundScreen() {
     setCustomRating('');
     setCustomSlope('');
   }, [courseId, platform, editId]);
+
+  const pinOpts = useMemo(() => pinOptionsForPlatform(platform), [platform]);
+
+  useEffect(() => {
+    const keys = pinOpts.map((o) => o.key);
+    if (!keys.includes(pin)) {
+      setPin(keys[0] ?? 'thu');
+    }
+  }, [platform, pinOpts, pin]);
 
   const course = getCourseById(courseId);
   const courseTees = useMemo(() => (course ? getCourseTees(course, platform) : []), [course, platform]);
@@ -719,10 +722,12 @@ export default function LogRoundScreen() {
 
         <Text style={styles.sectionLabel}>Pin placement</Text>
         <View style={styles.dayRow}>
-          {PIN_OPTS.map((d) => (
+          {pinOpts.map((d) => (
             <Pressable key={d.key} style={[styles.dayBtn, pin === d.key && styles.dayBtnOn]} onPress={() => setPin(d.key)}>
-              <Text style={[styles.dayDn, pin === d.key && styles.dayDnOn]}>{d.dn}</Text>
-              <Text style={[styles.dayDs, pin === d.key && styles.dayDsOn]}>{d.ds}</Text>
+              <Text style={[styles.dayDn, pin === d.key && styles.dayDnOn]}>{d.label}</Text>
+              {d.sublabel ? (
+                <Text style={[styles.dayDs, pin === d.key && styles.dayDsOn]}>{d.sublabel}</Text>
+              ) : null}
             </Pressable>
           ))}
         </View>

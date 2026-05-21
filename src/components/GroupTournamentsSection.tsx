@@ -24,9 +24,10 @@ import {
   socialPageSectionTitleStyles,
   socialSectionHeaderStyles,
 } from '../lib/socialPageSectionTitle';
-import { isSocialGroupCreator } from '../lib/socialGroupCreator';
+import { isSocialGroupCreator, isSocialGroupManager } from '../lib/socialGroupCreator';
 import {
   isSocialGroupCreatorViaRpc,
+  isSocialGroupManagerViaRpc,
   patchGroupCreatorInStore,
   resolveSocialGroupsAccessToken,
 } from '../lib/socialGroups';
@@ -54,7 +55,7 @@ function ordinalSuffix(n: number): string {
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
 const ALLOW_DEV_CREATOR_VIEW = __DEV__;
 
-type CreatorCheck = 'pending' | 'creator' | 'member';
+type ManagerCheck = 'pending' | 'manager' | 'member';
 
 type Props = {
   group: FriendGroup;
@@ -74,46 +75,47 @@ export function GroupTournamentsSection({
   const router = useRouter();
   const initialCache = getTournamentSectionCache(group.id);
   const storeCreatorId = group.createdByUserId?.trim() || null;
-  const [creatorCheck, setCreatorCheck] = useState<CreatorCheck>(() =>
-    storeCreatorId
-      ? isSocialGroupCreator(group, authUserId)
-        ? 'creator'
-        : 'member'
-      : 'pending'
+  const [managerCheck, setManagerCheck] = useState<ManagerCheck>(() =>
+    isSocialGroupManager(group, authUserId) ? 'manager' : storeCreatorId ? 'member' : 'pending'
   );
 
   useEffect(() => {
     let cancelled = false;
 
-    if (storeCreatorId) {
-      setCreatorCheck(isSocialGroupCreator(group, authUserId) ? 'creator' : 'member');
+    if (isSocialGroupManager(group, authUserId)) {
+      setManagerCheck('manager');
       return;
     }
 
     if (!authUserId) {
-      setCreatorCheck('pending');
+      setManagerCheck('pending');
       return;
     }
 
-    setCreatorCheck('pending');
+    setManagerCheck('pending');
     void (async () => {
       const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
-      const { isCreator } = await isSocialGroupCreatorViaRpc(group.id, accessToken);
+      const [{ isManager }, { isCreator }] = await Promise.all([
+        isSocialGroupManagerViaRpc(group.id, accessToken),
+        storeCreatorId
+          ? Promise.resolve({ isCreator: false, error: null })
+          : isSocialGroupCreatorViaRpc(group.id, accessToken),
+      ]);
       if (cancelled) return;
       if (isCreator) {
         patchGroupCreatorInStore(group.id, authUserId);
       }
-      setCreatorCheck(isCreator ? 'creator' : 'member');
+      setManagerCheck(isManager ? 'manager' : 'member');
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [group.id, group.createdByUserId, authUserId, storeCreatorId]);
+  }, [group.id, group.createdByUserId, group.members, authUserId, storeCreatorId]);
 
-  const isGroupCreator = creatorCheck === 'creator';
+  const isGroupManager = managerCheck === 'manager';
   const [devForceCreatorView, setDevForceCreatorView] = useState(false);
-  const showCreatorUi = isGroupCreator || (ALLOW_DEV_CREATOR_VIEW && devForceCreatorView);
+  const showCreatorUi = isGroupManager || (ALLOW_DEV_CREATOR_VIEW && devForceCreatorView);
   const [hasCache, setHasCache] = useState(() => !!initialCache);
   const [loading, setLoading] = useState(() => !initialCache);
   const [leagues, setLeagues] = useState<DbLeagueRow[]>(() => initialCache?.leagues ?? []);
@@ -227,7 +229,7 @@ export function GroupTournamentsSection({
   );
 
   const showLoadingSpinner = loading && !hasCache && !activeLeague;
-  const showCreateBtn = !activeLeague && creatorCheck !== 'pending' && showCreatorUi;
+  const showCreateBtn = !activeLeague && managerCheck !== 'pending' && showCreatorUi;
 
   return (
     <View style={{ marginTop: 16 }}>
@@ -295,7 +297,7 @@ export function GroupTournamentsSection({
               <Text style={styles.seeAll}>See full standings →</Text>
             </Pressable>
           </View>
-        ) : creatorCheck === 'pending' ? (
+        ) : managerCheck === 'pending' ? (
           <View
             style={styles.neutralPending}
             accessibilityLabel="Loading tournament options"
@@ -316,7 +318,7 @@ export function GroupTournamentsSection({
           </Pressable>
         ) : null}
 
-        {ALLOW_DEV_CREATOR_VIEW && !isGroupCreator ? (
+        {ALLOW_DEV_CREATOR_VIEW && !isGroupManager ? (
           <Pressable
             onPress={() => setDevForceCreatorView((v) => !v)}
             style={({ pressed }) => [styles.devCreatorBtn, pressed && styles.devCreatorBtnPressed]}

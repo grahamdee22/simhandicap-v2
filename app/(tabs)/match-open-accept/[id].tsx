@@ -38,6 +38,7 @@ import {
   type PuttingMode,
   type Wind,
 } from '../../../src/lib/handicap';
+import { pinDisplayLabel } from '../../../src/lib/pinPlacement';
 import {
   acceptOpenChallenge,
   fetchMatchPlayerDisplayNames,
@@ -72,13 +73,6 @@ const MULL_OPTS: { key: Mulligans; dn: string }[] = [
   { key: 'on', dn: 'On' },
 ];
 
-const PIN_OPTS: { key: PinDay; dn: string }[] = [
-  { key: 'thu', dn: 'Thu' },
-  { key: 'fri', dn: 'Fri' },
-  { key: 'sat', dn: 'Sat' },
-  { key: 'sun', dn: 'Sun' },
-];
-
 function formatHolesLabel(m: DbMatchRow): string {
   if (m.holes === 18) return '18 holes';
   if (m.nine_selection === 'front') return 'Front 9';
@@ -88,7 +82,10 @@ function formatHolesLabel(m: DbMatchRow): string {
 
 function conditionsSummary(m: DbMatchRow): string {
   const p = PUTTING_OPTS.find((x) => x.key === m.putting_mode)?.dn ?? m.putting_mode;
-  const pin = PIN_OPTS.find((x) => x.key === m.pin_placement)?.dn ?? m.pin_placement;
+  const pin = pinDisplayLabel(
+    (m.pin_placement as PinDay) || 'thu',
+    (m.player_1_platform as PlatformId) ?? 'Trackman'
+  );
   const w = WIND_OPTS.find((x) => x.key === m.wind)?.dn ?? m.wind;
   const mu = MULL_OPTS.find((x) => x.key === m.mulligans)?.dn ?? m.mulligans;
   return `${p} putting · ${pin} pins · ${w} wind · ${mu} mulligans`;

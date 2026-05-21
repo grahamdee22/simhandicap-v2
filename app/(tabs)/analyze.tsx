@@ -7,6 +7,7 @@ import { PendingTournamentHolesBanner } from '../../src/components/PendingTourna
 import { IconCalendarOutline } from '../../src/components/SvgUiIcons';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
 import { formatDifferentialDisplay, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
+import { pinFilterOptions } from '../../src/lib/pinPlacement';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
 import { formatRoundMeta, useAppStore, type SimRound } from '../../src/store/useAppStore';
@@ -32,14 +33,6 @@ const PUTTING_FILTER_OPTS: { key: PuttingMode | null; label: string }[] = [
   { key: 'auto_2putt', label: 'Auto 2-putt' },
   { key: 'gimme_5', label: 'Gimme' },
   { key: 'putt_all', label: 'Full' },
-];
-
-const PIN_FILTER_OPTS: { key: PinDay | null; label: string }[] = [
-  { key: null, label: 'All' },
-  { key: 'thu', label: 'Thu' },
-  { key: 'fri', label: 'Fri' },
-  { key: 'sat', label: 'Sat' },
-  { key: 'sun', label: 'Sun' },
 ];
 
 const WIND_FILTER_OPTS: { key: Wind | null; label: string }[] = [
@@ -84,8 +77,8 @@ const F = {
 function labelForPutting(k: PuttingMode | null) {
   return PUTTING_FILTER_OPTS.find((o) => o.key === k)?.label ?? 'All';
 }
-function labelForPin(k: PinDay | null) {
-  return PIN_FILTER_OPTS.find((o) => o.key === k)?.label ?? 'All';
+function labelForPin(k: PinDay | null, platformFilter: PlatformId | null) {
+  return pinFilterOptions(platformFilter).find((o) => o.key === k)?.label ?? 'All';
 }
 function labelForWind(k: Wind | null) {
   return WIND_FILTER_OPTS.find((o) => o.key === k)?.label ?? 'All';
@@ -118,6 +111,14 @@ export default function AnalyzeScreen() {
   );
 
   const filterOn = filtersActive(filters);
+  const pinFilterOpts = useMemo(
+    () => pinFilterOptions(filters.platform),
+    [filters.platform]
+  );
+  const draftPinFilterOpts = useMemo(
+    () => pinFilterOptions(draftFilters.platform),
+    [draftFilters.platform]
+  );
   const rightColW = Math.min(420, Math.floor(maxContent * 0.4));
 
   const listStats = useMemo(() => {
@@ -171,7 +172,7 @@ export default function AnalyzeScreen() {
       out.push({ dim: 'putting', label: `Putting · ${labelForPutting(filters.putting)}` });
     }
     if (filters.pin != null) {
-      out.push({ dim: 'pin', label: `Pin · ${labelForPin(filters.pin)}` });
+      out.push({ dim: 'pin', label: `Pin · ${labelForPin(filters.pin, filters.platform)}` });
     }
     if (filters.wind != null) {
       out.push({ dim: 'wind', label: `Wind · ${labelForWind(filters.wind)}` });
@@ -266,7 +267,7 @@ export default function AnalyzeScreen() {
 
             <Text style={styles.fCatLabel}>Pin</Text>
             <View style={styles.fPillRow}>
-              {PIN_FILTER_OPTS.map((o) => {
+              {draftPinFilterOpts.map((o) => {
                 const sel = draftFilters.pin === o.key;
                 const isAll = o.key === null;
                 return (

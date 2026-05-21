@@ -21,7 +21,7 @@ import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
-import { createLeague, fetchLeaguesForGroup, type LeagueFormat } from '../../../src/lib/leagues';
+import { createLeague, fetchLeaguesForGroup, syncLeagueStatuses, type LeagueFormat } from '../../../src/lib/leagues';
 import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
 import {
   isBracketPlayerCount,
@@ -293,7 +293,11 @@ export default function LeagueCreateScreen() {
       }
     }
     const existing = await fetchLeaguesForGroup(groupId, googleOAuthAccessToken ?? undefined);
-    if (existing.data?.some((l) => l.status === 'active')) {
+    const synced = await syncLeagueStatuses(
+      existing.data ?? [],
+      googleOAuthAccessToken ?? undefined
+    );
+    if (synced.some((l) => l.status === 'active')) {
       showAppAlert('Active tournament', 'This crew already has an active tournament. End it before creating another.');
       return;
     }

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
-import { isSocialGroupCreator } from '../../../src/lib/socialGroupCreator';
+import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { MatchPlayBracketSection } from '../../../src/components/MatchPlayBracketSection';
 import { colors } from '../../../src/lib/constants';
@@ -52,7 +52,7 @@ export default function LeagueDetailScreen() {
     [groups, bundle?.league.group_id]
   );
   const authUserId = session?.user?.id ?? user?.id ?? null;
-  const isCreator = isSocialGroupCreator(group, authUserId);
+  const canManage = isSocialGroupManager(group, authUserId);
 
   const displayNames = useMemo(() => {
     const m: Record<string, string> = {};
@@ -234,7 +234,7 @@ export default function LeagueDetailScreen() {
             <Text style={styles.pairingsTitle}>Match pairings</Text>
             {pairings.length === 0 ? (
               <Text style={styles.pairingsEmpty}>
-                No pairings yet. The group creator can assign matchups from Manage tournament.
+                No pairings yet. The group creator or an admin can assign matchups from Manage tournament.
               </Text>
             ) : (
               pairings.map((p) => {
@@ -434,7 +434,7 @@ export default function LeagueDetailScreen() {
           </View>
         ) : null}
 
-        {isCreator ? (
+        {canManage ? (
           <Pressable
             style={styles.manageBtn}
             onPress={() => router.push(`/(tabs)/league-manage/${leagueId}` as never)}

@@ -2,6 +2,10 @@
  * Single-elimination bracket view model (Match Play tournament).
  */
 
+import {
+  bracketHalvedAdvanceLine,
+  bracketHalvedResultLine,
+} from './matchPlayBracketCopy';
 import { formatPairingResultLine, pairingPlayerNames } from './matchPlayPairingDisplay';
 import type {
   BracketRound,
@@ -107,13 +111,13 @@ function resultLineForPairing(
   if (pairing.status === 'halved' && pairing.winner_entry_id && myEntryId) {
     const adv =
       pairing.winner_entry_id === pairing.player_1_entry_id ? name1 : name2;
-    return `Match halved — ${adv} advances (lower seed)`;
+    return bracketHalvedAdvanceLine(adv);
   }
   if (pairing.status === 'halved') {
     const advId = pairing.winner_entry_id;
     if (advId) {
       const adv = advId === pairing.player_1_entry_id ? name1 : name2;
-      return `Halved — ${adv} advances`;
+      return bracketHalvedResultLine(adv);
     }
     return 'Match halved';
   }

@@ -38,6 +38,7 @@ import {
   type PuttingMode,
   type Wind,
 } from '../../src/lib/handicap';
+import { pinDisplayLabel, pinOptionsForPlatform } from '../../src/lib/pinPlacement';
 import { useResponsive } from '../../src/lib/responsive';
 import { useAppStore, type GroupMember } from '../../src/store/useAppStore';
 
@@ -47,12 +48,6 @@ const PUTTING_OPTS: { key: PuttingMode; label: string }[] = [
   { key: 'putt_all', label: 'Full' },
 ];
 
-const PIN_OPTS: { key: PinDay; label: string }[] = [
-  { key: 'thu', label: 'Thu' },
-  { key: 'fri', label: 'Fri' },
-  { key: 'sat', label: 'Sat' },
-  { key: 'sun', label: 'Sun' },
-];
 
 const WIND_OPTS: { key: Wind; label: string }[] = [
   { key: 'off', label: 'Off' },
@@ -205,6 +200,15 @@ export default function CrewMatchCalculatorScreen() {
     [courseSearchQuery]
   );
 
+  const pinOpts = useMemo(() => pinOptionsForPlatform(platform), [platform]);
+
+  useEffect(() => {
+    const keys = pinOpts.map((o) => o.key);
+    if (!keys.includes(pin)) {
+      setPin(keys[0] ?? 'thu');
+    }
+  }, [platform, pinOpts, pin]);
+
   const p1Form = useMemo(() => slotToForm(p1Slot, rosterSorted), [p1Slot, rosterSorted]);
   const p2Form = useMemo(() => slotToForm(p2Slot, rosterSorted), [p2Slot, rosterSorted]);
   const p1Name = p1Form.name;
@@ -265,7 +269,7 @@ export default function CrewMatchCalculatorScreen() {
     const windL = wind === 'off' ? 'No wind' : wind === 'light' ? 'Light wind' : 'Wind';
     const put =
       putting === 'auto_2putt' ? 'Auto 2-putt' : putting === 'gimme_5' ? 'Gimme <5ft' : 'Putt everything';
-    const pinL = pin === 'thu' ? 'Thu' : pin === 'fri' ? 'Fri' : pin === 'sat' ? 'Sat' : 'Sun';
+    const pinL = pinDisplayLabel(pin, platform);
     const mull = mulligans === 'on' ? 'Mulligans on' : 'Mulligans off';
     return `${platform} · ${put} · ${pinL} · ${windL} · ${mull}`;
   }, [platform, putting, pin, wind, mulligans]);
@@ -494,7 +498,7 @@ export default function CrewMatchCalculatorScreen() {
           )}
           {pillRow(
             'Pin',
-            PIN_OPTS.map((o) => ({ key: o.key, label: o.label })),
+            pinOpts.map((o) => ({ key: o.key, label: o.label })),
             pin,
             (k) => setPin(k as PinDay)
           )}

@@ -24,6 +24,7 @@ import {
   scoreToParStyle,
 } from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
+import { pinDetailLabel } from '../../../src/lib/pinPlacement';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
 
 /** RN Web's Alert.alert is a no-op; use the browser confirm dialog there. */
@@ -43,11 +44,6 @@ function confirmDestructive(
     { text: 'Cancel', style: 'cancel' },
     { text: destructiveLabel, style: 'destructive', onPress: onConfirm },
   ]);
-}
-
-function pinLabel(pin: SimRound['pin']): string {
-  const m = { thu: 'Thursday · R1', fri: 'Friday · R2', sat: 'Saturday · R3', sun: 'Sunday · R4' };
-  return m[pin];
 }
 
 function puttingLabel(p: SimRound['putting']): string {
@@ -223,7 +219,7 @@ export default function RoundDetailScreen() {
                   </View>
                   <View style={[styles.chip, isVeryWide && styles.chipLg]}>
                     <Text style={styles.chipLbl}>Pin placement</Text>
-                    <Text style={styles.chipVal}>{pinLabel(r.pin)}</Text>
+                    <Text style={styles.chipVal}>{pinDetailLabel(r.pin, r.platform)}</Text>
                   </View>
                   <View style={[styles.chip, isVeryWide && styles.chipLg]}>
                     <Text style={styles.chipLbl}>Wind</Text>
@@ -255,7 +251,7 @@ export default function RoundDetailScreen() {
                 </View>
                 <View style={styles.chip}>
                   <Text style={styles.chipLbl}>Pin placement</Text>
-                  <Text style={styles.chipVal}>{pinLabel(r.pin)}</Text>
+                  <Text style={styles.chipVal}>{pinDetailLabel(r.pin, r.platform)}</Text>
                 </View>
                 <View style={styles.chip}>
                   <Text style={styles.chipLbl}>Wind</Text>

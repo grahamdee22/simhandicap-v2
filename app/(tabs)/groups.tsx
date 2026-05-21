@@ -17,7 +17,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../src/auth/AuthContext';
-import { isSocialGroupCreator } from '../../src/lib/socialGroupCreator';
+import { isSocialGroupCreator, isSocialGroupManager } from '../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { GroupTournamentsSection } from '../../src/components/GroupTournamentsSection';
@@ -35,9 +35,11 @@ import {
   fetchInboundGroupInvitesIntoStore,
   backfillGroupCreatorsInStore,
   fetchMySocialGroupsIntoStore,
+  patchGroupMemberAdminInStore,
   resolveSocialGroupsAccessToken,
   respondToGroupInvite,
   sendGroupInvite,
+  setGroupMemberAdmin,
 } from '../../src/lib/socialGroups';
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
@@ -62,7 +64,7 @@ const SOCIAL_SECTION_INFO_COPY: Record<
   tournaments: {
     title: 'Tournaments',
     body:
-      'Run a tournament for your crew. The group creator can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards.',
+      'Run a tournament for your crew. The group creator or admins can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards.',
   },
   net: {
     title: 'Crew Match Calculator',
@@ -129,6 +131,7 @@ export default function GroupsScreen() {
   const [inviteBusy, setInviteBusy] = useState(false);
   const [inboundBusy, setInboundBusy] = useState(false);
   const [deleteGroupBusy, setDeleteGroupBusy] = useState(false);
+  const [adminBusyUserId, setAdminBusyUserId] = useState<string | null>(null);
   const [socialSectionInfo, setSocialSectionInfo] = useState<
     'match' | 'groups' | 'net' | 'tournaments' | null
   >(null);
@@ -396,6 +399,10 @@ export default function GroupsScreen() {
     () => isSocialGroupCreator(g, authUserId),
     [g, authUserId]
   );
+  const isGroupManager = useMemo(
+    () => isSocialGroupManager(g, authUserId),
+    [g, authUserId]
+  );
 
   const leagueDisplayNames = useMemo(() => {
     const m: Record<string, string> = {};
@@ -404,6 +411,23 @@ export default function GroupsScreen() {
     }
     return m;
   }, [g?.members]);
+
+  const onToggleMemberAdmin = async (memberUserId: string, makeAdmin: boolean) => {
+    if (!g?.id || !isGroupCreator || !memberUserId) return;
+    setAdminBusyUserId(memberUserId);
+    const res = await setGroupMemberAdmin(
+      g.id,
+      memberUserId,
+      makeAdmin,
+      googleOAuthAccessToken ?? undefined
+    );
+    setAdminBusyUserId(null);
+    if (res.error) {
+      showAppAlert('Admin role', res.error);
+      return;
+    }
+    patchGroupMemberAdminInStore(g.id, memberUserId, makeAdmin);
+  };
 
   const onDeleteGroup = async () => {
     if (!g?.id || !isGroupCreator) return;
@@ -725,9 +749,14 @@ export default function GroupsScreen() {
                           <Text style={[styles.lbAvTxt, { color: av.color }]}>{m.initials}</Text>
                         </View>
                         <View style={styles.lbInfo}>
-                          <Text style={[styles.lbName, m.isYou && styles.lbNameMe]} numberOfLines={1}>
-                            {m.displayName}
-                          </Text>
+                          <View style={styles.lbNameRow}>
+                            <Text style={[styles.lbName, m.isYou && styles.lbNameMe]} numberOfLines={1}>
+                              {m.displayName}
+                            </Text>
+                            {m.isAdmin ? (
+                              <Text style={styles.adminBadge}>Admin</Text>
+                            ) : null}
+                          </View>
                           <Text style={styles.lbSub} numberOfLines={1}>
                             {m.roundsLogged} rounds · {m.platform}
                           </Text>
@@ -737,6 +766,22 @@ export default function GroupsScreen() {
                             {formatHandicapIndexDisplay(m.index)}
                           </Text>
                           <Text style={tr.style}>{tr.text}</Text>
+                          {isGroupCreator && m.userId && !m.isYou ? (
+                            <Pressable
+                              onPress={() => void onToggleMemberAdmin(m.userId, !m.isAdmin)}
+                              disabled={adminBusyUserId === m.userId}
+                              hitSlop={6}
+                              style={styles.adminTogglePress}
+                            >
+                              <Text style={styles.adminToggleTxt}>
+                                {adminBusyUserId === m.userId
+                                  ? '…'
+                                  : m.isAdmin
+                                    ? 'Remove admin'
+                                    : 'Make admin'}
+                              </Text>
+                            </Pressable>
+                          ) : null}
                         </View>
                       </View>
                     );
@@ -755,7 +800,7 @@ export default function GroupsScreen() {
                           Pending invite
                         </Text>
                       </View>
-                      {isGroupCreator ? (
+                      {isGroupManager ? (
                         <Pressable
                           onPress={() => void onCancelOutboundInvite('in_app', p.id)}
                           hitSlop={8}
@@ -784,7 +829,7 @@ export default function GroupsScreen() {
                           Pending · email invite
                         </Text>
                       </View>
-                      {isGroupCreator ? (
+                      {isGroupManager ? (
                         <Pressable
                           onPress={() => void onCancelOutboundInvite('email', p.id)}
                           hitSlop={8}
@@ -1123,8 +1168,18 @@ const styles = StyleSheet.create({
   },
   lbAvTxt: { fontSize: 10, fontWeight: '600' },
   lbInfo: { flex: 1, minWidth: 0 },
-  lbName: { fontSize: 12, fontWeight: '600', color: colors.ink },
+  lbNameRow: { flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 },
+  lbName: { fontSize: 12, fontWeight: '600', color: colors.ink, flexShrink: 1 },
   lbNameMe: { color: colors.accentDark },
+  adminBadge: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.sage,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  adminTogglePress: { marginTop: 4 },
+  adminToggleTxt: { fontSize: 10, fontWeight: '600', color: colors.sage },
   lbSub: { fontSize: 10, color: colors.subtle, marginTop: 1 },
   lbRight: { alignItems: 'flex-end' },
   lbIdx: { fontSize: 14, fontWeight: '600', color: colors.ink },

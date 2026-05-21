@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
-import { isSocialGroupCreator } from '../../../src/lib/socialGroupCreator';
+import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
@@ -21,6 +21,7 @@ import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken'
 import {
   deleteLeague,
   fetchLeagueBundle,
+  syncLeagueStatuses,
   updateLeague,
   type LeagueBundle,
 } from '../../../src/lib/leagues';
@@ -53,15 +54,18 @@ export default function LeagueManageScreen() {
     [groups, bundle?.league.group_id]
   );
   const authUserId = session?.user?.id ?? user?.id ?? null;
-  const isCreator = isSocialGroupCreator(group, authUserId);
+  const canManage = isSocialGroupManager(group, authUserId);
 
   const load = useCallback(async () => {
-    const res = await fetchLeagueBundle(leagueId, googleOAuthAccessToken ?? undefined);
+    const token = googleOAuthAccessToken ?? undefined;
+    const res = await fetchLeagueBundle(leagueId, token);
     if (res.data) {
-      setBundle(res.data);
-      setName(res.data.league.name);
-      setEndDate(new Date(`${res.data.league.end_date}T12:00:00`));
-      if (res.data.league.format === 'match_play') {
+      const synced = await syncLeagueStatuses([res.data.league], token);
+      const league = synced[0] ?? res.data.league;
+      setBundle({ ...res.data, league });
+      setName(league.name);
+      setEndDate(new Date(`${league.end_date}T12:00:00`));
+      if (league.format === 'match_play') {
         const pr = await fetchLeagueMatchPairings(leagueId, googleOAuthAccessToken ?? undefined);
         setPairings(pr.data ?? []);
       } else {
@@ -152,10 +156,10 @@ export default function LeagueManageScreen() {
     );
   }
 
-  if (!isCreator) {
+  if (!canManage) {
     return (
       <ContentWidth bg={colors.surface}>
-        <Text style={{ padding: gutter }}>Only the group creator can manage this tournament.</Text>
+        <Text style={{ padding: gutter }}>Only the group creator or an admin can manage this tournament.</Text>
       </ContentWidth>
     );
   }
@@ -216,9 +220,11 @@ export default function LeagueManageScreen() {
           </View>
         ) : null}
 
-        <Pressable style={[styles.outlineBtn, { marginTop: 24 }]} disabled={busy} onPress={() => void endEarly()}>
-          <Text style={styles.outlineBtnTxt}>End tournament early</Text>
-        </Pressable>
+        {bundle.league.status === 'active' ? (
+          <Pressable style={[styles.outlineBtn, { marginTop: 24 }]} disabled={busy} onPress={() => void endEarly()}>
+            <Text style={styles.outlineBtnTxt}>End tournament early</Text>
+          </Pressable>
+        ) : null}
 
         <Pressable style={styles.dangerBtn} disabled={busy} onPress={() => void onDelete()}>
           <Text style={styles.dangerBtnTxt}>Delete tournament</Text>

@@ -7,6 +7,10 @@ import { ContentWidth } from '../../../src/components/ContentWidth';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { fetchLeagueBundle, type LeagueBundle } from '../../../src/lib/leagues';
+import {
+  BRACKET_HALVED_TIEBREAKER_BODY,
+  bracketHalvedAdvanceLine,
+} from '../../../src/lib/matchPlayBracketCopy';
 import { formatMatchPlayStatus } from '../../../src/lib/matchPlayTournament';
 import {
   formatPairingStatusLabel,
@@ -199,9 +203,9 @@ export default function LeagueMatchDetailScreen() {
         {pairing.status === 'halved' ? (
           <Text style={styles.resultLine}>
             {bundle?.league.match_play_pairing_method === 'bracket' && pairing.winner_entry_id
-              ? `Match halved — ${
+              ? bracketHalvedAdvanceLine(
                   pairing.winner_entry_id === pairing.player_1_entry_id ? name1 : name2
-                } advances (lower seed tiebreaker)`
+                )
               : 'Match halved — 1 point each'}
           </Text>
         ) : null}
@@ -209,10 +213,7 @@ export default function LeagueMatchDetailScreen() {
         {bundle?.league.match_play_pairing_method === 'bracket' ? (
           <View style={styles.tiebreakBox}>
             <Text style={styles.tiebreakTitle}>Bracket tiebreaker</Text>
-            <Text style={styles.tiebreakLine}>
-              If a match is halved after 18 holes, the player with the lower seed (better SimCap
-              index) advances to the next round.
-            </Text>
+            <Text style={styles.tiebreakLine}>{BRACKET_HALVED_TIEBREAKER_BODY}</Text>
           </View>
         ) : null}
 

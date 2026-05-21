@@ -187,6 +187,71 @@ export async function fetchSocialGroupCreatedBy(
 }
 
 /** Server-authoritative: `auth.uid()` is `social_groups.created_by` for `p_group_id`. */
+/** Server-authoritative: creator or designated admin for `p_group_id`. */
+export async function isSocialGroupManagerViaRpc(
+  groupId: string,
+  accessToken?: string
+): Promise<{ isManager: boolean; error: string | null }> {
+  const tok = accessToken ?? (await resolveSocialGroupsAccessToken());
+  if (tok) {
+    const { json, error } = await restRpcPost(tok, 'is_social_group_manager', {
+      p_group_id: groupId,
+    });
+    if (error) {
+      console.warn('[socialGroups] isSocialGroupManagerViaRpc:rpc_error', error);
+      return { isManager: false, error };
+    }
+    return { isManager: json === true, error: null };
+  }
+
+  if (!supabase) {
+    return { isManager: false, error: 'Supabase is not configured' };
+  }
+
+  const { data, error } = await supabase.rpc('is_social_group_manager', { p_group_id: groupId });
+  if (error) {
+    console.warn('[socialGroups] isSocialGroupManagerViaRpc', error.message);
+    return { isManager: false, error: error.message };
+  }
+  return { isManager: data === true, error: null };
+}
+
+export async function setGroupMemberAdmin(
+  groupId: string,
+  userId: string,
+  isAdmin: boolean,
+  accessToken?: string
+): Promise<{ error: string | null }> {
+  const tok = accessToken ?? (await resolveSocialGroupsAccessToken());
+  if (!tok) return { error: 'Not signed in' };
+  const { error } = await restRpcPost(tok, 'set_group_member_admin', {
+    p_group_id: groupId,
+    p_user_id: userId,
+    p_is_admin: isAdmin,
+  });
+  return { error };
+}
+
+export function patchGroupMemberAdminInStore(
+  groupId: string,
+  userId: string,
+  isAdmin: boolean
+): void {
+  const uid = userId.trim();
+  useAppStore.getState().setGroups(
+    useAppStore.getState().groups.map((g) =>
+      g.id !== groupId
+        ? g
+        : {
+            ...g,
+            members: g.members.map((m) =>
+              m.userId?.trim() === uid ? { ...m, isAdmin } : m
+            ),
+          }
+    )
+  );
+}
+
 export async function isSocialGroupCreatorViaRpc(
   groupId: string,
   accessToken?: string
@@ -342,13 +407,14 @@ async function fetchMySocialGroupsIntoStoreRest(uid: string, accessToken: string
   )) as { id: string; name: string; created_by: string; created_at: string }[];
   const allMembers = (await restSelectRows(
     accessToken,
-    `group_members?group_id=${idInList(groupIds)}&select=id,group_id,user_id,display_name_snapshot,joined_at`
+    `group_members?group_id=${idInList(groupIds)}&select=id,group_id,user_id,display_name_snapshot,joined_at,is_admin`
   )) as {
     id: string;
     group_id: string;
     user_id: string;
     display_name_snapshot: string | null;
     joined_at?: string;
+    is_admin?: boolean | null;
   }[];
   const userIds = [...new Set(allMembers.map((m) => m.user_id))];
   const profilesRows = (await restSelectRows(
@@ -414,6 +480,7 @@ function mapProfileToMember(
     group_id: string;
     user_id: string;
     display_name_snapshot: string | null;
+    is_admin?: boolean | null;
   },
   profile: { display_name: string; preferred_platform: string | null; ghin_index: number | null } | undefined,
   currentUserId: string,
@@ -439,6 +506,7 @@ function mapProfileToMember(
     index,
     trend: 'flat',
     isYou,
+    isAdmin: row.is_admin === true,
   };
 }
 
@@ -503,7 +571,7 @@ export async function fetchMySocialGroupsIntoStore(
 
   const { data: allMembers, error: allErr } = await supabase
     .from('group_members')
-    .select('id, group_id, user_id, display_name_snapshot, joined_at')
+    .select('id, group_id, user_id, display_name_snapshot, joined_at, is_admin')
     .in('group_id', groupIds);
 
   if (allErr || !allMembers) {

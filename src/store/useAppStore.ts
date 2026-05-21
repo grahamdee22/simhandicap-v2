@@ -72,6 +72,8 @@ export type GroupMember = {
   index: number | null;
   trend: 'up' | 'down' | 'flat';
   isYou?: boolean;
+  /** Group admin (creator-designated); can manage tournaments and invites. */
+  isAdmin?: boolean;
 };
 
 /** Outbound in-app invite (registered user, not yet accepted). */

@@ -1,3 +1,4 @@
+import { pinDisplayLabel } from './pinPlacement';
 import type { HeadToHead, SimRound } from '../store/useAppStore';
 
 export function formatRoundMeta(r: SimRound): string {
@@ -9,8 +10,7 @@ export function formatRoundMeta(r: SimRound): string {
       : r.putting === 'gimme_5'
         ? 'Gimme <5ft'
         : 'Putt everything';
-  const pin =
-    r.pin === 'thu' ? 'Thu' : r.pin === 'fri' ? 'Fri' : r.pin === 'sat' ? 'Sat' : 'Sun';
+  const pin = pinDisplayLabel(r.pin, r.platform);
   return `${r.platform} · ${put} · ${pin} · ${wind}`;
 }
 
