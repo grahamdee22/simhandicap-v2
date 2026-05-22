@@ -273,6 +273,13 @@ export default function TabLayout() {
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
+      <Tabs.Screen
+        name="group-chat/[groupId]"
+        options={{
+          href: null,
+          headerShown: false,
+        }}
+      />
     </Tabs>
   );
 }
