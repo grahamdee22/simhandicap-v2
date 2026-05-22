@@ -710,9 +710,8 @@ export default function GroupsScreen() {
                     onPress={() => router.push(`/(tabs)/group-chat/${g.id}` as never)}
                     accessibilityRole="button"
                     accessibilityLabel={`Open chat for ${g.name}`}
-                    style={styles.chatBtn}
                   >
-                    <Text style={styles.chatBtnTxt}>Chat</Text>
+                    <Text style={styles.invite}>Chat</Text>
                   </Pressable>
                   <Pressable
                     onPress={openInvite}
@@ -1161,8 +1160,6 @@ const styles = StyleSheet.create({
   groupDeleteBtnPressed: { opacity: 0.7 },
   groupName: { fontSize: 13, fontWeight: '600', color: colors.ink },
   groupMeta: { fontSize: 10, color: colors.subtle, marginTop: 1 },
-  chatBtn: { marginRight: 10 },
-  chatBtnTxt: { fontSize: 11, color: colors.header, fontWeight: '700' },
   invite: { fontSize: 11, color: colors.sage, fontWeight: '700' },
   lbRow: {
     flexDirection: 'row',

@@ -41,7 +41,7 @@ export default function GroupChatScreen() {
     return (
       <View style={[styles.fallback, { paddingTop: insets.top + 16 }]}>
         <Text style={styles.fallbackTxt}>This group chat is not available.</Text>
-        <Pressable onPress={() => router.back()} style={styles.backBtn}>
+        <Pressable onPress={() => router.replace('/(tabs)/groups' as never)} style={styles.backBtn}>
           <Text style={styles.backBtnTxt}>Go back</Text>
         </Pressable>
       </View>
@@ -51,7 +51,11 @@ export default function GroupChatScreen() {
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
       <View style={styles.navRow}>
-        <Pressable onPress={() => router.back()} hitSlop={12} accessibilityRole="button">
+        <Pressable
+          onPress={() => router.replace('/(tabs)/groups' as never)}
+          hitSlop={12}
+          accessibilityRole="button"
+        >
           <Text style={styles.backLink}>‹ Back</Text>
         </Pressable>
       </View>
