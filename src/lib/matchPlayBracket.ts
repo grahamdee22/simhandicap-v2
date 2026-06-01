@@ -6,12 +6,41 @@ import {
   bracketHalvedAdvanceLine,
   bracketHalvedResultLine,
 } from './matchPlayBracketCopy';
+import {
+  bracketSizeForPlayers,
+  getMatchPlayFormatDisabledMessage,
+  isMatchPlayBracketEligible,
+  MATCH_PLAY_MAX_PLAYERS,
+  MATCH_PLAY_MIN_PLAYERS,
+  MATCH_PLAY_ODD_PLAYERS_ERROR,
+  MATCH_PLAY_TOO_MANY_PLAYERS_ERROR,
+  slotsInBracketRound,
+  totalBracketRounds,
+} from './matchPlayBracketLogic';
 import { formatPairingResultLine, pairingPlayerNames } from './matchPlayPairingDisplay';
 import type {
   BracketRound,
   DbLeagueMatchPairingRow,
   LeagueMatchPairingStatus,
 } from './matchPlayPairingTypes';
+
+export {
+  bracketSizeForPlayers,
+  getMatchPlayFormatDisabledMessage,
+  isMatchPlayBracketEligible,
+  MATCH_PLAY_MAX_PLAYERS,
+  MATCH_PLAY_MIN_PLAYERS,
+  MATCH_PLAY_ODD_PLAYERS_ERROR,
+  MATCH_PLAY_TOO_MANY_PLAYERS_ERROR,
+} from './matchPlayBracketLogic';
+
+/** @deprecated Use getMatchPlayFormatDisabledMessage */
+export const MATCH_PLAY_BRACKET_SIZE_ERROR = MATCH_PLAY_ODD_PLAYERS_ERROR;
+
+/** @deprecated Use isMatchPlayBracketEligible */
+export function isBracketPlayerCount(n: number): boolean {
+  return isMatchPlayBracketEligible(n);
+}
 
 /** Minimal entry fields for bracket UI (avoids pulling Supabase via leagues.ts in tests). */
 export type BracketEntry = {
@@ -20,25 +49,18 @@ export type BracketEntry = {
   bracket_seed?: number | null;
 };
 
-export const BRACKET_PLAYER_COUNTS = [2, 3, 4, 8] as const;
-export type BracketPlayerCount = (typeof BRACKET_PLAYER_COUNTS)[number];
-
-export const MATCH_PLAY_BRACKET_SIZE_ERROR =
-  'Match Play bracket requires 2, 3, 4, or 8 players.';
-
-export function isBracketPlayerCount(n: number): n is BracketPlayerCount {
-  return BRACKET_PLAYER_COUNTS.includes(n as BracketPlayerCount);
-}
-
 export function bracketRoundLabel(round: BracketRound | null | undefined): string {
+  if (!round) return 'Bracket';
   switch (round) {
-    case 'r1':
-      return 'Round 1';
-    case 'semifinal':
-      return 'Semifinals';
     case 'final':
       return 'Final';
+    case 'semifinal':
+      return 'Semifinals';
     default:
+      if (/^r\d+$/.test(round)) {
+        const n = Number(round.slice(1));
+        return `Round ${n}`;
+      }
       return 'Bracket';
   }
 }
@@ -87,7 +109,22 @@ export type BracketViewModel = {
   showBye: boolean;
 };
 
-const ROUND_ORDER: BracketRound[] = ['r1', 'semifinal', 'final'];
+function orderedBracketRounds(
+  roundsPresent: Set<BracketRound>,
+  playerCount: number
+): BracketRound[] {
+  const bracketSize = bracketSizeForPlayers(playerCount);
+  const total = totalBracketRounds(bracketSize);
+  const canonical: BracketRound[] = [];
+  for (let i = 0; i < total; i++) {
+    const id = (i >= total - 1 ? 'final' : `r${i + 1}`) as BracketRound;
+    canonical.push(id);
+  }
+  if (roundsPresent.has('semifinal') && !canonical.includes('semifinal')) {
+    canonical.splice(Math.max(0, canonical.length - 1), 0, 'semifinal');
+  }
+  return canonical.filter((r) => roundsPresent.has(r));
+}
 
 function entrySeed(entries: BracketEntry[], entryId: string): number | null {
   return entries.find((e) => e.id === entryId)?.bracket_seed ?? null;
@@ -122,10 +159,7 @@ function resultLineForPairing(
     return 'Match halved';
   }
   if (myEntryId) {
-    const opp =
-      pairing.player_1_entry_id === myEntryId
-        ? name2
-        : name1;
+    const opp = pairing.player_1_entry_id === myEntryId ? name2 : name1;
     return formatPairingResultLine(pairing, myEntryId, opp);
   }
   return `${name1} vs. ${name2}`;
@@ -146,38 +180,38 @@ export function buildBracketViewModel(params: {
     pairings.map((p) => p.bracket_round).filter((r): r is BracketRound => r != null)
   );
 
-  const sections: BracketRoundSection[] = ROUND_ORDER.filter((r) => roundsPresent.has(r)).map(
-    (round) => {
-      const roundPairings = pairings
-        .filter((p) => p.bracket_round === round)
-        .sort((a, b) => (a.bracket_slot ?? 0) - (b.bracket_slot ?? 0));
+  const roundOrder = orderedBracketRounds(roundsPresent, playerCount);
 
-      const cards: BracketPairingCard[] = roundPairings.map((pairing) => {
-        const { name1, name2 } = pairingPlayerNames(pairing, entries, displayNames);
-        const isMine =
-          myEntryId != null &&
-          (pairing.player_1_entry_id === myEntryId ||
-            pairing.player_2_entry_id === myEntryId);
-        return {
-          pairing,
-          name1,
-          name2,
-          seed1: entrySeed(entries, pairing.player_1_entry_id),
-          seed2: entrySeed(entries, pairing.player_2_entry_id),
-          statusLabel: pairingStatusLabel(pairing.status),
-          resultLine: resultLineForPairing(pairing, entries, displayNames, myEntryId),
-          isMine,
-        };
-      });
+  const sections: BracketRoundSection[] = roundOrder.map((round) => {
+    const roundPairings = pairings
+      .filter((p) => p.bracket_round === round)
+      .sort((a, b) => (a.bracket_slot ?? 0) - (b.bracket_slot ?? 0));
 
+    const cards: BracketPairingCard[] = roundPairings.map((pairing) => {
+      const { name1, name2 } = pairingPlayerNames(pairing, entries, displayNames);
+      const isMine =
+        myEntryId != null &&
+        (pairing.player_1_entry_id === myEntryId ||
+          pairing.player_2_entry_id === myEntryId);
       return {
-        round,
-        label: bracketRoundLabel(round),
-        pairings: cards,
-        isCurrent: currentBracketRound === round,
+        pairing,
+        name1,
+        name2,
+        seed1: entrySeed(entries, pairing.player_1_entry_id),
+        seed2: entrySeed(entries, pairing.player_2_entry_id),
+        statusLabel: pairingStatusLabel(pairing.status),
+        resultLine: resultLineForPairing(pairing, entries, displayNames, myEntryId),
+        isMine,
       };
-    }
-  );
+    });
+
+    return {
+      round,
+      label: bracketRoundLabel(round),
+      pairings: cards,
+      isCurrent: currentBracketRound === round,
+    };
+  });
 
   const finalPairing = pairings.find((p) => p.bracket_round === 'final');
   const championEntryId =
@@ -208,9 +242,13 @@ export function buildBracketViewModel(params: {
         null
       : null;
 
+  const bracketSize = bracketSizeForPlayers(playerCount);
+  const r1Slots = slotsInBracketRound(bracketSize, 0);
+  const r1PairingCount = pairings.filter((p) => p.bracket_round === 'r1').length;
   const showBye =
-    playerCount === 3 &&
+    playerCount < bracketSize &&
     currentBracketRound === 'r1' &&
+    r1PairingCount < r1Slots &&
     !pairings.some((p) => p.bracket_round === 'final');
 
   let byeSeed1Name: string | null = null;

@@ -17,12 +17,14 @@ import {
 import { formatTeamMemberSummary } from '../teamRosterDisplay';
 import {
   autoAssignMembersToTeams,
-  CUSTOM_TEAM_COUNT_MAX,
+  describePlayersPerTeamOption,
+  isValidPlayersPerTeam,
   isValidTeamSplit,
-  suggestTeamCount,
-  validateCustomTeamCountInput,
-  validPresetTeamCounts,
-  validTeamCounts,
+  MAX_TEAM_COUNT,
+  suggestPlayersPerTeam,
+  unevenSplitMessage,
+  validateCustomPlayersPerTeamInput,
+  validPresetPlayersPerTeam,
 } from '../tournamentTeamCount';
 import { reconcileGrossWithHoles } from '../tournamentReconciliation';
 import type { DbTournamentTeamHoleScoreRow } from '../tournamentTypes';
@@ -231,52 +233,66 @@ describe('formatTeamMemberSummary', () => {
   });
 });
 
-describe('tournament team count', () => {
-  it('suggests 3 teams for 9 players in best ball', () => {
-    const r = suggestTeamCount(9, 'best_ball');
-    assert.equal(r.suggested, 3);
+describe('tournament players per team', () => {
+  it('suggests 3 players per team for 9 players in best ball', () => {
+    const r = suggestPlayersPerTeam(9, 'best_ball');
+    assert.equal(r.suggestedPlayersPerTeam, 3);
+    assert.equal(r.suggestedTeamCount, 3);
     assert.deepEqual(r.validPreset, [3]);
   });
 
-  it('defaults to 2 teams for 8 players', () => {
-    const r = suggestTeamCount(8, 'best_ball');
-    assert.equal(r.suggested, 2);
+  it('defaults to 2 per team for 8 players', () => {
+    const r = suggestPlayersPerTeam(8, 'best_ball');
+    assert.equal(r.suggestedPlayersPerTeam, 2);
+    assert.equal(r.suggestedTeamCount, 4);
     assert.deepEqual(r.validPreset.sort(), [2, 4]);
     assert.equal(r.showsCustom, false);
   });
 
-  it('defaults to 2 teams for 10 players', () => {
-    const r = suggestTeamCount(10, 'best_ball');
-    assert.equal(r.suggested, 2);
-    assert.ok(r.validPreset.includes(2));
+  it('defaults to 2 per team (5 teams) for 10 players', () => {
+    const r = suggestPlayersPerTeam(10, 'best_ball');
+    assert.equal(r.suggestedPlayersPerTeam, 2);
+    assert.equal(r.suggestedTeamCount, 5);
+    assert.deepEqual(r.validPreset, [2, 5]);
+    const three = describePlayersPerTeamOption(10, 3, 'best_ball');
+    assert.equal(three.disabled, true);
+    assert.equal(three.sub, unevenSplitMessage(10, 3));
+    const four = describePlayersPerTeamOption(10, 4, 'best_ball');
+    assert.equal(four.disabled, true);
+    assert.equal(four.sub, unevenSplitMessage(10, 4));
   });
 
   it('rejects odd per-team sizes for scramble', () => {
+    assert.equal(isValidPlayersPerTeam(9, 3, 'scramble'), false);
+    assert.equal(isValidPlayersPerTeam(6, 2, 'scramble'), true);
     assert.equal(isValidTeamSplit(9, 3, 'scramble'), false);
     assert.equal(isValidTeamSplit(6, 3, 'scramble'), true);
-    assert.deepEqual(validTeamCounts(9, 'scramble'), []);
-    assert.deepEqual(validPresetTeamCounts(9, 'scramble'), []);
+    assert.deepEqual(validPresetPlayersPerTeam(9, 'scramble'), []);
   });
 
-  it('suggests custom split for 25 players', () => {
-    const r = suggestTeamCount(25, 'best_ball');
-    assert.equal(r.suggested, 5);
-    assert.deepEqual(r.validPreset, []);
-    assert.ok(r.validCustom.includes(5));
-    assert.equal(r.showsCustom, true);
+  it('suggests 5 per team for 25 players via preset', () => {
+    const r = suggestPlayersPerTeam(25, 'best_ball');
+    assert.equal(r.suggestedPlayersPerTeam, 5);
+    assert.equal(r.suggestedTeamCount, 5);
+    assert.deepEqual(r.validPreset, [5]);
+    assert.equal(r.showsCustom, false);
+    assert.equal(isValidPlayersPerTeam(25, 5, 'best_ball'), true);
   });
 
   it('shows custom option for large even groups', () => {
-    const r = suggestTeamCount(24, 'best_ball');
+    const r = suggestPlayersPerTeam(24, 'best_ball');
     assert.equal(r.showsCustom, true);
-    assert.ok(r.validCustom.includes(6));
+    assert.ok(isValidPlayersPerTeam(24, 6, 'best_ball'));
   });
 
-  it('enforces custom team count maximum', () => {
+  it('enforces max team count', () => {
+    assert.equal(isValidPlayersPerTeam(52, 2, 'best_ball'), false);
     assert.match(
-      validateCustomTeamCountInput('26', 52, 'best_ball') ?? '',
-      new RegExp(String(CUSTOM_TEAM_COUNT_MAX))
+      validateCustomPlayersPerTeamInput('1', 52, 'best_ball') ?? '',
+      /Minimum/
     );
+    const err = validateCustomPlayersPerTeamInput('6', 156, 'best_ball');
+    assert.match(err ?? '', new RegExp(String(MAX_TEAM_COUNT)));
   });
 
   it('auto-assign puts every player on a team', () => {

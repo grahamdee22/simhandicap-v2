@@ -4,7 +4,14 @@
 
 export type LeagueMatchPairingStatus = 'scheduled' | 'in_progress' | 'complete' | 'halved';
 
-export type BracketRound = 'r1' | 'semifinal' | 'final';
+export type BracketRound =
+  | 'r1'
+  | 'r2'
+  | 'r3'
+  | 'r4'
+  | 'r5'
+  | 'semifinal'
+  | 'final';
 
 export type DbLeagueMatchPairingRow = {
   id: string;

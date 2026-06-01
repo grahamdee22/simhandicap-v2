@@ -20,7 +20,7 @@ export const TOURNAMENT_FORMAT_COPY: TournamentFormatCopy[] = [
   {
     key: 'match_play',
     title: 'Match Play',
-    sub: 'Single-elimination bracket seeded by SimCap index. Win holes to advance — the bracket is the standings. Requires exactly 2, 3, 4, or 8 players.',
+    sub: 'Single-elimination bracket seeded by SimCap index. Win holes to advance — the bracket is the standings. Requires 2–30 players (even number).',
   },
   {
     key: 'scramble',

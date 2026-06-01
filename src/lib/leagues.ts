@@ -37,7 +37,15 @@ export type DbLeagueRow = {
   notes: string | null;
   match_play_pairing_method: MatchPlayPairingMethod | null;
   match_play_matches_that_count: number | null;
-  current_bracket_round: 'r1' | 'semifinal' | 'final' | null;
+  current_bracket_round:
+    | 'r1'
+    | 'r2'
+    | 'r3'
+    | 'r4'
+    | 'r5'
+    | 'semifinal'
+    | 'final'
+    | null;
   scramble_handicap_override: number | null;
   created_at: string;
   updated_at: string;
