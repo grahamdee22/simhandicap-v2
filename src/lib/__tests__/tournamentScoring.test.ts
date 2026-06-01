@@ -14,6 +14,16 @@ import {
   computeScrambleTeamIndex,
   validateScrambleTeamSizes,
 } from '../scrambleTournament';
+import { formatTeamMemberSummary } from '../teamRosterDisplay';
+import {
+  autoAssignMembersToTeams,
+  CUSTOM_TEAM_COUNT_MAX,
+  isValidTeamSplit,
+  suggestTeamCount,
+  validateCustomTeamCountInput,
+  validPresetTeamCounts,
+  validTeamCounts,
+} from '../tournamentTeamCount';
 import { reconcileGrossWithHoles } from '../tournamentReconciliation';
 import type { DbTournamentTeamHoleScoreRow } from '../tournamentTypes';
 
@@ -211,5 +221,73 @@ describe('best ball team size', () => {
       validateBestBallTeamSizes([{ name: 'Solo', memberIds: ['a'] }]) ?? '',
       /at least 2/
     );
+  });
+});
+
+describe('formatTeamMemberSummary', () => {
+  it('truncates long member lists', () => {
+    const line = formatTeamMemberSummary(['A', 'B', 'C', 'D', 'E'], 3);
+    assert.equal(line, 'A, B, C +2 more');
+  });
+});
+
+describe('tournament team count', () => {
+  it('suggests 3 teams for 9 players in best ball', () => {
+    const r = suggestTeamCount(9, 'best_ball');
+    assert.equal(r.suggested, 3);
+    assert.deepEqual(r.validPreset, [3]);
+  });
+
+  it('defaults to 2 teams for 8 players', () => {
+    const r = suggestTeamCount(8, 'best_ball');
+    assert.equal(r.suggested, 2);
+    assert.deepEqual(r.validPreset.sort(), [2, 4]);
+    assert.equal(r.showsCustom, false);
+  });
+
+  it('defaults to 2 teams for 10 players', () => {
+    const r = suggestTeamCount(10, 'best_ball');
+    assert.equal(r.suggested, 2);
+    assert.ok(r.validPreset.includes(2));
+  });
+
+  it('rejects odd per-team sizes for scramble', () => {
+    assert.equal(isValidTeamSplit(9, 3, 'scramble'), false);
+    assert.equal(isValidTeamSplit(6, 3, 'scramble'), true);
+    assert.deepEqual(validTeamCounts(9, 'scramble'), []);
+    assert.deepEqual(validPresetTeamCounts(9, 'scramble'), []);
+  });
+
+  it('suggests custom split for 25 players', () => {
+    const r = suggestTeamCount(25, 'best_ball');
+    assert.equal(r.suggested, 5);
+    assert.deepEqual(r.validPreset, []);
+    assert.ok(r.validCustom.includes(5));
+    assert.equal(r.showsCustom, true);
+  });
+
+  it('shows custom option for large even groups', () => {
+    const r = suggestTeamCount(24, 'best_ball');
+    assert.equal(r.showsCustom, true);
+    assert.ok(r.validCustom.includes(6));
+  });
+
+  it('enforces custom team count maximum', () => {
+    assert.match(
+      validateCustomTeamCountInput('26', 52, 'best_ball') ?? '',
+      new RegExp(String(CUSTOM_TEAM_COUNT_MAX))
+    );
+  });
+
+  it('auto-assign puts every player on a team', () => {
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const teams = autoAssignMembersToTeams(ids, 3, false);
+    assert.equal(teams.length, 3);
+    const assigned = teams.flatMap((t) => t.memberIds);
+    assert.equal(assigned.length, ids.length);
+    assert.deepEqual([...assigned].sort(), [...ids].sort());
+    for (const t of teams) {
+      assert.equal(t.memberIds.length, 2);
+    }
   });
 });

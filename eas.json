@@ -12,10 +12,30 @@
       "distribution": "internal"
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "distribution": "store",
+      "env": {
+        "EXPO_PUBLIC_SUPABASE_URL": "$SUPABASE_URL",
+        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY",
+        "EXPO_PUBLIC_SUPABASE_KEY": "$SUPABASE_ANON_KEY"
+      }
+    },
+    "production-ios": {
+      "extends": "production"
+    },
+    "production-android": {
+      "extends": "production",
+      "android": {
+        "buildType": "app-bundle"
+      }
     }
   },
   "submit": {
-    "production": {}
+    "production": {},
+    "production-android": {
+      "android": {
+        "track": "internal"
+      }
+    }
   }
 }

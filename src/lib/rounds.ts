@@ -184,7 +184,7 @@ export async function fetchMyRoundsForUser(
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
     if (!supabaseUrl || !supabaseAnonKey) return null;
     const res = await fetch(
-      `${supabaseUrl}/rest/v1/rounds?user_id=eq.${encodeURIComponent(userId)}&order=played_at.asc&select=*`,
+      `${supabaseUrl}/rest/v1/rounds?user_id=eq.${encodeURIComponent(userId)}&is_active=eq.true&order=played_at.asc&select=*`,
       {
         headers: {
           apikey: supabaseAnonKey,
@@ -300,16 +300,19 @@ export async function updateRoundInSupabase(
   if (accessToken) {
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
     if (!supabaseUrl || !supabaseAnonKey) return 'Supabase not configured';
-    const res = await fetch(`${supabaseUrl}/rest/v1/rounds?id=eq.${encodeURIComponent(round.id)}`, {
-      method: 'PATCH',
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-        Prefer: 'return=minimal',
-      },
-      body: JSON.stringify(updateBody),
-    });
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/rounds?id=eq.${encodeURIComponent(round.id)}&is_active=eq.true`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(updateBody),
+      }
+    );
     if (!res.ok) {
       const raw = await res.text().catch(() => '');
       let msg = raw || res.statusText || 'Update failed';
@@ -330,7 +333,12 @@ export async function updateRoundInSupabase(
   } = await supabase.auth.getUser();
   if (!user) return 'Not signed in';
 
-  const { error } = await supabase.from('rounds').update(updateBody).eq('id', round.id).eq('user_id', user.id);
+  const { error } = await supabase
+    .from('rounds')
+    .update(updateBody)
+    .eq('id', round.id)
+    .eq('user_id', user.id)
+    .eq('is_active', true);
 
   if (error) return error.message;
   return null;
@@ -343,14 +351,19 @@ export async function deleteRoundInSupabase(
   if (accessToken) {
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
     if (!supabaseUrl || !supabaseAnonKey) return 'Supabase not configured';
-    const res = await fetch(`${supabaseUrl}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}`, {
-      method: 'DELETE',
-      headers: {
-        apikey: supabaseAnonKey,
-        Authorization: `Bearer ${accessToken}`,
-        Prefer: 'return=representation',
-      },
-    });
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/rounds?id=eq.${encodeURIComponent(roundId)}&is_active=eq.true`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=representation',
+        },
+        body: JSON.stringify({ is_active: false }),
+      }
+    );
     const rawText = await res.text().catch(() => '');
     if (!res.ok) {
       let msg = rawText || res.statusText || 'Delete failed';
@@ -363,10 +376,10 @@ export async function deleteRoundInSupabase(
       return msg;
     }
     try {
-      const deleted = JSON.parse(rawText) as unknown;
-      const rows = Array.isArray(deleted) ? deleted : [];
+      const updated = JSON.parse(rawText) as unknown;
+      const rows = Array.isArray(updated) ? updated : [];
       if (rows.length === 0) {
-        return 'No round was deleted (not found, wrong account, or RLS blocked the delete)';
+        return 'No round was deleted (not found, wrong account, or already deleted)';
       }
       return null;
     } catch {
@@ -382,22 +395,23 @@ export async function deleteRoundInSupabase(
 
   const { data, error } = await supabase
     .from('rounds')
-    .delete()
+    .update({ is_active: false })
     .eq('id', roundId)
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .select('id');
 
   if (error) return error.message;
 
-  const deleted = data ?? [];
+  const deactivated = data ?? [];
   console.log('[rounds] deleteRoundInSupabase', {
     roundId,
-    deletedRowCount: deleted.length,
-    deletedIds: deleted.map((row) => (row as { id: string }).id),
+    deactivatedRowCount: deactivated.length,
+    deactivatedIds: deactivated.map((row) => (row as { id: string }).id),
   });
 
-  if (deleted.length === 0) {
-    return 'No round was deleted (not found, wrong account, or RLS blocked the delete)';
+  if (deactivated.length === 0) {
+    return 'No round was deleted (not found, wrong account, or already deleted)';
   }
 
   return null;

@@ -286,7 +286,11 @@ export function GroupTournamentsSection({
               {previewTop3.length > 0 ? (
                 <View style={styles.preview}>
                   {previewTop3.map((p) => (
-                    <Text key={`${p.rank}-${p.name}`} style={styles.previewLine}>
+                    <Text
+                      key={`${p.rank}-${p.name}`}
+                      style={styles.previewLine}
+                      numberOfLines={1}
+                    >
                       {p.rank}. {p.name}
                     </Text>
                   ))}

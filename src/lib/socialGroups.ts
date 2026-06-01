@@ -403,7 +403,7 @@ async function fetchMySocialGroupsIntoStoreRest(uid: string, accessToken: string
   }
   const groupsRows = (await restSelectRows(
     accessToken,
-    `social_groups?id=${idInList(groupIds)}&select=id,name,created_by,created_at`
+    `social_groups?id=${idInList(groupIds)}&is_active=eq.true&select=id,name,created_by,created_at`
   )) as { id: string; name: string; created_by: string; created_at: string }[];
   const allMembers = (await restSelectRows(
     accessToken,
@@ -438,7 +438,7 @@ async function fetchMySocialGroupsIntoStoreRest(uid: string, accessToken: string
   if (userIds.length > 0) {
     roundsRows = await restSelectRows(
       accessToken,
-      `rounds?user_id=${idInList(userIds)}&select=${encodeURIComponent(ROUNDS_SELECT_FOR_SOCIAL)}&order=played_at.asc`
+      `rounds?user_id=${idInList(userIds)}&is_active=eq.true&select=${encodeURIComponent(ROUNDS_SELECT_FOR_SOCIAL)}&order=played_at.asc`
     );
   }
   applyLoadedSocialGroupData(
@@ -561,7 +561,8 @@ export async function fetchMySocialGroupsIntoStore(
   const { data: groupsRows, error: gErr } = await supabase
     .from('social_groups')
     .select('id, name, created_by, created_at')
-    .in('id', groupIds);
+    .in('id', groupIds)
+    .eq('is_active', true);
 
   if (gErr || !groupsRows?.length) {
     console.warn('[socialGroups]', gErr?.message);
@@ -614,6 +615,7 @@ export async function fetchMySocialGroupsIntoStore(
         'id, user_id, course_id, course_name, platform, gross_score, hole_scores, putting_mode, pin_placement, wind, mulligans, difficulty_modifier, differential, differential_version, raw_differential, course_rating, slope, tee_name, played_at, created_at, h2h_group_id, h2h_opponent_member_id, h2h_opponent_display_name, simcap_index_at_time'
       )
       .in('user_id', userIds)
+      .eq('is_active', true)
       .order('played_at', { ascending: true });
 
     if (rErr) {
@@ -999,10 +1001,9 @@ export async function createSocialGroup(
 }
 
 /**
- * Deletes a crew row; FK `on delete cascade` removes members, pending invites, email invites, and H2H rows.
+ * Deactivates a crew (`social_groups.is_active = false`) so it no longer appears in the app.
  *
- * Uses RPC `delete_social_group_as_creator` (migration 018): client `DELETE` + CASCADE under member RLS can
- * hang or recurse; the definer function performs one delete as owner so cascades bypass child-table RLS.
+ * Uses RPC `delete_social_group_as_creator` (soft-delete since migration 052).
  */
 export async function deleteSocialGroupAsCreator(
   groupId: string,

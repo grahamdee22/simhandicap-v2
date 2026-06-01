@@ -185,16 +185,23 @@ export function scoreToParStyle(
   return 'double_plus';
 }
 
+/** True for negative values and IEEE -0 (round1 can yield -0 for near-scratch indexes). */
+function isBelowScratchStored(n: number): boolean {
+  return n < 0 || Object.is(n, -0);
+}
+
 /** WHS-style label: plain "4.3" for typical index; "+2.1" only when value is below scratch (stored negative). */
 export function formatHandicapIndexDisplay(i: number | null | undefined): string {
   if (i == null || Number.isNaN(i) || !Number.isFinite(i)) return '—';
-  if (i < 0) return `+${Math.abs(i).toFixed(1)}`;
-  return i.toFixed(1);
+  const rounded = round1(i);
+  if (isBelowScratchStored(rounded)) return `+${Math.abs(rounded).toFixed(1)}`;
+  return rounded.toFixed(1);
 }
 
 /** Differential display: show "+" for values stored negative (e.g. -10.9 -> +10.9). */
 export function formatDifferentialDisplay(v: number | null | undefined): string {
   if (v == null || Number.isNaN(v) || !Number.isFinite(v)) return '—';
-  if (v < 0) return `+${Math.abs(v).toFixed(1)}`;
-  return v.toFixed(1);
+  const rounded = round1(v);
+  if (isBelowScratchStored(rounded)) return `+${Math.abs(rounded).toFixed(1)}`;
+  return rounded.toFixed(1);
 }

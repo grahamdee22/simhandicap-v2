@@ -30,6 +30,10 @@ import {
   formatPairingStatusLabel,
   type DbLeagueMatchPairingRow,
 } from '../../../src/lib/matchPlayTournamentPairings';
+import {
+  formatTeamMemberSummary,
+  isTeamLeagueFormat,
+} from '../../../src/lib/leagueStandings';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
@@ -116,6 +120,18 @@ export default function LeagueManageScreen() {
     return m;
   }, [group?.members]);
 
+  const teamRoster = useMemo(() => {
+    if (!bundle || !isTeamLeagueFormat(bundle.league.format)) return [];
+    return [...bundle.teams]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((t) => {
+        const members = bundle.entries
+          .filter((e) => e.league_team_id === t.id)
+          .map((e) => displayNames[e.user_id] ?? 'Player');
+        return { id: t.id, name: t.name, members };
+      });
+  }, [bundle, displayNames]);
+
   const onDelete = async () => {
     const ok = await confirmDestructive(
       'Delete tournament?',
@@ -174,6 +190,33 @@ export default function LeagueManageScreen() {
           <Text style={styles.outlineBtnTxt}>Save end date</Text>
         </Pressable>
 
+        {teamRoster.length > 0 ? (
+          <View style={styles.teamSection}>
+            <Text style={styles.lbl}>Teams ({teamRoster.length})</Text>
+            <Text style={styles.helper}>
+              Rosters are set when the tournament is created. To change teams, create a new
+              tournament.
+            </Text>
+            <View style={styles.teamRosterCard}>
+              {teamRoster.map((t, i) => (
+                <View
+                  key={t.id}
+                  style={[styles.teamRosterRow, i === 0 && styles.teamRosterRowFirst]}
+                >
+                  <Text style={styles.teamRosterName} numberOfLines={1}>
+                    {t.name}
+                  </Text>
+                  <Text style={styles.teamRosterMembers} numberOfLines={2}>
+                    {t.members.length > 0
+                      ? formatTeamMemberSummary(t.members)
+                      : 'No players assigned'}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
+
         {bundle.league.format === 'match_play' ? (
           <View style={{ marginTop: 24 }}>
             <Text style={styles.lbl}>Match pairings</Text>
@@ -230,7 +273,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   outlineBtnTxt: { color: colors.accentDark, fontWeight: '700' },
-  helper: { fontSize: 13, color: colors.muted, marginBottom: 8 },
+  helper: { fontSize: 13, color: colors.muted, marginBottom: 8, lineHeight: 18 },
+  teamSection: { marginTop: 24 },
+  teamRosterCard: {
+    backgroundColor: '#f0f7f3',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  teamRosterRow: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  teamRosterRowFirst: { borderTopWidth: 0 },
+  teamRosterName: { fontSize: 14, fontWeight: '700', color: colors.ink },
+  teamRosterMembers: { fontSize: 12, color: colors.muted, marginTop: 4, lineHeight: 17 },
   pairingLine: { fontSize: 14, color: colors.ink, marginBottom: 6 },
   dangerBtn: {
     marginTop: 32,

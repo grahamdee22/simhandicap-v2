@@ -207,6 +207,12 @@ function teamById(teams: DbLeagueTeamRow[]): Map<string, DbLeagueTeamRow> {
   return new Map(teams.map((t) => [t.id, t]));
 }
 
+export function isTeamLeagueFormat(format: LeagueFormat): boolean {
+  return format === 'scramble' || format === 'best_ball';
+}
+
+export { formatTeamMemberSummary } from './teamRosterDisplay';
+
 export function formatLeagueFormatLabel(format: LeagueFormat): string {
   switch (format) {
     case 'stroke':

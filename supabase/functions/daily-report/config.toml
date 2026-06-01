@@ -1,0 +1,2 @@
+[functions.daily-report]
+schedule = "0 9 * * *"

@@ -35,6 +35,17 @@ import {
   type ScrambleTeamDraft,
 } from '../../../src/lib/scrambleTournament';
 import { TOURNAMENT_FORMAT_COPY } from '../../../src/lib/tournamentFormatCopy';
+import {
+  autoAssignMembersToTeams,
+  createEmptyTeams,
+  CUSTOM_TEAM_COUNT_MAX,
+  CUSTOM_TEAM_COUNT_MIN,
+  describeTeamCountOption,
+  PRESET_TEAM_COUNT_OPTIONS,
+  suggestTeamCount,
+  validateCustomTeamCountInput,
+  type TeamFormat,
+} from '../../../src/lib/tournamentTeamCount';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
@@ -44,7 +55,7 @@ function ymd(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
-type WizardStep = 'basic' | 'settings' | 'teams' | 'review';
+type WizardStep = 'basic' | 'teamCount' | 'settings' | 'teams' | 'review';
 
 function defaultEndDate(): Date {
   const d = new Date();
@@ -52,14 +63,8 @@ function defaultEndDate(): Date {
   return d;
 }
 
-function initialTeams(): ScrambleTeamDraft[] {
-  return [
-    { id: 't1', name: 'Team 1', memberIds: [] as string[], designatedScorerUserId: null },
-    { id: 't2', name: 'Team 2', memberIds: [] as string[], designatedScorerUserId: null },
-  ];
-}
-
 const DEFAULT_USE_HANDICAP = true;
+const DEFAULT_TEAM_COUNT = 2;
 
 function isTeamFormat(key: LeagueFormat): boolean {
   return key === 'scramble' || key === 'best_ball';
@@ -86,7 +91,11 @@ export default function LeagueCreateScreen() {
   const [scrambleHandicapOverride, setScrambleHandicapOverride] = useState('');
   const [useHandicap, setUseHandicap] = useState(DEFAULT_USE_HANDICAP);
   const [notes, setNotes] = useState('');
-  const [teams, setTeams] = useState(initialTeams);
+  const [teamCount, setTeamCount] = useState(DEFAULT_TEAM_COUNT);
+  const [teamCountMode, setTeamCountMode] = useState<'preset' | 'custom'>('preset');
+  const [customTeamInput, setCustomTeamInput] = useState('');
+  const [customTeamExpanded, setCustomTeamExpanded] = useState(false);
+  const [teams, setTeams] = useState(() => createEmptyTeams(DEFAULT_TEAM_COUNT));
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [assignedMemberAction, setAssignedMemberAction] = useState<{
     userId: string;
@@ -107,7 +116,11 @@ export default function LeagueCreateScreen() {
     setRoundsThatCount(4);
     setScrambleHandicapOverride('');
     setUseHandicap(DEFAULT_USE_HANDICAP);
-    setTeams(initialTeams());
+    setTeamCount(DEFAULT_TEAM_COUNT);
+    setTeamCountMode('preset');
+    setCustomTeamInput('');
+    setCustomTeamExpanded(false);
+    setTeams(createEmptyTeams(DEFAULT_TEAM_COUNT));
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
     setBusy(false);
@@ -142,6 +155,25 @@ export default function LeagueCreateScreen() {
   const isBestBall = format === 'best_ball';
 
   const needsTeams = isTeamFormat(format);
+  const teamFormat = needsTeams ? (format as TeamFormat) : null;
+  const teamCountSuggestion = useMemo(
+    () => (teamFormat ? suggestTeamCount(members.length, teamFormat) : null),
+    [teamFormat, members.length]
+  );
+  const customTeamCountError = useMemo(() => {
+    if (!teamFormat || teamCountMode !== 'custom') return null;
+    return validateCustomTeamCountInput(customTeamInput, members.length, teamFormat);
+  }, [teamFormat, teamCountMode, customTeamInput, members.length]);
+
+  const teamCountValid = useMemo(() => {
+    if (!teamFormat || !teamCountSuggestion) return false;
+    if (teamCountMode === 'custom') {
+      return customTeamCountError === null && customTeamInput.trim().length > 0;
+    }
+    return teamCountSuggestion.validPreset.includes(
+      teamCount as (typeof PRESET_TEAM_COUNT_OPTIONS)[number]
+    );
+  }, [teamFormat, teamCountSuggestion, teamCountMode, customTeamCountError, customTeamInput, teamCount]);
   const bracketEligible = isBracketPlayerCount(members.length);
 
   const seededUserIds = useMemo(
@@ -159,9 +191,57 @@ export default function LeagueCreateScreen() {
     [members, assignedMemberIds]
   );
   const stepSequence = useMemo((): WizardStep[] => {
-    if (needsTeams) return ['basic', 'settings', 'teams', 'review'];
+    if (needsTeams) return ['basic', 'teamCount', 'settings', 'teams', 'review'];
     return ['basic', 'settings', 'review'];
   }, [needsTeams]);
+
+  const applyTeamCount = useCallback((count: number) => {
+    setTeamCount(count);
+    setTeams(createEmptyTeams(count));
+    setSelectedMemberId(null);
+    setAssignedMemberAction(null);
+  }, []);
+
+  const selectPresetTeamCount = useCallback(
+    (count: number) => {
+      setTeamCountMode('preset');
+      setCustomTeamExpanded(false);
+      applyTeamCount(count);
+    },
+    [applyTeamCount]
+  );
+
+  const openCustomTeamCount = useCallback(
+    (defaultCount: number) => {
+      setTeamCountMode('custom');
+      setCustomTeamExpanded(true);
+      const n = Math.min(
+        CUSTOM_TEAM_COUNT_MAX,
+        Math.max(CUSTOM_TEAM_COUNT_MIN, defaultCount)
+      );
+      setCustomTeamInput(String(n));
+      applyTeamCount(n);
+    },
+    [applyTeamCount]
+  );
+
+  useEffect(() => {
+    if (!teamFormat || !teamCountSuggestion || teamCountMode === 'custom') return;
+    const { validPreset, suggested, validCustom } = teamCountSuggestion;
+    if (validPreset.length === 0 && validCustom.length > 0) {
+      setTeamCountMode('custom');
+      setCustomTeamExpanded(true);
+      const n = teamCountSuggestion.suggestedCustomDefault;
+      setCustomTeamInput(String(n));
+      applyTeamCount(n);
+      return;
+    }
+    if (validPreset.length === 0) return;
+    const preset = teamCount as (typeof PRESET_TEAM_COUNT_OPTIONS)[number];
+    if (!validPreset.includes(preset)) {
+      applyTeamCount(suggested);
+    }
+  }, [teamFormat, teamCountSuggestion, teamCount, teamCountMode, applyTeamCount]);
 
   const stepNumber = Math.max(1, stepSequence.indexOf(step) + 1);
   const totalSteps = stepSequence.length;
@@ -202,22 +282,18 @@ export default function LeagueCreateScreen() {
     return memberIds[0] ?? null;
   };
 
-  const onAutoBalance = () => {
-    const sorted = [...members].sort((a, b) => (a.index ?? 99) - (b.index ?? 99));
-    const next: ScrambleTeamDraft[] = teams.map((t) => ({
-      ...t,
-      memberIds: [] as string[],
-      designatedScorerUserId: null as string | null,
-    }));
-    sorted.forEach((m, i) => {
-      next[i % next.length].memberIds.push(m.userId);
-    });
-    if (isScramble) {
-      for (const t of next) {
-        t.designatedScorerUserId = t.memberIds[0] ?? null;
-      }
-    }
-    setTeams(next);
+  const onAutoAssignTeams = () => {
+    const next = autoAssignMembersToTeams(
+      members.map((m) => m.userId),
+      teamCount,
+      isScramble
+    );
+    setTeams(
+      next.map((t, i) => ({
+        ...t,
+        name: teams[i]?.name ?? t.name,
+      }))
+    );
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
   };
@@ -262,11 +338,8 @@ export default function LeagueCreateScreen() {
 
   const onLaunch = async () => {
     if (!user?.id || !group) return;
-    if (needsTeams && emptyTeams.length > 0) {
-      showAppAlert(
-        'Empty teams',
-        `Delete ${emptyTeams.length} empty team${emptyTeams.length === 1 ? '' : 's'} before launching.`
-      );
+    if (needsTeams && !teamsStepCanContinue) {
+      showAppAlert('Invalid teams', 'Assign every player to a team with at least 2 per team.');
       return;
     }
     if (isMatchPlay && !bracketEligible) {
@@ -414,7 +487,27 @@ export default function LeagueCreateScreen() {
                     disabled && styles.formatCardDisabled,
                   ]}
                   disabled={disabled}
-                  onPress={() => setFormat(f.key)}
+                  onPress={() => {
+                    setFormat(f.key);
+                    if (isTeamFormat(f.key)) {
+                      const suggestion = suggestTeamCount(members.length, f.key as TeamFormat);
+                      setTeamCountMode('preset');
+                      setCustomTeamExpanded(false);
+                      setCustomTeamInput('');
+                      if (
+                        suggestion.validPreset.length === 0 &&
+                        suggestion.validCustom.length > 0
+                      ) {
+                        setTeamCountMode('custom');
+                        setCustomTeamExpanded(true);
+                        const n = suggestion.suggestedCustomDefault;
+                        setCustomTeamInput(String(n));
+                        applyTeamCount(n);
+                      } else {
+                        applyTeamCount(suggestion.suggested);
+                      }
+                    }
+                  }}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.formatTitle, disabled && styles.formatTitleDisabled]}>
@@ -437,6 +530,156 @@ export default function LeagueCreateScreen() {
             <Pressable
               style={[styles.primaryBtn, !name.trim() && styles.btnDisabled]}
               disabled={!name.trim()}
+              onPress={() => {
+                if (needsTeams && teamCountSuggestion) {
+                  setTeamCountMode('preset');
+                  setCustomTeamExpanded(false);
+                  setCustomTeamInput('');
+                  if (
+                    teamCountSuggestion.validPreset.length === 0 &&
+                    teamCountSuggestion.validCustom.length > 0
+                  ) {
+                    setTeamCountMode('custom');
+                    setCustomTeamExpanded(true);
+                    const n = teamCountSuggestion.suggestedCustomDefault;
+                    setCustomTeamInput(String(n));
+                    applyTeamCount(n);
+                  } else {
+                    applyTeamCount(teamCountSuggestion.suggested);
+                  }
+                  goToStep('teamCount');
+                } else {
+                  goToStep('settings');
+                }
+              }}
+            >
+              <Text style={styles.primaryBtnTxt}>Continue</Text>
+            </Pressable>
+          </>
+        ) : null}
+
+        {step === 'teamCount' && needsTeams && teamFormat && teamCountSuggestion ? (
+          <>
+            <Text style={styles.head}>Number of teams</Text>
+            <Text style={styles.helper}>
+              {members.length} players in this group. Choose how many teams to split into — you
+              can assign players on the next step.
+            </Text>
+            {teamCountSuggestion.alternateHint ? (
+              <Text style={styles.helper}>{teamCountSuggestion.alternateHint}</Text>
+            ) : null}
+            {PRESET_TEAM_COUNT_OPTIONS.map((count) => {
+              const on = teamCountMode === 'preset' && teamCount === count;
+              const { title, sub, disabled } = describeTeamCountOption(
+                members.length,
+                count,
+                teamFormat
+              );
+              const isSuggested =
+                !disabled &&
+                teamCountMode !== 'custom' &&
+                teamCountSuggestion.suggested === count;
+              return (
+                <Pressable
+                  key={count}
+                  style={[
+                    styles.formatCard,
+                    on && !disabled && styles.formatCardOn,
+                    disabled && styles.formatCardDisabled,
+                  ]}
+                  disabled={disabled}
+                  onPress={() => selectPresetTeamCount(count)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.formatTitle, disabled && styles.formatTitleDisabled]}>
+                      {title}
+                    </Text>
+                    <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>
+                      {sub}
+                    </Text>
+                    {isSuggested ? (
+                      <Text style={styles.formatSuggestedNote}>Suggested</Text>
+                    ) : null}
+                  </View>
+                  {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                </Pressable>
+              );
+            })}
+            {teamCountSuggestion.showsCustom ? (
+              <>
+                <Pressable
+                  style={[
+                    styles.formatCard,
+                    teamCountMode === 'custom' && styles.formatCardOn,
+                  ]}
+                  onPress={() => openCustomTeamCount(teamCountSuggestion.suggestedCustomDefault)}
+                >
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.formatTitle}>Custom</Text>
+                    <Text style={styles.formatSub}>
+                      {CUSTOM_TEAM_COUNT_MIN}–{CUSTOM_TEAM_COUNT_MAX} teams
+                    </Text>
+                    {teamCountSuggestion.suggested >= CUSTOM_TEAM_COUNT_MIN &&
+                    (teamCountSuggestion.validPreset.length === 0 ||
+                      teamCountSuggestion.suggested > 4) ? (
+                      <Text style={styles.formatSuggestedNote}>Suggested</Text>
+                    ) : null}
+                  </View>
+                  {teamCountMode === 'custom' && !customTeamCountError ? (
+                    <IconCheckmark size={20} color={colors.accent} />
+                  ) : null}
+                </Pressable>
+                {customTeamExpanded && teamCountMode === 'custom' ? (
+                  <View style={styles.customTeamInputBlock}>
+                    <Text style={styles.lbl}>Number of teams</Text>
+                    <TextInput
+                      style={styles.input}
+                      value={customTeamInput}
+                      onChangeText={(v) => {
+                        setCustomTeamInput(v);
+                        const err = validateCustomTeamCountInput(
+                          v,
+                          members.length,
+                          teamFormat
+                        );
+                        const n = err ? null : Number(v.trim());
+                        if (n != null) applyTeamCount(n);
+                      }}
+                      placeholder={`${CUSTOM_TEAM_COUNT_MIN}–${CUSTOM_TEAM_COUNT_MAX}`}
+                      placeholderTextColor={colors.subtle}
+                      keyboardType="number-pad"
+                      maxLength={2}
+                    />
+                    {customTeamCountError ? (
+                      <Text style={styles.helper}>{customTeamCountError}</Text>
+                    ) : customTeamInput.trim() ? (
+                      <Text style={styles.helper}>
+                        {describeTeamCountOption(
+                          members.length,
+                          teamCount,
+                          teamFormat
+                        ).sub}
+                      </Text>
+                    ) : (
+                      <Text style={styles.helper}>
+                        Enter how many teams to create (max {CUSTOM_TEAM_COUNT_MAX}).
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
+              </>
+            ) : null}
+            {teamCountSuggestion.validPreset.length === 0 &&
+            teamCountSuggestion.validCustom.length === 0 ? (
+              <Text style={styles.helper}>
+                {isScramble
+                  ? 'Scramble requires equal team sizes. Try adding or removing a player to enable team options.'
+                  : 'This group size cannot be split evenly into teams with at least 2 players each.'}
+              </Text>
+            ) : null}
+            <Pressable
+              style={[styles.primaryBtn, !teamCountValid && styles.btnDisabled]}
+              disabled={!teamCountValid}
               onPress={() => goToStep('settings')}
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
@@ -579,8 +822,8 @@ export default function LeagueCreateScreen() {
                   ? 'Each player logs their own round. The best score on each hole counts for the team. Standings update as teammates submit.'
                   : 'Select an unassigned player, then add them to a team. Tap someone on a team to remove or move them.'}
             </Text>
-            <Pressable style={styles.outlineBtn} onPress={onAutoBalance}>
-              <Text style={styles.outlineBtnTxt}>Auto-balance</Text>
+            <Pressable style={styles.outlineBtn} onPress={onAutoAssignTeams}>
+              <Text style={styles.outlineBtnTxt}>Auto-assign teams</Text>
             </Pressable>
 
             <Text style={styles.sectionLbl}>Unassigned players</Text>
@@ -613,14 +856,6 @@ export default function LeagueCreateScreen() {
                       setTeams((prev) => prev.map((x) => (x.id === t.id ? { ...x, name: v } : x)))
                     }
                   />
-                  {t.memberIds.length === 0 && teams.length > 2 ? (
-                    <Pressable
-                      style={styles.deleteTeamBtn}
-                      onPress={() => setTeams((prev) => prev.filter((x) => x.id !== t.id))}
-                    >
-                      <Text style={styles.deleteTeamBtnTxt}>Delete</Text>
-                    </Pressable>
-                  ) : null}
                 </View>
                 {selectedMemberId && unassignedMembers.some((m) => m.userId === selectedMemberId) ? (
                   <Pressable
@@ -721,29 +956,7 @@ export default function LeagueCreateScreen() {
                 ) : null}
               </View>
             ))}
-            {!allAssigned ? (
-              <Pressable
-                style={styles.outlineBtn}
-                onPress={() =>
-                  setTeams((prev) => [
-                    ...prev,
-                    {
-                      id: `t${Date.now()}`,
-                      name: `Team ${prev.length + 1}`,
-                      memberIds: [],
-                      designatedScorerUserId: null,
-                    },
-                  ])
-                }
-              >
-                <Text style={styles.outlineBtnTxt}>Add team +</Text>
-              </Pressable>
-            ) : null}
-            {emptyTeams.length > 0 ? (
-              <Text style={styles.helper}>
-                Delete empty teams before continuing ({emptyTeams.length} empty).
-              </Text>
-            ) : !teamsStepCanContinue && allAssigned ? (
+            {!teamsStepCanContinue && allAssigned ? (
               <Text style={styles.helper}>Each team needs at least 2 players.</Text>
             ) : null}
             <Pressable
@@ -771,6 +984,11 @@ export default function LeagueCreateScreen() {
               </Text>
               {notes.trim() ? (
                 <Text style={styles.summaryMeta}>Notes: {notes.trim()}</Text>
+              ) : null}
+              {needsTeams ? (
+                <Text style={styles.summaryMeta}>
+                  {teamCount} teams · {members.length} players
+                </Text>
               ) : null}
               {needsTeams
                 ? teams.map((t) => {
@@ -856,6 +1074,17 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.subtle,
     marginTop: 8,
+  },
+  formatSuggestedNote: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.sage,
+    marginTop: 8,
+  },
+  customTeamInputBlock: {
+    marginTop: -4,
+    marginBottom: 10,
+    paddingHorizontal: 4,
   },
   sectionLbl: {
     fontSize: 12,

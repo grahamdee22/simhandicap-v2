@@ -27,7 +27,9 @@ import {
   computeLeagueStandings,
   formatLeagueDateRange,
   formatLeagueFormatLabel,
+  formatTeamMemberSummary,
   isLeagueActive,
+  isTeamLeagueFormat,
   leagueDaysRemaining,
 } from '../../../src/lib/leagueStandings';
 import { useResponsive } from '../../../src/lib/responsive';
@@ -185,7 +187,9 @@ export default function LeagueDetailScreen() {
   const completed = league.status === 'completed' || !isLeagueActive(league);
   const isBracketMp = league.format === 'match_play' && league.match_play_pairing_method === 'bracket';
   const isLegacyMp = league.format === 'match_play' && !isBracketMp;
+  const isTeamLeague = isTeamLeagueFormat(league.format);
   const playerCount = bundle.entries.length;
+  const teamCount = bundle.teams.length;
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -270,28 +274,61 @@ export default function LeagueDetailScreen() {
 
         {completed && !isBracketMp ? (
           <View style={styles.podium}>
+            {standings.length > 3 ? (
+              <Text style={styles.podiumHint}>
+                Top 3 of {standings.length} {isTeamLeague ? 'teams' : 'players'} — full standings
+                below
+              </Text>
+            ) : null}
             {standings[0] ? (
               <View style={[styles.trophyCard, styles.trophyCardGold]}>
                 <Text style={styles.trophyEmoji}>🏆</Text>
-                <Text style={styles.trophyTitle}>{standings[0].displayName}</Text>
+                <Text style={styles.trophyTitle} numberOfLines={2}>
+                  {standings[0].displayName}
+                </Text>
                 <Text style={styles.trophySub}>Tournament champion</Text>
+                {isTeamLeague && standings[0].memberNames.length > 0 ? (
+                  <Text style={styles.trophyMembers} numberOfLines={2}>
+                    {formatTeamMemberSummary(standings[0].memberNames)}
+                  </Text>
+                ) : null}
               </View>
             ) : null}
             {standings[1] ? (
               <View style={[styles.trophyCard, styles.trophyCardSilver]}>
                 <Text style={styles.trophyEmoji}>🥈</Text>
-                <Text style={styles.trophyTitle}>{standings[1].displayName}</Text>
+                <Text style={styles.trophyTitle} numberOfLines={2}>
+                  {standings[1].displayName}
+                </Text>
                 <Text style={styles.trophySub}>2nd place</Text>
+                {isTeamLeague && standings[1].memberNames.length > 0 ? (
+                  <Text style={styles.trophyMembers} numberOfLines={2}>
+                    {formatTeamMemberSummary(standings[1].memberNames)}
+                  </Text>
+                ) : null}
               </View>
             ) : null}
             {standings[2] ? (
               <View style={[styles.trophyCard, styles.trophyCardBronze]}>
                 <Text style={styles.trophyEmoji}>🥉</Text>
-                <Text style={styles.trophyTitle}>{standings[2].displayName}</Text>
+                <Text style={styles.trophyTitle} numberOfLines={2}>
+                  {standings[2].displayName}
+                </Text>
                 <Text style={styles.trophySub}>3rd place</Text>
+                {isTeamLeague && standings[2].memberNames.length > 0 ? (
+                  <Text style={styles.trophyMembers} numberOfLines={2}>
+                    {formatTeamMemberSummary(standings[2].memberNames)}
+                  </Text>
+                ) : null}
               </View>
             ) : null}
           </View>
+        ) : null}
+
+        {!completed && isTeamLeague && teamCount > 0 ? (
+          <Text style={styles.standingsMeta}>
+            {teamCount} teams · {playerCount} players
+          </Text>
         ) : null}
 
         {league.format !== 'match_play' || isLegacyMp ? (
@@ -325,7 +362,9 @@ export default function LeagueDetailScreen() {
             <>
               <View style={styles.tableHead}>
                 <Text style={[styles.th, styles.colRank]}>#</Text>
-                <Text style={[styles.th, styles.colName]}>Player</Text>
+                <Text style={[styles.th, styles.colName]}>
+                  {isTeamLeague ? 'Team' : 'Player'}
+                </Text>
                 <Text style={[styles.th, styles.colR]}>Rds</Text>
                 {league.format === 'scramble' || league.format === 'best_ball' ? (
                   <>
@@ -337,18 +376,29 @@ export default function LeagueDetailScreen() {
                 )}
               </View>
               {standings.map((s) => (
-                <View key={s.entryId} style={styles.tr}>
+                <View
+                  key={s.entryId}
+                  style={[styles.tr, s.isTeam && styles.trTeam]}
+                >
                   <Text style={[styles.td, styles.colRank]}>{s.rank}</Text>
                   <View style={[styles.colName, styles.nameCol]}>
-                    <Text style={styles.tdName}>{s.displayName}</Text>
+                    <Text style={styles.tdName} numberOfLines={2}>
+                      {s.displayName}
+                    </Text>
                 {s.isTeam && s.memberNames.length > 0 ? (
-                  <Text style={styles.tdSub}>{s.memberNames.join(', ')}</Text>
+                  <Text style={styles.tdSub} numberOfLines={2}>
+                    {formatTeamMemberSummary(s.memberNames)}
+                  </Text>
                 ) : null}
                 {s.isTeam && s.designatedScorerName ? (
-                  <Text style={styles.tdSub}>Scorer: {s.designatedScorerName}</Text>
+                  <Text style={styles.tdSub} numberOfLines={1}>
+                    Scorer: {s.designatedScorerName}
+                  </Text>
                 ) : null}
                 {s.isTeam && s.hasPartialPending ? (
-                  <Text style={styles.tdPartial}>Partial — waiting on teammates</Text>
+                  <Text style={styles.tdPartial} numberOfLines={2}>
+                    Partial — waiting on teammates
+                  </Text>
                 ) : null}
                   </View>
                   <Text style={[styles.td, styles.colR]}>{s.roundsPlayed}</Text>
@@ -470,6 +520,18 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   podium: { gap: 10, marginBottom: 16 },
+  podiumHint: {
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
+    marginBottom: 4,
+  },
+  standingsMeta: {
+    fontSize: 12,
+    color: colors.muted,
+    marginBottom: 10,
+    lineHeight: 17,
+  },
   trophyCard: {
     borderRadius: 12,
     padding: 20,
@@ -488,8 +550,21 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   trophyEmoji: { fontSize: 36 },
-  trophyTitle: { fontSize: 20, fontWeight: '700', color: colors.ink, marginTop: 8 },
+  trophyTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: colors.ink,
+    marginTop: 8,
+    textAlign: 'center',
+  },
   trophySub: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  trophyMembers: {
+    fontSize: 12,
+    color: colors.muted,
+    marginTop: 8,
+    textAlign: 'center',
+    lineHeight: 17,
+  },
   tableCard: {
     backgroundColor: '#f0f7f3',
     borderRadius: 12,
@@ -507,6 +582,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     alignItems: 'center',
   },
+  trTeam: { alignItems: 'flex-start', paddingVertical: 12 },
   td: { fontSize: 13, color: colors.ink },
   tdName: { fontSize: 14, fontWeight: '600', color: colors.ink },
   tdSub: { fontSize: 11, color: colors.muted, marginTop: 2 },
