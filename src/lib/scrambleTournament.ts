@@ -11,17 +11,13 @@ export type ScrambleTeamDraft = {
   designatedScorerUserId: string | null;
 };
 
-/** PRD §6.6 — scramble teams must have an even number of players (min 2). */
+/** Scramble teams need at least 2 players (same minimum as Best Ball). */
 export function validateScrambleTeamSizes(
   teams: { name: string; memberIds: string[] }[]
 ): string | null {
   for (const t of teams) {
-    const n = t.memberIds.length;
-    if (n < 2) {
+    if (t.memberIds.length < 2) {
       return `${t.name} needs at least 2 players for Scramble.`;
-    }
-    if (n % 2 !== 0) {
-      return `${t.name} must have an even number of players (Scramble requires pairs).`;
     }
   }
   return null;

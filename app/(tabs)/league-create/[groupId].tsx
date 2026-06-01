@@ -710,9 +710,8 @@ export default function LeagueCreateScreen() {
             ) : null}
             {!teamSizeSuggestion.hasAnyValid ? (
               <Text style={styles.helper}>
-                {isScramble
-                  ? 'Scramble requires equal team sizes. Try adding or removing a player to enable team options.'
-                  : 'This group size cannot be split evenly into teams with at least 2 players each.'}
+                This group size cannot be split evenly into teams with at least 2 players each. Try
+                adding or removing a player to enable team options.
               </Text>
             ) : null}
             <Pressable
@@ -855,7 +854,7 @@ export default function LeagueCreateScreen() {
             <Text style={styles.head}>Assign Teams</Text>
             <Text style={styles.helper}>
               {isScramble
-                ? 'Scramble requires even-sized teams (2, 4, 6…). Pick one designated scorer per team — only they log team rounds.'
+                ? 'Assign every player to a team (at least 2 per team). Pick one designated scorer per team — only they log team rounds.'
                 : isBestBall
                   ? 'Each player logs their own round. The best score on each hole counts for the team. Standings update as teammates submit.'
                   : 'Select an unassigned player, then add them to a team. Tap someone on a team to remove or move them.'}

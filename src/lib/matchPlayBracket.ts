@@ -7,15 +7,13 @@ import {
   bracketHalvedResultLine,
 } from './matchPlayBracketCopy';
 import {
-  bracketSizeForPlayers,
+  bracketRoundPlan,
   getMatchPlayFormatDisabledMessage,
   isMatchPlayBracketEligible,
   MATCH_PLAY_MAX_PLAYERS,
   MATCH_PLAY_MIN_PLAYERS,
   MATCH_PLAY_ODD_PLAYERS_ERROR,
   MATCH_PLAY_TOO_MANY_PLAYERS_ERROR,
-  slotsInBracketRound,
-  totalBracketRounds,
 } from './matchPlayBracketLogic';
 import { formatPairingResultLine, pairingPlayerNames } from './matchPlayPairingDisplay';
 import type {
@@ -113,13 +111,7 @@ function orderedBracketRounds(
   roundsPresent: Set<BracketRound>,
   playerCount: number
 ): BracketRound[] {
-  const bracketSize = bracketSizeForPlayers(playerCount);
-  const total = totalBracketRounds(bracketSize);
-  const canonical: BracketRound[] = [];
-  for (let i = 0; i < total; i++) {
-    const id = (i >= total - 1 ? 'final' : `r${i + 1}`) as BracketRound;
-    canonical.push(id);
-  }
+  const canonical = bracketRoundPlan(playerCount).map((p) => p.roundId as BracketRound);
   if (roundsPresent.has('semifinal') && !canonical.includes('semifinal')) {
     canonical.splice(Math.max(0, canonical.length - 1), 0, 'semifinal');
   }
@@ -242,14 +234,14 @@ export function buildBracketViewModel(params: {
         null
       : null;
 
-  const bracketSize = bracketSizeForPlayers(playerCount);
-  const r1Slots = slotsInBracketRound(bracketSize, 0);
+  const r1Plan = bracketRoundPlan(playerCount)[0];
   const r1PairingCount = pairings.filter((p) => p.bracket_round === 'r1').length;
   const showBye =
-    playerCount < bracketSize &&
-    currentBracketRound === 'r1' &&
-    r1PairingCount < r1Slots &&
-    !pairings.some((p) => p.bracket_round === 'final');
+    currentBracketRound != null &&
+    currentBracketRound !== 'r1' &&
+    currentBracketRound !== 'final' &&
+    r1Plan != null &&
+    r1PairingCount >= r1Plan.matchCount;
 
   let byeSeed1Name: string | null = null;
   if (showBye) {

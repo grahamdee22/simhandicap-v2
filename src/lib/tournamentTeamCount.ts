@@ -40,7 +40,6 @@ export function isValidPlayersPerTeam(
   if (playerCount % playersPerTeam !== 0) return false;
   const teamCount = playerCount / playersPerTeam;
   if (teamCount < 2 || teamCount > MAX_TEAM_COUNT) return false;
-  if (format === 'scramble' && playersPerTeam % 2 !== 0) return false;
   return true;
 }
 
@@ -97,13 +96,6 @@ export function describePlayersPerTeamOption(
       return {
         title,
         sub: `Maximum is ${MAX_TEAM_COUNT} teams (${playersPerTeam} per team is too few teams).`,
-        disabled: true,
-      };
-    }
-    if (format === 'scramble' && playersPerTeam % 2 !== 0) {
-      return {
-        title,
-        sub: 'Scramble needs an even number of players per team.',
         disabled: true,
       };
     }
@@ -236,9 +228,6 @@ export function validateCustomPlayersPerTeamInput(
     const teamCount = playerCount / pp;
     if (teamCount < 2) return 'Need at least 2 teams.';
     if (teamCount > MAX_TEAM_COUNT) return `Maximum is ${MAX_TEAM_COUNT} teams.`;
-    if (format === 'scramble' && pp % 2 !== 0) {
-      return 'Scramble needs an even number of players per team.';
-    }
   }
   return null;
 }

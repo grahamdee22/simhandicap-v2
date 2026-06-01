@@ -51,10 +51,14 @@ describe('reconcileGrossWithHoles', () => {
 });
 
 describe('scramble validation', () => {
-  it('rejects odd team sizes', () => {
+  it('requires at least two players per team', () => {
     assert.match(
-      validateScrambleTeamSizes([{ name: 'A', memberIds: ['1', '2', '3'] }]) ?? '',
-      /even/
+      validateScrambleTeamSizes([{ name: 'A', memberIds: ['1'] }]) ?? '',
+      /at least 2/
+    );
+    assert.equal(
+      validateScrambleTeamSizes([{ name: 'A', memberIds: ['1', '2', '3'] }]),
+      null
     );
   });
 
@@ -262,12 +266,14 @@ describe('tournament players per team', () => {
     assert.equal(four.sub, unevenSplitMessage(10, 4));
   });
 
-  it('rejects odd per-team sizes for scramble', () => {
-    assert.equal(isValidPlayersPerTeam(9, 3, 'scramble'), false);
-    assert.equal(isValidPlayersPerTeam(6, 2, 'scramble'), true);
-    assert.equal(isValidTeamSplit(9, 3, 'scramble'), false);
-    assert.equal(isValidTeamSplit(6, 3, 'scramble'), true);
-    assert.deepEqual(validPresetPlayersPerTeam(9, 'scramble'), []);
+  it('uses same per-team rules for scramble as best ball', () => {
+    assert.equal(isValidPlayersPerTeam(9, 3, 'scramble'), true);
+    assert.equal(isValidPlayersPerTeam(10, 5, 'scramble'), true);
+    assert.equal(isValidPlayersPerTeam(10, 5, 'best_ball'), true);
+    assert.deepEqual(validPresetPlayersPerTeam(9, 'scramble'), [3]);
+    assert.deepEqual(validPresetPlayersPerTeam(10, 'scramble'), [2, 5]);
+    const r = suggestPlayersPerTeam(10, 'scramble');
+    assert.ok(r.validPreset.includes(5));
   });
 
   it('suggests 5 per team for 25 players via preset', () => {

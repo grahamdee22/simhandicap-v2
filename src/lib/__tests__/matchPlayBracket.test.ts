@@ -15,9 +15,10 @@ import {
 } from '../matchPlayBracket';
 import type { BracketEntry } from '../matchPlayBracket';
 import {
+  bracketAdvancePairings,
   bracketR1Slots,
-  bracketSeedOrder,
-  bracketSizeForPlayers,
+  bracketRoundPlan,
+  totalBracketRounds,
 } from '../matchPlayBracketLogic';
 import type { DbLeagueMatchPairingRow } from '../matchPlayPairingTypes';
 
@@ -63,15 +64,66 @@ describe('match play bracket eligibility', () => {
 });
 
 describe('bracket layout', () => {
-  it('uses balanced seed order for 8', () => {
-    assert.deepEqual(bracketSeedOrder(8), [1, 8, 4, 5, 2, 7, 3, 6]);
+  it('creates five R1 matches for 10 players (1v10, 2v9, …)', () => {
+    const slots = bracketR1Slots(10);
+    assert.equal(slots.length, 5);
+    assert.equal(slots.every((s) => s.kind === 'match'), true);
+    assert.deepEqual(
+      slots.map((s) => [s.seed1, s.seed2]),
+      [
+        [1, 10],
+        [2, 9],
+        [3, 8],
+        [4, 7],
+        [5, 6],
+      ]
+    );
   });
 
-  it('creates two R1 matches and two byes for 6 players', () => {
+  it('plans four rounds for 10 players', () => {
+    const plan = bracketRoundPlan(10);
+    assert.equal(plan.length, 4);
+    assert.equal(plan[0]!.roundId, 'r1');
+    assert.equal(plan[0]!.matchCount, 5);
+    assert.equal(plan[0]!.competitors, 10);
+    assert.equal(plan[1]!.matchCount, 2);
+    assert.equal(plan[1]!.competitors, 5);
+    assert.equal(plan[3]!.roundId, 'final');
+    assert.equal(totalBracketRounds(10), 4);
+  });
+
+  it('uses bracket slot order for 8 players', () => {
+    const slots = bracketR1Slots(8);
+    assert.equal(slots.length, 4);
+    assert.deepEqual(
+      slots.map((s) => [s.seed1, s.seed2]),
+      [
+        [1, 8],
+        [4, 5],
+        [2, 7],
+        [3, 6],
+      ]
+    );
+  });
+
+  it('creates three R1 matches for 6 players (no first-round byes)', () => {
     const slots = bracketR1Slots(6);
-    assert.equal(bracketSizeForPlayers(6), 8);
-    assert.equal(slots.filter((s) => s.kind === 'match').length, 2);
-    assert.equal(slots.filter((s) => s.kind === 'bye').length, 2);
+    assert.equal(slots.length, 3);
+    assert.deepEqual(
+      slots.map((s) => [s.seed1, s.seed2]),
+      [
+        [1, 6],
+        [2, 5],
+        [3, 4],
+      ]
+    );
+  });
+
+  it('pairs odd-round winners with a slot-0 bye path', () => {
+    assert.deepEqual(bracketAdvancePairings(5), [
+      [1, 4],
+      [2, 3],
+    ]);
   });
 });
 
