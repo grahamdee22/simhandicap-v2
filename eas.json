@@ -13,12 +13,7 @@
     },
     "production": {
       "autoIncrement": true,
-      "distribution": "store",
-      "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "$SUPABASE_URL",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "$SUPABASE_ANON_KEY",
-        "EXPO_PUBLIC_SUPABASE_KEY": "$SUPABASE_ANON_KEY"
-      }
+      "distribution": "store"
     },
     "production-ios": {
       "extends": "production"
