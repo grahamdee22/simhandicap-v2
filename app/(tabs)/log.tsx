@@ -2,8 +2,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../src/auth/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
@@ -21,7 +22,7 @@ import {
   type PuttingMode,
   type Wind,
 } from '../../src/lib/handicap';
-import { pinOptionsForPlatform } from '../../src/lib/pinPlacement';
+import { pinOptionsForPlatform, isGsProPlatform } from '../../src/lib/pinPlacement';
 import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
@@ -32,7 +33,16 @@ import {
   type ActiveTournamentOption,
 } from '../../src/lib/leagues';
 import { resolveSocialGroupsAccessToken } from '../../src/lib/socialGroups';
-import { isSupabaseConfigured } from '../../src/lib/supabase';
+import { yardageForCourseTee } from '../../src/lib/courseTeeYardages';
+import { uploadLogScorecardForParse } from '../../src/lib/logScorecardStorage';
+import { invokeParseScorecard } from '../../src/lib/parseScorecard';
+import {
+  applyParseScorecardToLogForm,
+  scanBannerMessage,
+  type ScanBannerKind,
+} from '../../src/lib/scorecardParseApply';
+import { settingsScreenshotPickerOptions } from '../../src/lib/settingsScreenshotPicker';
+import { supabase, isSupabaseConfigured } from '../../src/lib/supabase';
 import {
   COURSE_SEEDS,
   courseMatchesSearch,
@@ -114,6 +124,8 @@ export default function LogRoundScreen() {
   const [activeTournaments, setActiveTournaments] = useState<ActiveTournamentOption[]>([]);
   const [tournamentApply, setTournamentApply] = useState<Record<string, boolean>>({});
   const [tournamentsLoading, setTournamentsLoading] = useState(false);
+  const [scanBusy, setScanBusy] = useState(false);
+  const [scanBanner, setScanBanner] = useState<ScanBannerKind>(null);
   /** Latest form fields for save (deferred save must not read stale render closures). */
   const activeTournamentsRef = useRef<ActiveTournamentOption[]>([]);
   activeTournamentsRef.current = activeTournaments;
@@ -306,6 +318,100 @@ export default function LogRoundScreen() {
 
   const course = getCourseById(courseId);
   const courseTees = useMemo(() => (course ? getCourseTees(course, platform) : []), [course, platform]);
+  const parseCourseTees = useMemo(
+    () =>
+      course
+        ? courseTees.map((t) => ({
+            name: t.name,
+            yards: yardageForCourseTee(course.id, t.name) ?? null,
+          }))
+        : [],
+    [course, courseTees]
+  );
+
+  const onScanScorecard = useCallback(async () => {
+    if (scanBusy || !user?.id || !supabaseOn) return;
+
+    const runPick = async (source: 'library' | 'camera') => {
+      const pickerOpts = settingsScreenshotPickerOptions();
+      if (source === 'camera') {
+        let camPerm = await ImagePicker.getCameraPermissionsAsync();
+        if (!camPerm.granted) camPerm = await ImagePicker.requestCameraPermissionsAsync();
+        if (!camPerm.granted) {
+          showAppAlert('Camera access needed', 'Allow camera access to photograph your scorecard.');
+          return;
+        }
+      } else {
+        let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
+        if (!perm.granted) perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
+        if (!perm.granted) {
+          showAppAlert('Photos access needed', 'Allow photo library access to upload your scorecard.');
+          return;
+        }
+      }
+
+      const result =
+        source === 'camera'
+          ? await ImagePicker.launchCameraAsync(pickerOpts)
+          : await ImagePicker.launchImageLibraryAsync(pickerOpts);
+      if (result.canceled || !result.assets[0]) return;
+
+      setScanBusy(true);
+      setScanBanner(null);
+
+      const { data: sessionData } = await supabase!.auth.getSession();
+      const token = sessionData.session?.access_token;
+
+      const up = await uploadLogScorecardForParse({
+        userId: user.id,
+        localUri: result.assets[0].uri,
+        accessToken: token,
+      });
+      if ('error' in up) {
+        setScanBusy(false);
+        showAppAlert('Upload failed', up.error);
+        return;
+      }
+
+      const parsed = await invokeParseScorecard({
+        imageUrl: up.signedUrl,
+        courseTees: parseCourseTees,
+        accessToken: token,
+      });
+      setScanBusy(false);
+
+      const applied = applyParseScorecardToLogForm(parsed, courseTees.map((t) => t.name));
+      setScanBanner(applied.banner);
+
+      if (applied.banner === 'failed') return;
+
+      if (applied.grossScore != null) setGrossScore(applied.grossScore);
+      if (applied.putting) setPutting(applied.putting);
+      if (applied.pin) setPin(applied.pin);
+      if (applied.wind) setWind(applied.wind);
+      if (applied.mulligans) setMulligans(applied.mulligans);
+      if (applied.teePickKey) {
+        setTeePickKey(applied.teePickKey);
+        setCustomRating('');
+        setCustomSlope('');
+      }
+    };
+
+    if (Platform.OS === 'web') {
+      void runPick('library');
+      return;
+    }
+
+    Alert.alert('Scan scorecard', 'Choose a source', [
+      { text: 'Photo library', onPress: () => void runPick('library') },
+      { text: 'Camera', onPress: () => void runPick('camera') },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
+  }, [scanBusy, user?.id, supabaseOn, parseCourseTees, courseTees]);
+
+  useEffect(() => {
+    if (!isGsProPlatform(platform)) setScanBanner(null);
+  }, [platform]);
 
   const resolvedTeeRating = useMemo(() => {
     const resolved = ((): { rating: number; slope: number; teeLabel: string } => {
@@ -619,6 +725,49 @@ export default function LogRoundScreen() {
               </Pressable>
             </View>
           </View>
+
+          {isGsProPlatform(platform) ? (
+            <>
+              <Pressable
+                style={[styles.scanBtn, scanBusy && styles.scanBtnDisabled]}
+                disabled={scanBusy || !supabaseOn || !user}
+                onPress={() => void onScanScorecard()}
+                accessibilityRole="button"
+                accessibilityLabel="Scan GS Pro scorecard"
+              >
+                {scanBusy ? (
+                  <ActivityIndicator color={colors.sage} size="small" />
+                ) : (
+                  <Text style={styles.scanBtnTxt}>Scan Scorecard 📷</Text>
+                )}
+              </Pressable>
+              {scanBanner ? (
+                <View
+                  style={[
+                    styles.scanBanner,
+                    scanBanner === 'failed'
+                      ? styles.scanBannerRed
+                      : scanBanner === 'low'
+                        ? styles.scanBannerYellow
+                        : styles.scanBannerGreen,
+                  ]}
+                >
+                  <Text
+                    style={[
+                      styles.scanBannerTxt,
+                      scanBanner === 'failed'
+                        ? styles.scanBannerTxtRed
+                        : scanBanner === 'low'
+                          ? styles.scanBannerTxtYellow
+                          : styles.scanBannerTxtGreen,
+                    ]}
+                  >
+                    {scanBannerMessage(scanBanner)}
+                  </Text>
+                </View>
+              ) : null}
+            </>
+          ) : null}
 
           <DatePlayedField value={playedDate} onChange={setPlayedDate} />
 
@@ -1016,6 +1165,43 @@ const styles = StyleSheet.create({
     marginBottom: 5,
     marginTop: 10,
   },
+  scanBtn: {
+    marginTop: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: colors.sage,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 48,
+    backgroundColor: colors.surface,
+  },
+  scanBtnDisabled: { opacity: 0.6 },
+  scanBtnTxt: { fontSize: 15, fontWeight: '700', color: colors.sage },
+  scanBanner: {
+    marginTop: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  scanBannerGreen: {
+    backgroundColor: '#ecf6f1',
+    borderColor: colors.sage,
+  },
+  scanBannerYellow: {
+    backgroundColor: '#fff8eb',
+    borderColor: colors.warn,
+  },
+  scanBannerRed: {
+    backgroundColor: '#fef2f2',
+    borderColor: colors.danger,
+  },
+  scanBannerTxt: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  scanBannerTxtGreen: { color: colors.forestMid },
+  scanBannerTxtYellow: { color: colors.warn },
+  scanBannerTxtRed: { color: colors.danger },
   teeChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   teeChip: {
     paddingVertical: 8,
