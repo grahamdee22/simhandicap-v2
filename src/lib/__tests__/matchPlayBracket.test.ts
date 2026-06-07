@@ -124,6 +124,12 @@ describe('bracket layout', () => {
       [1, 4],
       [2, 3],
     ]);
+    // PG winner array (1-indexed): [bye, w1, w2, w3, w4, w5] -> pair [2]v[5] and [3]v[4]
+    const pgPairs = bracketAdvancePairings(5).map(([a, b]) => [a + 1, b + 1]);
+    assert.deepEqual(pgPairs, [
+      [2, 5],
+      [3, 4],
+    ]);
   });
 });
 

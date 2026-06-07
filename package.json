@@ -10,6 +10,7 @@
     "check": "tsc --noEmit",
     "test": "tsx --test src/lib/__tests__/*.test.ts",
     "seed:test": "node scripts/seed-test-data.js",
+    "test:tournaments": "tsx scripts/test-tournaments.ts",
     "build": "npm run export:web",
     "export:web": "expo export --platform web && node -e \"const fs=require('fs');fs.copyFileSync('dist/index.html','dist/200.html');fs.copyFileSync('_headers','dist/_headers');fs.copyFileSync('_redirects','dist/_redirects');fs.copyFileSync('reset-password.html','dist/reset-password.html');if(fs.existsSync('public')){fs.cpSync('public','dist',{recursive:true})}\"",
     "deploy:surge": "npm run check && npm run export:web && surge dist"
