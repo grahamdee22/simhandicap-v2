@@ -27,6 +27,7 @@ import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import {
+  effectiveHandicapForLeagueRecording,
   fetchActiveTournamentsForUser,
   isTeamLeagueFormat,
   recordOptedInLeagueRounds,
@@ -53,6 +54,7 @@ import {
   ratingForCourse,
 } from '../../src/lib/courses';
 import { targetGrossToImprove } from '../../src/lib/preRoundPrediction';
+import { latestGhinIndex } from '../../src/lib/realVsSim';
 import { currentIndexFromRounds, useAppStore, type SimRound } from '../../src/store/useAppStore';
 
 type DiffInfoKind = 'adjusted' | 'expected' | null;
@@ -104,6 +106,7 @@ export default function LogRoundScreen() {
   const pendingH2hMatchup = useAppStore((s) => s.pendingH2hMatchup);
   const setPendingH2hMatchup = useAppStore((s) => s.setPendingH2hMatchup);
   const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
+  const ghinSnapshots = useAppStore((s) => s.ghinSnapshots);
   const existing = editId ? rounds.find((r) => r.id === editId) : undefined;
 
   const [platform, setPlatform] = useState<PlatformId>(preferredLogPlatform);
@@ -628,7 +631,10 @@ export default function LogRoundScreen() {
               roundId: saved.id,
               grossScore: saved.grossScore,
               playedAt: saved.playedAt,
-              simIndex: saved.simcapIndexAtTime ?? saved.indexAfter ?? null,
+              simIndex: effectiveHandicapForLeagueRecording(
+                rounds.concat(saved),
+                latestGhinIndex(ghinSnapshots)
+              ),
               selections: activeTournaments.map((t) => ({
                 leagueId: t.leagueId,
                 apply: tournamentApply[t.leagueId] !== false,

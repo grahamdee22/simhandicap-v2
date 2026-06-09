@@ -364,6 +364,9 @@ export default function ProfileScreen() {
           </Text>
 
           <Text style={styles.ghinFieldLbl}>Current GHIN index</Text>
+          <Text style={styles.ghinFieldHint}>
+            Used in tournaments until your SimCap index is established (3+ rounds).
+          </Text>
           <View style={styles.ghinRow}>
             <TextInput
               style={styles.ghinInput}
@@ -645,7 +648,13 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: colors.muted,
     marginTop: 14,
-    marginBottom: 6,
+    marginBottom: 4,
+  },
+  ghinFieldHint: {
+    fontSize: 11,
+    color: colors.subtle,
+    marginBottom: 8,
+    lineHeight: 16,
   },
   ghinRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   ghinInput: {

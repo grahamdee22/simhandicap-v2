@@ -301,15 +301,47 @@ describe('tournament players per team', () => {
     assert.match(err ?? '', new RegExp(String(MAX_TEAM_COUNT)));
   });
 
-  it('auto-assign puts every player on a team', () => {
-    const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
-    const teams = autoAssignMembersToTeams(ids, 3, false);
+  it('auto-assign puts every player on a team when handicaps are known', () => {
+    const members = [
+      { userId: 'a', handicap: 18 },
+      { userId: 'b', handicap: 12 },
+      { userId: 'c', handicap: 8 },
+      { userId: 'd', handicap: 22 },
+      { userId: 'e', handicap: 15 },
+      { userId: 'f', handicap: 10 },
+    ];
+    const teams = autoAssignMembersToTeams(members, 3, false);
     assert.equal(teams.length, 3);
     const assigned = teams.flatMap((t) => t.memberIds);
-    assert.equal(assigned.length, ids.length);
-    assert.deepEqual([...assigned].sort(), [...ids].sort());
+    assert.equal(assigned.length, members.length);
+    assert.deepEqual([...assigned].sort(), members.map((m) => m.userId).sort());
     for (const t of teams) {
       assert.equal(t.memberIds.length, 2);
     }
+  });
+
+  it('auto-assign skips players without handicap unless randomize flag set', () => {
+    const empty = autoAssignMembersToTeams(
+      [
+        { userId: 'a', handicap: 10 },
+        { userId: 'b', handicap: null },
+      ],
+      2,
+      false
+    );
+    assert.equal(empty.every((t) => t.memberIds.length === 0), true);
+
+    const withRandom = autoAssignMembersToTeams(
+      [
+        { userId: 'a', handicap: 10 },
+        { userId: 'b', handicap: null },
+        { userId: 'c', handicap: 14 },
+        { userId: 'd', handicap: null },
+      ],
+      2,
+      false,
+      { randomizeMissingHandicap: true }
+    );
+    assert.equal(withRandom.flatMap((t) => t.memberIds).length, 4);
   });
 });

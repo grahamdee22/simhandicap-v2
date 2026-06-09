@@ -37,9 +37,12 @@ import {
   fetchMySocialGroupsIntoStore,
   patchGroupMemberAdminInStore,
   resolveSocialGroupsAccessToken,
+  parseBulkInviteEmails,
   respondToGroupInvite,
+  sendBulkGroupInvites,
   sendGroupInvite,
   setGroupMemberAdmin,
+  type SendBulkGroupInvitesResult,
 } from '../../src/lib/socialGroups';
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
@@ -129,6 +132,11 @@ export default function GroupsScreen() {
   const [listRefreshing, setListRefreshing] = useState(false);
   const [createBusy, setCreateBusy] = useState(false);
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [bulkInviteOpen, setBulkInviteOpen] = useState(false);
+  const [bulkInviteText, setBulkInviteText] = useState('');
+  const [bulkInvitePhase, setBulkInvitePhase] = useState<'form' | 'results'>('form');
+  const [bulkInviteBusy, setBulkInviteBusy] = useState(false);
+  const [bulkInviteResults, setBulkInviteResults] = useState<SendBulkGroupInvitesResult | null>(null);
   const [inboundBusy, setInboundBusy] = useState(false);
   const [deleteGroupBusy, setDeleteGroupBusy] = useState(false);
   const [adminBusyUserId, setAdminBusyUserId] = useState<string | null>(null);
@@ -270,6 +278,20 @@ export default function GroupsScreen() {
     setInviteSuccessDetail('');
   };
 
+  const openBulkInvite = () => {
+    setBulkInviteText('');
+    setBulkInvitePhase('form');
+    setBulkInviteResults(null);
+    setBulkInviteOpen(true);
+  };
+
+  const closeBulkInvite = () => {
+    setBulkInviteOpen(false);
+    setBulkInviteText('');
+    setBulkInvitePhase('form');
+    setBulkInviteResults(null);
+  };
+
   const emailLooksValid = (raw: string) => {
     const e = raw.trim();
     if (e.length < 5) return false;
@@ -330,6 +352,50 @@ export default function GroupsScreen() {
       `Sign in with Supabase to send invites. (Offline mode: no server.)`
     );
     closeInvite();
+  };
+
+  const submitBulkInvite = async () => {
+    if (!g) return;
+    const { valid, invalid } = parseBulkInviteEmails(bulkInviteText);
+    if (valid.length === 0 && invalid.length === 0) {
+      showAppAlert('Bulk invite', 'Enter at least one email address.');
+      return;
+    }
+    if (!supabaseOn) {
+      showAppAlert(
+        'Bulk invite',
+        'Sign in with Supabase to send invites. (Offline mode: no server.)'
+      );
+      closeBulkInvite();
+      return;
+    }
+
+    setBulkInviteBusy(true);
+    const apiResult =
+      valid.length > 0
+        ? await sendBulkGroupInvites(g.id, valid, googleOAuthAccessToken ?? undefined)
+        : { items: [], succeeded: 0, failed: 0, anyNewInvite: false };
+
+    const invalidItems = invalid.map((email) => ({
+      email,
+      ok: false as const,
+      reason: 'Invalid email address',
+    }));
+    const combined: SendBulkGroupInvitesResult = {
+      items: [...apiResult.items, ...invalidItems],
+      succeeded: apiResult.succeeded,
+      failed: apiResult.failed + invalidItems.length,
+      anyNewInvite: apiResult.anyNewInvite,
+    };
+
+    setBulkInviteBusy(false);
+    setBulkInviteResults(combined);
+    setBulkInvitePhase('results');
+
+    if (combined.anyNewInvite) {
+      await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
+      recomputeGroupsFromYou();
+    }
   };
 
   const onAcceptInboundInvite = async (inv: { id: string; groupId: string }) => {
@@ -720,6 +786,15 @@ export default function GroupsScreen() {
                   >
                     <Text style={styles.invite}>+ Invite</Text>
                   </Pressable>
+                  {isGroupManager ? (
+                    <Pressable
+                      onPress={openBulkInvite}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Bulk invite members to ${g.name}`}
+                    >
+                      <Text style={styles.invite}>Bulk Invite</Text>
+                    </Pressable>
+                  ) : null}
                   {isGroupCreator ? (
                     <Pressable
                       onPress={() => void onDeleteGroup()}
@@ -1022,6 +1097,105 @@ export default function GroupsScreen() {
             </Pressable>
           </Modal>
 
+          <Modal visible={bulkInviteOpen} animationType="fade" transparent>
+            <Pressable style={styles.modalBackdrop} onPress={() => !bulkInviteBusy && closeBulkInvite()}>
+              <KeyboardAvoidingView
+                style={styles.modalKeyboardAvoid}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                keyboardVerticalOffset={Math.max(insets.bottom, 12)}
+              >
+                <ScrollView
+                  style={styles.modalScroll}
+                  contentContainerStyle={styles.modalScrollContent}
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                >
+                  <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
+                    {bulkInvitePhase === 'form' ? (
+                      <>
+                        <Text style={styles.modalTitle}>Bulk invite</Text>
+                        <Text style={styles.modalSub}>
+                          Enter multiple email addresses for{' '}
+                          <Text style={styles.modalSubStrong}>{g.name}</Text>, separated by commas or one per line.
+                          Registered SimCap users get in-app invites; others get email invites recorded for follow-up.
+                        </Text>
+                        <TextInput
+                          style={[styles.modalInput, styles.modalTextArea]}
+                          placeholder={'friend@example.com\nbuddy@example.com'}
+                          placeholderTextColor={colors.subtle}
+                          value={bulkInviteText}
+                          onChangeText={setBulkInviteText}
+                          keyboardType="email-address"
+                          autoCapitalize="none"
+                          autoCorrect={false}
+                          multiline
+                          textAlignVertical="top"
+                          editable={!bulkInviteBusy}
+                        />
+                        <View style={styles.modalActions}>
+                          <Pressable onPress={() => !bulkInviteBusy && closeBulkInvite()} style={styles.modalBtn}>
+                            <Text style={styles.modalBtnTxt}>Cancel</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => void submitBulkInvite()}
+                            disabled={bulkInviteBusy}
+                            style={[styles.modalBtn, styles.modalBtnPrimary, bulkInviteBusy && styles.modalBtnDisabled]}
+                          >
+                            {bulkInviteBusy ? (
+                              <ActivityIndicator color="#fff" />
+                            ) : (
+                              <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Send invites</Text>
+                            )}
+                          </Pressable>
+                        </View>
+                      </>
+                    ) : bulkInviteResults ? (
+                      <>
+                        <Text style={styles.modalTitle}>Bulk invite results</Text>
+                        <Text style={styles.modalSuccessBody}>
+                          {bulkInviteResults.succeeded} succeeded · {bulkInviteResults.failed} failed
+                        </Text>
+                        {bulkInviteResults.items.length > 0 ? (
+                          <View style={styles.bulkInviteResultsList}>
+                            {bulkInviteResults.items.map((item) => (
+                              <View key={item.email} style={styles.bulkInviteResultRow}>
+                                <Text
+                                  style={[
+                                    styles.bulkInviteResultEmail,
+                                    item.ok ? styles.bulkInviteResultOk : styles.bulkInviteResultFail,
+                                  ]}
+                                  numberOfLines={1}
+                                >
+                                  {item.email}
+                                </Text>
+                                <Text style={styles.bulkInviteResultReason}>{item.reason}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        ) : null}
+                        <View style={styles.modalActionsCol}>
+                          <Pressable
+                            onPress={() => {
+                              setBulkInvitePhase('form');
+                              setBulkInviteText('');
+                              setBulkInviteResults(null);
+                            }}
+                            style={[styles.modalBtn, styles.modalBtnGhost]}
+                          >
+                            <Text style={styles.modalBtnGhostTxt}>Invite more</Text>
+                          </Pressable>
+                          <Pressable onPress={closeBulkInvite} style={[styles.modalBtn, styles.modalBtnPrimary]}>
+                            <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Done</Text>
+                          </Pressable>
+                        </View>
+                      </>
+                    ) : null}
+                  </Pressable>
+                </ScrollView>
+              </KeyboardAvoidingView>
+            </Pressable>
+          </Modal>
+
           <Modal
             visible={socialSectionInfo != null}
             animationType={Platform.OS === 'web' ? 'none' : 'fade'}
@@ -1270,6 +1444,13 @@ const styles = StyleSheet.create({
     color: colors.ink,
     marginBottom: 16,
   },
+  modalTextArea: { minHeight: 120, maxHeight: 200 },
+  bulkInviteResultsList: { gap: 10, marginBottom: 12, maxHeight: 220 },
+  bulkInviteResultRow: { gap: 2 },
+  bulkInviteResultEmail: { fontSize: 14, fontWeight: '600' },
+  bulkInviteResultOk: { color: colors.sage },
+  bulkInviteResultFail: { color: '#b45309' },
+  bulkInviteResultReason: { fontSize: 13, color: colors.muted, lineHeight: 18 },
   modalActions: { flexDirection: 'row', justifyContent: 'flex-end', gap: 12 },
   modalActionsCol: { gap: 10, marginTop: 4 },
   modalBtn: { paddingVertical: 10, paddingHorizontal: 14 },

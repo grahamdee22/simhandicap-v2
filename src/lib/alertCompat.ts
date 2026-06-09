@@ -19,6 +19,27 @@ export function showAppAlert(title: string, message?: string, options?: ShowAppA
   }
 }
 
+/** Two-button choice (non-destructive). Web uses `window.confirm` (OK = confirm). */
+export function confirmAppChoice(
+  title: string,
+  message: string,
+  options?: { cancelText?: string; confirmText?: string }
+): Promise<'cancel' | 'confirm'> {
+  const cancelText = options?.cancelText ?? 'Go back';
+  const confirmText = options?.confirmText ?? 'Proceed anyway';
+  if (Platform.OS === 'web' && typeof window !== 'undefined') {
+    return Promise.resolve(
+      window.confirm(`${title}\n\n${message}\n\nClick OK to ${confirmText.toLowerCase()}.`) ? 'confirm' : 'cancel'
+    );
+  }
+  return new Promise((resolve) => {
+    Alert.alert(title, message, [
+      { text: cancelText, style: 'cancel', onPress: () => resolve('cancel') },
+      { text: confirmText, onPress: () => resolve('confirm') },
+    ]);
+  });
+}
+
 /** Two-button confirm (destructive action). Web uses `window.confirm`. */
 export function confirmDestructive(
   title: string,

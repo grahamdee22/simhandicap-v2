@@ -14,6 +14,7 @@ import {
   type Wind,
 } from '../lib/handicap';
 import { getCourseById, ratingForCourse } from '../lib/courses';
+import { resolveEffectiveHandicap } from '../lib/effectiveHandicap';
 import {
   deleteRoundInSupabase,
   insertRoundInSupabase,
@@ -68,8 +69,10 @@ export type GroupMember = {
   initials: string;
   platform: PlatformId;
   roundsLogged: number;
-  /** Sim / GHIN index when known; null shows as — in UI. */
+  /** Effective handicap for tournaments (SimCap when 3+ rounds, else GHIN). */
   index: number | null;
+  /** Where `index` came from for tournament UI. */
+  handicapSource: 'simcap' | 'ghin' | null;
   trend: 'up' | 'down' | 'flat';
   isYou?: boolean;
   /** Group admin (creator-designated); can manage tournaments and invites. */
@@ -257,8 +260,13 @@ function groupSummaryLine(g: FriendGroup, rounds: SimRound[]): string | undefine
   return `${g.members.length} member${g.members.length === 1 ? '' : 's'} · Your last round ${when}`;
 }
 
-function syncYouInGroups(groups: FriendGroup[], displayName: string, rounds: SimRound[]): FriendGroup[] {
-  const idx = currentIndexFromRounds(rounds);
+function syncYouInGroups(
+  groups: FriendGroup[],
+  displayName: string,
+  rounds: SimRound[],
+  ghinIndex: number | null
+): FriendGroup[] {
+  const effective = resolveEffectiveHandicap({ rounds, ghinIndex });
   const n = rounds.length;
   const ini = initialsFrom(displayName);
   return groups.map((g) => ({
@@ -271,7 +279,8 @@ function syncYouInGroups(groups: FriendGroup[], displayName: string, rounds: Sim
               ...m,
               displayName: `${displayName} (you)`,
               initials: ini,
-              index: idx ?? m.index,
+              index: effective.index,
+              handicapSource: effective.source,
               roundsLogged: n,
             }
           : m
@@ -328,7 +337,12 @@ export const useAppStore = create<AppState>()(
       setDisplayName: (displayName) =>
         set((s) => ({
           displayName,
-          groups: syncYouInGroups(s.groups, displayName, s.rounds),
+          groups: syncYouInGroups(
+            s.groups,
+            displayName,
+            s.rounds,
+            latestGhinSnapshotIndex(s.ghinSnapshots)
+          ),
         })),
 
       setPreferredLogPlatform: (preferredLogPlatform) => set({ preferredLogPlatform }),
@@ -337,7 +351,12 @@ export const useAppStore = create<AppState>()(
         const full = recalcAllRounds(incoming);
         set((s) => ({
           rounds: full,
-          groups: syncYouInGroups(s.groups, s.displayName, full),
+          groups: syncYouInGroups(
+            s.groups,
+            s.displayName,
+            full,
+            latestGhinSnapshotIndex(s.ghinSnapshots)
+          ),
         }));
       },
 
@@ -420,7 +439,12 @@ export const useAppStore = create<AppState>()(
           const newRounds = [round, ...s.rounds];
           return {
             rounds: newRounds,
-            groups: syncYouInGroups(s.groups, s.displayName, newRounds),
+            groups: syncYouInGroups(
+              s.groups,
+              s.displayName,
+              newRounds,
+              latestGhinSnapshotIndex(s.ghinSnapshots)
+            ),
           };
         });
         if (isSupabaseConfigured() && round.h2hGroupId) {
@@ -477,7 +501,12 @@ export const useAppStore = create<AppState>()(
 
         set((st) => ({
           rounds: full,
-          groups: syncYouInGroups(st.groups, st.displayName, full),
+          groups: syncYouInGroups(
+            st.groups,
+            st.displayName,
+            full,
+            latestGhinSnapshotIndex(st.ghinSnapshots)
+          ),
         }));
       },
 
@@ -503,7 +532,12 @@ export const useAppStore = create<AppState>()(
           const full = recalcAllRounds(rounds);
           return {
             rounds: full,
-            groups: syncYouInGroups(s.groups, s.displayName, full),
+            groups: syncYouInGroups(
+            s.groups,
+            s.displayName,
+            full,
+            latestGhinSnapshotIndex(s.ghinSnapshots)
+          ),
           };
         });
         console.log('[store] deleteRound applied', {
@@ -515,7 +549,10 @@ export const useAppStore = create<AppState>()(
       addGroup: (name) => {
         const you = get().displayName;
         const ini = initialsFrom(you);
-        const idx = currentIndexFromRounds(get().rounds);
+        const effective = resolveEffectiveHandicap({
+          rounds: get().rounds,
+          ghinIndex: latestGhinSnapshotIndex(get().ghinSnapshots),
+        });
         set((s) => ({
           groups: [
             ...s.groups,
@@ -532,7 +569,8 @@ export const useAppStore = create<AppState>()(
                   initials: ini,
                   platform: 'Trackman',
                   roundsLogged: s.rounds.length,
-                  index: idx,
+                  index: effective.index,
+                  handicapSource: effective.source,
                   trend: 'flat',
                   isYou: true,
                 },
@@ -556,7 +594,14 @@ export const useAppStore = create<AppState>()(
 
       recomputeGroupsFromYou: () => {
         const s = get();
-        set({ groups: syncYouInGroups(s.groups, s.displayName, s.rounds) });
+        set({
+          groups: syncYouInGroups(
+            s.groups,
+            s.displayName,
+            s.rounds,
+            latestGhinSnapshotIndex(s.ghinSnapshots)
+          ),
+        });
       },
 
       setPendingH2hMatchup: (p) => set({ pendingH2hMatchup: p }),
@@ -576,7 +621,16 @@ export const useAppStore = create<AppState>()(
           if (sameDay >= 0) list[sameDay] = entry;
           else list.push(entry);
           list.sort((a, b) => new Date(a.recordedAt).getTime() - new Date(b.recordedAt).getTime());
-          return { ghinSnapshots: list };
+          const ghinSnapshots = list;
+          return {
+            ghinSnapshots,
+            groups: syncYouInGroups(
+              s.groups,
+              s.displayName,
+              s.rounds,
+              latestGhinSnapshotIndex(ghinSnapshots)
+            ),
+          };
         });
       },
 

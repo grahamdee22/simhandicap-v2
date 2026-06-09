@@ -253,24 +253,82 @@ export function createEmptyTeams(count: number): ScrambleTeamDraft[] {
   }));
 }
 
-/** Randomly distribute players evenly across teams. */
-export function autoAssignMembersToTeams(
-  memberUserIds: string[],
-  teamCount: number,
-  scramble: boolean
-): ScrambleTeamDraft[] {
-  const shuffled = [...memberUserIds];
-  for (let i = shuffled.length - 1; i > 0; i--) {
+export type TeamAssignMember = {
+  userId: string;
+  handicap: number | null;
+};
+
+function shuffleInPlace<T>(arr: T[]): void {
+  for (let i = arr.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    [arr[i], arr[j]] = [arr[j], arr[i]];
   }
+}
+
+/** Snake-draft placement to balance team handicap totals. */
+function snakeAssignByHandicap(
+  sorted: TeamAssignMember[],
+  teamCount: number
+): string[][] {
+  const buckets: string[][] = Array.from({ length: teamCount }, () => []);
+  for (let i = 0; i < sorted.length; i++) {
+    const pass = Math.floor(i / teamCount);
+    const posInPass = i % teamCount;
+    const teamIdx = pass % 2 === 0 ? posInPass : teamCount - 1 - posInPass;
+    buckets[teamIdx]!.push(sorted[i]!.userId);
+  }
+  return buckets;
+}
+
+function assignToSmallestTeams(userIds: string[], teamCount: number, buckets: string[][]): void {
+  const shuffled = [...userIds];
+  shuffleInPlace(shuffled);
+  for (const uid of shuffled) {
+    let minIdx = 0;
+    let minSize = buckets[0]!.length;
+    for (let i = 1; i < teamCount; i++) {
+      if (buckets[i]!.length < minSize) {
+        minSize = buckets[i]!.length;
+        minIdx = i;
+      }
+    }
+    buckets[minIdx]!.push(uid);
+  }
+}
+
+/**
+ * Balance teams by effective handicap (snake draft).
+ * Members without a handicap are only included when `randomizeMissingHandicap` is true.
+ */
+export function autoAssignMembersToTeams(
+  members: TeamAssignMember[],
+  teamCount: number,
+  scramble: boolean,
+  options?: { randomizeMissingHandicap?: boolean }
+): ScrambleTeamDraft[] {
+  const withHcp = members.filter((m) => m.handicap != null && Number.isFinite(m.handicap));
+  const withoutHcp = members.filter((m) => m.handicap == null || !Number.isFinite(m.handicap));
+
+  if (withoutHcp.length > 0 && !options?.randomizeMissingHandicap) {
+    return createEmptyTeams(teamCount);
+  }
+
+  const sorted = [...withHcp].sort((a, b) => (a.handicap ?? 99) - (b.handicap ?? 99));
+  const buckets = snakeAssignByHandicap(sorted, teamCount);
+
+  if (withoutHcp.length > 0 && options?.randomizeMissingHandicap) {
+    assignToSmallestTeams(
+      withoutHcp.map((m) => m.userId),
+      teamCount,
+      buckets
+    );
+  }
+
   const teams = createEmptyTeams(teamCount);
-  shuffled.forEach((userId, i) => {
-    teams[i % teamCount].memberIds.push(userId);
-  });
-  if (scramble) {
-    for (const t of teams) {
-      t.designatedScorerUserId = t.memberIds[0] ?? null;
+  for (let i = 0; i < teamCount; i++) {
+    teams[i]!.memberIds = buckets[i] ?? [];
+    if (scramble) {
+      teams[i]!.designatedScorerUserId = teams[i]!.memberIds[0] ?? null;
     }
   }
   return teams;

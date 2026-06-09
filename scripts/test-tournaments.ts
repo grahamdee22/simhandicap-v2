@@ -851,7 +851,12 @@ async function testScramble(ctx: TestContext): Promise<TestRun> {
 
   await runStep(run, 'Add all 10 seed players and auto-assign 3 teams', async () => {
     const memberIds = playerNames.map((n) => ctx.profileByName.get(n)!.id);
-    const drafts = autoAssignMembersToTeams(memberIds, 3, true);
+    const drafts = autoAssignMembersToTeams(
+      memberIds.map((id) => ({ userId: id, handicap: 10 })),
+      3,
+      true,
+      { randomizeMissingHandicap: true }
+    );
     if (drafts.length !== 3) {
       return { ok: false, detail: `expected 3 teams, got ${drafts.length}` };
     }
@@ -982,7 +987,11 @@ async function testBestBall(ctx: TestContext): Promise<TestRun> {
 
   await runStep(run, 'Auto-assign 4 teams of 2', async () => {
     const memberIds = playerNames.map((n) => ctx.profileByName.get(n)!.id);
-    const drafts = autoAssignMembersToTeams(memberIds, 4, false);
+    const drafts = autoAssignMembersToTeams(
+      memberIds.map((id) => ({ userId: id, handicap: 12 })),
+      4,
+      false
+    );
     const teamDefs = drafts.map((d, i) => ({
       name: `Team ${i + 1}`,
       memberNames: d.memberIds.map(

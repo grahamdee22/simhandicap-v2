@@ -18,7 +18,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
-import { showAppAlert } from '../../../src/lib/alertCompat';
+import { HandicapSourceBadge } from '../../../src/components/HandicapSourceBadge';
+import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
+import { countMembersMissingHandicap } from '../../../src/lib/effectiveHandicap';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, syncLeagueStatuses, type LeagueFormat } from '../../../src/lib/leagues';
@@ -306,12 +308,14 @@ export default function LeagueCreateScreen() {
     return memberIds[0] ?? null;
   };
 
-  const onAutoAssignTeams = () => {
-    const next = autoAssignMembersToTeams(
-      members.map((m) => m.userId),
-      teamCount,
-      isScramble
-    );
+  const runAutoAssignTeams = (randomizeMissingHandicap: boolean) => {
+    const assignMembers = members.map((m) => ({
+      userId: m.userId,
+      handicap: m.index,
+    }));
+    const next = autoAssignMembersToTeams(assignMembers, teamCount, isScramble, {
+      randomizeMissingHandicap,
+    });
     setTeams(
       next.map((t, i) => ({
         ...t,
@@ -320,6 +324,21 @@ export default function LeagueCreateScreen() {
     );
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
+  };
+
+  const onAutoAssignTeams = () => {
+    const missing = countMembersMissingHandicap(members);
+    if (missing > 0) {
+      void confirmAppChoice(
+        'Missing handicap',
+        `${missing} player${missing === 1 ? '' : 's'} have no handicap index. They will be assigned randomly. You can ask them to enter their GHIN on their profile, or proceed anyway.`,
+        { cancelText: 'Go back', confirmText: 'Proceed anyway' }
+      ).then((choice) => {
+        if (choice === 'confirm') runAutoAssignTeams(true);
+      });
+      return;
+    }
+    runAutoAssignTeams(false);
   };
 
   const assignMemberToTeam = (userId: string, teamId: string) => {
@@ -745,19 +764,29 @@ export default function LeagueCreateScreen() {
               <View style={styles.bracketInfo}>
                 <Text style={styles.bracketInfoTitle}>Single-elimination bracket</Text>
                 <Text style={styles.helper}>
-                  Players are seeded by SimCap index (#1 = lowest). The bracket is generated
-                  automatically when you launch.
+                  Players are seeded by handicap (#1 = lowest). SimCap index is used when
+                  established (3+ rounds); otherwise GHIN from their profile. The bracket is
+                  generated automatically when you launch.
                 </Text>
-                <Text style={styles.helper}>
-                  Seeds:{' '}
-                  {seededUserIds
-                    .map((uid, i) => {
-                      const m = members.find((x) => x.userId === uid);
-                      const idx = m?.index != null ? m.index.toFixed(1) : '—';
-                      return `#${i + 1} ${m?.displayName ?? 'Player'} (${idx})`;
-                    })
-                    .join(' · ')}
-                </Text>
+                <Text style={styles.sectionLbl}>Players</Text>
+                {seededUserIds.map((uid, i) => {
+                  const m = members.find((x) => x.userId === uid);
+                  return (
+                    <View key={uid} style={styles.memberRow}>
+                      <Text style={styles.memberSeed}>#{i + 1}</Text>
+                      <View style={styles.memberAv}>
+                        <Text style={styles.memberAvTxt}>{m?.initials ?? '?'}</Text>
+                      </View>
+                      <Text style={[styles.memberName, { flex: 1 }]}>
+                        {m?.displayName ?? 'Player'}
+                      </Text>
+                      <Text style={styles.memberIdx}>
+                        {m?.index != null ? m.index.toFixed(1) : '—'}
+                      </Text>
+                      <HandicapSourceBadge source={m?.handicapSource ?? null} />
+                    </View>
+                  );
+                })}
               </View>
             ) : (
               <>
@@ -796,7 +825,27 @@ export default function LeagueCreateScreen() {
                 />
               </View>
             </View>
-            <Text style={styles.helper}>Adjusts scores using each player&apos;s SimCap index</Text>
+            <Text style={styles.helper}>
+              Adjusts scores using each player&apos;s effective handicap (SimCap index when
+              established, otherwise GHIN)
+            </Text>
+            {!isMatchPlay && !needsTeams ? (
+              <>
+                <Text style={[styles.sectionLbl, { marginTop: 12 }]}>Players</Text>
+                {members.map((m) => (
+                  <View key={m.userId} style={styles.memberRow}>
+                    <View style={styles.memberAv}>
+                      <Text style={styles.memberAvTxt}>{m.initials}</Text>
+                    </View>
+                    <Text style={[styles.memberName, { flex: 1 }]}>{m.displayName}</Text>
+                    <Text style={styles.memberIdx}>
+                      {m.index != null ? m.index.toFixed(1) : '—'}
+                    </Text>
+                    <HandicapSourceBadge source={m.handicapSource} />
+                  </View>
+                ))}
+              </>
+            ) : null}
             {isScramble ? (
               <>
                 <Text style={[styles.lbl, { marginTop: 12 }]}>
@@ -876,8 +925,11 @@ export default function LeagueCreateScreen() {
                   <View style={styles.memberAv}>
                     <Text style={styles.memberAvTxt}>{m.initials}</Text>
                   </View>
-                  <Text style={styles.memberName}>{m.displayName}</Text>
-                  <Text style={styles.memberIdx}>{m.index != null ? m.index.toFixed(1) : '—'}</Text>
+                  <Text style={[styles.memberName, { flex: 1 }]}>{m.displayName}</Text>
+                  <Text style={styles.memberIdx}>
+                    {m.index != null ? m.index.toFixed(1) : '—'}
+                  </Text>
+                  <HandicapSourceBadge source={m.handicapSource} />
                 </Pressable>
               ))
             )}
@@ -923,10 +975,13 @@ export default function LeagueCreateScreen() {
                               )
                             }
                           >
-                            <Text style={styles.chipTxt}>
-                              {m?.displayName ?? uid}
-                              {m?.index != null ? ` · ${m.index.toFixed(1)}` : ''}
-                            </Text>
+                            <View style={styles.chipInner}>
+                              <Text style={styles.chipTxt}>
+                                {m?.displayName ?? uid}
+                                {m?.index != null ? ` · ${m.index.toFixed(1)}` : ''}
+                              </Text>
+                              {m ? <HandicapSourceBadge source={m.handicapSource} /> : null}
+                            </View>
                           </Pressable>
                           {showActions ? (
                             <View style={styles.memberActions}>
@@ -1044,10 +1099,16 @@ export default function LeagueCreateScreen() {
               {isMatchPlay
                 ? seededUserIds.map((uid, i) => {
                     const m = members.find((x) => x.userId === uid);
+                    const src =
+                      m?.handicapSource === 'simcap'
+                        ? 'SimCap'
+                        : m?.handicapSource === 'ghin'
+                          ? 'GHIN'
+                          : 'No HCP';
                     return (
                       <Text key={uid} style={styles.summaryMeta}>
                         Seed {i + 1}: {m?.displayName ?? 'Player'}
-                        {m?.index != null ? ` (${m.index.toFixed(1)})` : ''}
+                        {m?.index != null ? ` (${m.index.toFixed(1)})` : ''} · {src}
                       </Text>
                     );
                   })
@@ -1226,7 +1287,9 @@ const styles = StyleSheet.create({
     borderRadius: 999,
   },
   chipOn: { borderWidth: 2, borderColor: colors.sage },
+  chipInner: { flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   chipTxt: { color: '#fff', fontSize: 12, fontWeight: '600' },
+  memberSeed: { width: 22, fontSize: 12, fontWeight: '700', color: colors.muted },
   memberActions: { gap: 6, paddingLeft: 4 },
   memberActionBtn: {
     alignSelf: 'flex-start',

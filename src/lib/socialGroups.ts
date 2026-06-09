@@ -4,6 +4,7 @@ import { googleOAuthAccessToken } from './googleOAuthAccessToken';
 import { headToHeadFromLoggedRound } from './h2hFromRound';
 import { dbRowToSimRound, type DbRoundRow } from './rounds';
 import { supabase } from './supabase';
+import { resolveEffectiveHandicap } from './effectiveHandicap';
 import {
   currentIndexFromRounds,
   initialsFrom,
@@ -494,8 +495,7 @@ function mapProfileToMember(
   const platform: PlatformId =
     isPlatformId(profile?.preferred_platform) ? profile.preferred_platform : 'Trackman';
   const ghin = profile?.ghin_index != null ? Number(profile.ghin_index) : null;
-  const simIdx = currentIndexFromRounds(memberRounds);
-  const index = simIdx ?? (ghin != null && Number.isFinite(ghin) ? ghin : null);
+  const effective = resolveEffectiveHandicap({ rounds: memberRounds, ghinIndex: ghin });
   return {
     id: row.id,
     userId: row.user_id,
@@ -503,7 +503,8 @@ function mapProfileToMember(
     initials: initialsFrom(name),
     platform,
     roundsLogged: memberRounds.length,
-    index,
+    index: effective.index,
+    handicapSource: effective.source,
     trend: 'flat',
     isYou,
     isAdmin: row.is_admin === true,
@@ -1148,6 +1149,101 @@ export async function sendGroupInvite(
     return { result: { kind: 'email', email: row.email, duplicate: row.duplicate === true } };
   }
   return { error: 'Unknown invite type' };
+}
+
+function emailLooksValidForInvite(raw: string): boolean {
+  const e = raw.trim();
+  if (e.length < 5) return false;
+  const at = e.indexOf('@');
+  const dot = e.lastIndexOf('.');
+  return at > 0 && dot > at + 1 && dot < e.length - 1;
+}
+
+/** Parse comma- or newline-separated emails; dedupes case-insensitively. */
+export function parseBulkInviteEmails(raw: string): { valid: string[]; invalid: string[] } {
+  const tokens = raw
+    .split(/[\n,;]+/)
+    .map((s) => s.trim().toLowerCase())
+    .filter((s) => s.length > 0);
+
+  const seen = new Set<string>();
+  const valid: string[] = [];
+  const invalid: string[] = [];
+
+  for (const email of tokens) {
+    if (seen.has(email)) continue;
+    seen.add(email);
+    if (emailLooksValidForInvite(email)) {
+      valid.push(email);
+    } else {
+      invalid.push(email);
+    }
+  }
+
+  return { valid, invalid };
+}
+
+export type BulkGroupInviteItemResult = {
+  email: string;
+  ok: boolean;
+  reason: string;
+};
+
+export type SendBulkGroupInvitesResult = {
+  items: BulkGroupInviteItemResult[];
+  succeeded: number;
+  failed: number;
+  anyNewInvite: boolean;
+};
+
+/** Sends invites for each email sequentially; aggregates per-address outcomes. */
+export async function sendBulkGroupInvites(
+  groupId: string,
+  emails: string[],
+  accessToken?: string
+): Promise<SendBulkGroupInvitesResult> {
+  const items: BulkGroupInviteItemResult[] = [];
+  let succeeded = 0;
+  let failed = 0;
+  let anyNewInvite = false;
+
+  for (const email of emails) {
+    const { error, result } = await sendGroupInvite(groupId, email, accessToken);
+    if (error) {
+      items.push({ email, ok: false, reason: error });
+      failed++;
+      continue;
+    }
+    if (result?.kind === 'already_member') {
+      items.push({ email, ok: false, reason: 'Already a member' });
+      failed++;
+      continue;
+    }
+    if (result?.kind === 'in_app') {
+      if (result.duplicate) {
+        items.push({ email, ok: true, reason: 'Pending invite already sent' });
+      } else {
+        items.push({ email, ok: true, reason: 'In-app invite sent' });
+        anyNewInvite = true;
+      }
+      succeeded++;
+      continue;
+    }
+    if (result?.kind === 'email') {
+      if (result.duplicate) {
+        items.push({ email, ok: true, reason: 'Email invite already open' });
+      } else {
+        items.push({ email, ok: true, reason: 'Email invite recorded' });
+        anyNewInvite = true;
+      }
+      succeeded++;
+      continue;
+    }
+    items.push({ email, ok: false, reason: 'Unexpected server response' });
+    failed++;
+  }
+
+  return { items, succeeded, failed, anyNewInvite };
 }
 
 export async function respondToGroupInvite(

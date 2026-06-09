@@ -4,9 +4,8 @@
 
 import Constants from 'expo-constants';
 import { supabase } from './supabase';
-import { currentIndexFromRounds } from '../store/useAppStore';
-import type { GroupMember } from '../store/useAppStore';
-import type { SimRound } from '../store/useAppStore';
+import { currentIndexFromRounds, type GroupMember, type SimRound } from '../store/useAppStore';
+import { resolveEffectiveHandicap } from './effectiveHandicap';
 import { isLeagueReadyToAutoComplete } from './leagueCompletion';
 import { fetchLeagueMatchPairings } from './matchPlayTournamentPairings';
 import { isUserDesignatedScorerForTeam } from './scrambleTournament';
@@ -680,6 +679,15 @@ export async function fetchMatchWinsForLeague(
   return wins;
 }
 
+/** Effective handicap for tournament net scoring (SimCap when 3+ rounds, else GHIN). */
+export function effectiveHandicapForLeagueRecording(
+  rounds: SimRound[],
+  ghinIndex: number | null | undefined
+): number | null {
+  return resolveEffectiveHandicap({ rounds, ghinIndex }).index;
+}
+
+/** @deprecated Prefer effectiveHandicapForLeagueRecording for tournaments. */
 export function simIndexForLeagueRecording(rounds: SimRound[]): number | null {
   return currentIndexFromRounds(rounds);
 }
