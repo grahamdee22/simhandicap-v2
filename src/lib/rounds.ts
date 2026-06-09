@@ -210,6 +210,7 @@ export async function fetchMyRoundsForUser(
     .from('rounds')
     .select('*')
     .eq('user_id', user.id)
+    .eq('is_active', true)
     .order('played_at', { ascending: true });
 
   if (error) {

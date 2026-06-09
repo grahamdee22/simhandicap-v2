@@ -13,25 +13,29 @@ import {
 } from '../../../src/lib/matchPlayBracketCopy';
 import { formatMatchPlayStatus } from '../../../src/lib/matchPlayTournament';
 import {
+  fetchLeagueMatchPairingById,
+  fetchLeagueMatchPairingRoundLinks,
   formatPairingStatusLabel,
   myHolesWonInPairing,
   type DbLeagueMatchPairingRow,
 } from '../../../src/lib/matchPlayTournamentPairings';
 import { fetchTournamentHoleScores } from '../../../src/lib/tournamentHoleScores';
-import { restSelect } from '../../../src/lib/tournamentApi';
+import { resolveTournamentAccessToken } from '../../../src/lib/tournamentApi';
 import type { DbTournamentHoleScoreRow } from '../../../src/lib/tournamentTypes';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
-type PairingRoundLink = {
-  pairing_id: string;
-  league_round_id: string;
-  submitted_by_entry_id: string;
-};
+function routeParam(raw: string | string[] | undefined): string {
+  return typeof raw === 'string' ? raw : raw?.[0] ?? '';
+}
 
 export default function LeagueMatchDetailScreen() {
-  const { pairingId: rawId } = useLocalSearchParams<{ pairingId: string | string[] }>();
-  const pairingId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
+  const params = useLocalSearchParams<{
+    pairingId?: string | string[];
+    leagueId?: string | string[];
+  }>();
+  const pairingId = routeParam(params.pairingId);
+  const leagueIdParam = routeParam(params.leagueId);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
@@ -43,21 +47,37 @@ export default function LeagueMatchDetailScreen() {
   const [p1Holes, setP1Holes] = useState<DbTournamentHoleScoreRow[]>([]);
   const [p2Holes, setP2Holes] = useState<DbTournamentHoleScoreRow[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
+    if (!pairingId) {
+      setPairing(null);
+      setBundle(null);
+      setP1Holes([]);
+      setP2Holes([]);
+      setLoadError('Missing tournament match id.');
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
-    const token = googleOAuthAccessToken ?? undefined;
-    const path = `league_match_pairings?id=eq.${encodeURIComponent(pairingId)}&limit=1`;
-    const res = await restSelect<DbLeagueMatchPairingRow>(path, token);
-    const row = res.data?.[0] ?? null;
+    setLoadError(null);
+    const token =
+      googleOAuthAccessToken ?? (await resolveTournamentAccessToken()) ?? undefined;
+    const pairingRes = await fetchLeagueMatchPairingById(
+      pairingId,
+      token,
+      leagueIdParam || undefined
+    );
+    const row = pairingRes.data;
+    if (pairingRes.error && !row) {
+      setLoadError(pairingRes.error);
+    }
     setPairing(row);
     if (row) {
       const b = await fetchLeagueBundle(row.league_id, token);
       setBundle(b.data ?? null);
-      const linksRes = await restSelect<PairingRoundLink>(
-        `league_match_pairing_rounds?pairing_id=eq.${encodeURIComponent(pairingId)}&select=pairing_id,league_round_id,submitted_by_entry_id`,
-        token
-      );
+      const linksRes = await fetchLeagueMatchPairingRoundLinks(pairingId, token);
       const links = linksRes.data ?? [];
       const p1Link = links.find((l) => l.submitted_by_entry_id === row.player_1_entry_id);
       const p2Link = links.find((l) => l.submitted_by_entry_id === row.player_2_entry_id);
@@ -79,7 +99,7 @@ export default function LeagueMatchDetailScreen() {
       setP2Holes([]);
     }
     setLoading(false);
-  }, [pairingId]);
+  }, [pairingId, leagueIdParam]);
 
   useEffect(() => {
     void load();
@@ -155,9 +175,24 @@ export default function LeagueMatchDetailScreen() {
   }
 
   if (!pairing) {
+    const backLeagueId = leagueIdParam || bundle?.league.id;
     return (
       <ContentWidth bg={colors.surface}>
-        <Text style={{ padding: gutter }}>Match not found.</Text>
+        <View style={{ padding: gutter, gap: 16 }}>
+          <Text style={styles.notFoundTxt}>{loadError ?? 'Tournament match not found.'}</Text>
+          {backLeagueId ? (
+            <Pressable
+              style={styles.backBtn}
+              onPress={() => router.replace(`/(tabs)/league/${backLeagueId}` as never)}
+            >
+              <Text style={styles.backBtnTxt}>Back to tournament</Text>
+            </Pressable>
+          ) : (
+            <Pressable style={styles.backBtn} onPress={() => router.back()}>
+              <Text style={styles.backBtnTxt}>Go back</Text>
+            </Pressable>
+          )}
+        </View>
       </ContentWidth>
     );
   }
@@ -368,6 +403,7 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   backBtnTxt: { fontSize: 15, fontWeight: '600', color: colors.sage },
+  notFoundTxt: { fontSize: 15, color: colors.muted, lineHeight: 22 },
   tiebreakBox: {
     padding: 12,
     borderRadius: 10,

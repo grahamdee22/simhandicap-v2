@@ -224,6 +224,7 @@ export default function LeagueDetailScreen() {
 
         {isBracketMp ? (
           <MatchPlayBracketSection
+            leagueId={league.id}
             pairings={pairings}
             entries={bundle.entries}
             displayNames={displayNames}
@@ -247,7 +248,12 @@ export default function LeagueDetailScreen() {
                   <Pressable
                     key={p.id}
                     style={styles.pairingRow}
-                    onPress={() => router.push(`/(tabs)/league-match/${p.id}` as never)}
+                    onPress={() =>
+                      router.push({
+                        pathname: '/(tabs)/league-match/[pairingId]',
+                        params: { pairingId: p.id, leagueId: league.id },
+                      } as never)
+                    }
                   >
                     <Text style={styles.pairingLine}>
                       {name1} vs. {name2}
@@ -262,7 +268,12 @@ export default function LeagueDetailScreen() {
         {isLegacyMp && myPairing && myEntry && myOpponentName ? (
           <Pressable
             style={styles.matchCard}
-            onPress={() => router.push(`/(tabs)/league-match/${myPairing.id}` as never)}
+            onPress={() =>
+              router.push({
+                pathname: '/(tabs)/league-match/[pairingId]',
+                params: { pairingId: myPairing.id, leagueId: league.id },
+              } as never)
+            }
           >
             <Text style={styles.matchCardTitle}>Your match</Text>
             <Text style={styles.matchCardLine}>

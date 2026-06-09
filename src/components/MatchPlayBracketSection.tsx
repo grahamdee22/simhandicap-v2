@@ -13,6 +13,7 @@ import type {
 } from '../lib/matchPlayTournamentPairings';
 
 type Props = {
+  leagueId: string;
   pairings: DbLeagueMatchPairingRow[];
   entries: DbLeagueEntryRow[];
   displayNames: Record<string, string>;
@@ -51,7 +52,9 @@ function RoundSection({
             <Pressable
               key={card.pairing.id}
               style={[styles.matchCard, card.isMine && styles.matchCardMine]}
-              onPress={() => onOpenPairing(card.pairing.id)}
+              onPress={() => {
+                if (card.pairing.id) onOpenPairing(card.pairing.id);
+              }}
             >
               {card.isMine ? <Text style={styles.yourMatch}>Your match</Text> : null}
               <Text style={styles.matchNames}>
@@ -78,6 +81,7 @@ function RoundSection({
 }
 
 export function MatchPlayBracketSection({
+  leagueId,
   pairings,
   entries,
   displayNames,
@@ -101,7 +105,10 @@ export function MatchPlayBracketSection({
   );
 
   const onOpenPairing = (pairingId: string) => {
-    router.push(`/(tabs)/league-match/${pairingId}` as never);
+    router.push({
+      pathname: '/(tabs)/league-match/[pairingId]',
+      params: { pairingId, leagueId },
+    } as never);
   };
 
   return (

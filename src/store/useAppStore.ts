@@ -512,18 +512,21 @@ export const useAppStore = create<AppState>()(
 
       deleteRound: async (roundId) => {
         if (isCloudRoundId(roundId) && supabase) {
-          const restTok = googleOAuthAccessToken;
-          if (restTok) {
-            const errMsg = await deleteRoundInSupabase(roundId, restTok);
+          const { data: sessionData } = await supabase.auth.getSession();
+          const accessToken =
+            googleOAuthAccessToken ?? sessionData.session?.access_token ?? undefined;
+          if (accessToken) {
+            const errMsg = await deleteRoundInSupabase(roundId, accessToken);
             if (errMsg) throw new Error(errMsg);
           } else {
             const {
               data: { user },
             } = await supabase.auth.getUser();
-            if (user) {
-              const errMsg = await deleteRoundInSupabase(roundId);
-              if (errMsg) throw new Error(errMsg);
+            if (!user) {
+              throw new Error('Not signed in — could not delete this round from the server.');
             }
+            const errMsg = await deleteRoundInSupabase(roundId);
+            if (errMsg) throw new Error(errMsg);
           }
         }
 

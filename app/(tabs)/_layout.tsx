@@ -269,7 +269,7 @@ export default function TabLayout() {
         name="league-match/[pairingId]"
         options={{
           href: null,
-          title: 'Match',
+          title: 'Tournament match',
           headerRight: HeaderInstagramAndSimCap,
         }}
       />

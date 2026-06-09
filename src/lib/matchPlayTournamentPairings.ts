@@ -80,6 +80,71 @@ export async function fetchLeagueMatchPairings(
   return { data: (data ?? []) as DbLeagueMatchPairingRow[], error: null };
 }
 
+export type LeagueMatchPairingRoundLink = {
+  pairing_id: string;
+  league_round_id: string;
+  submitted_by_entry_id: string;
+};
+
+/** Load one tournament pairing by id (league_match_pairings — not Social matches). */
+export async function fetchLeagueMatchPairingById(
+  pairingId: string,
+  accessToken?: string,
+  leagueId?: string
+): Promise<{ data: DbLeagueMatchPairingRow | null; error: string | null }> {
+  const id = pairingId.trim();
+  if (!id) return { data: null, error: 'Missing pairing id' };
+
+  const token = await resolveTournamentAccessToken(accessToken);
+  if (token) {
+    const path = `league_match_pairings?id=eq.${encodeURIComponent(id)}&limit=1`;
+    const res = await restSelect<DbLeagueMatchPairingRow>(path, token);
+    if (res.data?.[0]) return { data: res.data[0], error: null };
+    if (leagueId) {
+      const leagueRes = await fetchLeagueMatchPairings(leagueId, token);
+      const hit = leagueRes.data?.find((p) => p.id === id) ?? null;
+      if (hit) return { data: hit, error: null };
+    }
+    if (res.error) return { data: null, error: res.error };
+  }
+
+  if (!supabase) return { data: null, error: 'Supabase is not configured' };
+  const { data, error } = await supabase
+    .from('league_match_pairings')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) return { data: null, error: error.message };
+  if (data) return { data: data as DbLeagueMatchPairingRow, error: null };
+  if (leagueId) {
+    const leagueRes = await fetchLeagueMatchPairings(leagueId, accessToken);
+    const hit = leagueRes.data?.find((p) => p.id === id) ?? null;
+    return hit ? { data: hit, error: null } : { data: null, error: 'Tournament match not found' };
+  }
+  return { data: null, error: 'Tournament match not found' };
+}
+
+export async function fetchLeagueMatchPairingRoundLinks(
+  pairingId: string,
+  accessToken?: string
+): Promise<{ data: LeagueMatchPairingRoundLink[] | null; error: string | null }> {
+  const id = pairingId.trim();
+  if (!id) return { data: [], error: null };
+
+  const token = await resolveTournamentAccessToken(accessToken);
+  const path = `league_match_pairing_rounds?pairing_id=eq.${encodeURIComponent(id)}&select=pairing_id,league_round_id,submitted_by_entry_id`;
+  if (token) {
+    return restSelect<LeagueMatchPairingRoundLink>(path, token);
+  }
+  if (!supabase) return { data: null, error: 'Supabase is not configured' };
+  const { data, error } = await supabase
+    .from('league_match_pairing_rounds')
+    .select('pairing_id, league_round_id, submitted_by_entry_id')
+    .eq('pairing_id', id);
+  if (error) return { data: null, error: error.message };
+  return { data: (data ?? []) as LeagueMatchPairingRoundLink[], error: null };
+}
+
 export async function generateMatchPlayBracket(
   leagueId: string,
   seededUserIds: string[],
