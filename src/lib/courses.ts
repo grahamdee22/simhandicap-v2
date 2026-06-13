@@ -67,6 +67,191 @@ const PEBBLE_PARS: number[] = [
   4, 5, 4, 4, 3, 5, 3, 4, 4, 4, 4, 3, 4, 5, 4, 4, 3, 5,
 ];
 
+/** Verified 18-hole par layouts (holes 1–18). Sources: official/USGA/Wikipedia scorecards. */
+const AUGUSTA_PARS: number[] = [
+  4, 5, 4, 3, 4, 3, 4, 5, 4, 4, 4, 3, 5, 4, 5, 3, 4, 4,
+];
+const BANDON_DUNES_PARS: number[] = [
+  4, 3, 5, 4, 4, 3, 4, 4, 5, 4, 4, 3, 5, 4, 3, 4, 4, 5,
+];
+const BANDON_TRAILS_PARS: number[] = [
+  4, 3, 5, 4, 3, 4, 4, 4, 5, 4, 4, 3, 4, 4, 4, 5, 3, 4,
+];
+const BAY_HILL_PARS: number[] = [
+  4, 3, 4, 5, 4, 5, 3, 4, 4, 4, 4, 5, 4, 3, 4, 5, 3, 4,
+];
+const CABOT_CLIFFS_PARS: number[] = [
+  5, 4, 4, 3, 4, 3, 5, 5, 3, 5, 4, 3, 4, 3, 5, 3, 4, 5,
+];
+const CABOT_LINKS_PARS: number[] = [
+  5, 3, 4, 4, 3, 4, 3, 5, 4, 4, 5, 4, 4, 3, 4, 4, 3, 4,
+];
+const BETHPAGE_PARS: number[] = [
+  4, 4, 3, 5, 4, 4, 5, 3, 4, 4, 4, 4, 5, 3, 4, 4, 3, 4,
+];
+const CARNOUSTIE_PARS: number[] = [
+  4, 4, 4, 4, 4, 5, 4, 3, 4, 4, 4, 4, 3, 5, 4, 3, 4, 4,
+];
+const CHAMBERS_BAY_PARS: number[] = [
+  4, 4, 3, 4, 4, 4, 4, 5, 3, 4, 4, 4, 4, 4, 3, 4, 3, 5,
+];
+const CONGRESSIONAL_BLUE_PARS: number[] = [
+  4, 3, 4, 4, 4, 5, 3, 4, 5, 3, 5, 4, 3, 4, 4, 5, 4, 4,
+];
+const EAST_LAKE_PARS: number[] = [
+  4, 3, 4, 4, 4, 5, 4, 4, 3, 4, 3, 4, 4, 4, 3, 4, 4, 5,
+];
+const ERIN_HILLS_PARS: number[] = [
+  5, 4, 4, 4, 4, 3, 5, 4, 3, 4, 4, 4, 3, 5, 4, 3, 4, 5,
+];
+const HARBOUR_TOWN_PARS: number[] = [
+  4, 5, 4, 3, 5, 4, 3, 4, 4, 4, 4, 4, 4, 3, 5, 4, 3, 4,
+];
+const HAZELTINE_PARS: number[] = [
+  4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 5, 4, 3, 4, 5, 4, 3, 4,
+];
+const KAPALUA_PLANTATION_PARS: number[] = [
+  4, 3, 4, 4, 5, 4, 4, 3, 5, 4, 3, 4, 4, 4, 5, 4, 4, 5,
+];
+const KIAWAH_OCEAN_PARS: number[] = [
+  4, 5, 4, 4, 3, 4, 5, 3, 4, 4, 5, 4, 4, 3, 4, 5, 3, 4,
+];
+const MERION_EAST_PARS: number[] = [
+  4, 5, 3, 5, 4, 4, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4, 3, 4,
+];
+const MUIRFIELD_VILLAGE_PARS: number[] = [
+  4, 4, 4, 3, 5, 4, 5, 3, 4, 4, 5, 3, 4, 4, 5, 3, 4, 4,
+];
+const OAKMONT_PARS: number[] = [
+  4, 4, 4, 5, 4, 3, 4, 3, 5, 4, 4, 5, 3, 4, 4, 3, 4, 4,
+];
+const OLD_MACDONALD_PARS: number[] = [
+  4, 3, 4, 4, 3, 5, 4, 3, 4, 4, 4, 3, 4, 4, 5, 4, 5, 4,
+];
+const OLYMPIC_LAKE_PARS: number[] = [
+  4, 4, 3, 4, 4, 4, 4, 3, 4, 4, 4, 4, 3, 4, 3, 5, 5, 4,
+];
+const PACIFIC_DUNES_PARS: number[] = [
+  4, 4, 5, 4, 3, 4, 4, 4, 4, 3, 3, 5, 4, 3, 5, 4, 3, 5,
+];
+const PINEHURST_2_PARS: number[] = [
+  4, 4, 4, 4, 5, 3, 4, 5, 3, 5, 4, 4, 4, 4, 3, 5, 3, 4,
+];
+const PINEHURST_4_PARS: number[] = [
+  4, 5, 4, 3, 4, 3, 4, 4, 5, 4, 3, 4, 5, 3, 4, 4, 5, 4,
+];
+const PRAIRIE_DUNES_PARS: number[] = [
+  4, 3, 4, 3, 4, 4, 5, 4, 4, 3, 4, 4, 4, 4, 3, 4, 5, 4,
+];
+const RIVIERA_PARS: number[] = [
+  5, 4, 4, 3, 4, 3, 4, 4, 4, 4, 5, 4, 4, 3, 4, 3, 5, 4,
+];
+const ROYAL_BIRKDALE_PARS: number[] = [
+  4, 4, 4, 3, 4, 4, 3, 4, 4, 4, 4, 3, 4, 5, 3, 4, 5, 4,
+];
+const SAWGRASS_PARS: number[] = [
+  4, 5, 3, 4, 4, 4, 4, 3, 5, 4, 5, 4, 3, 4, 4, 5, 3, 4,
+];
+const SHEEP_RANCH_PARS: number[] = [
+  5, 4, 3, 4, 3, 4, 3, 4, 4, 4, 5, 4, 5, 4, 4, 3, 4, 5,
+];
+const SOUTHERN_HILLS_PARS: number[] = [
+  4, 4, 4, 4, 5, 3, 4, 3, 4, 4, 3, 4, 5, 3, 4, 4, 4, 4,
+];
+const SPYGLASS_PARS: number[] = [
+  5, 4, 3, 4, 3, 4, 5, 4, 4, 4, 5, 3, 4, 5, 3, 4, 4, 4,
+];
+const ST_ANDREWS_OLD_PARS: number[] = [
+  4, 4, 4, 4, 5, 4, 4, 3, 4, 4, 3, 4, 4, 5, 4, 4, 4, 4,
+];
+const TORREY_NORTH_PARS: number[] = [
+  4, 4, 3, 4, 5, 4, 4, 3, 5, 5, 4, 3, 4, 4, 3, 4, 5, 4,
+];
+const TORREY_SOUTH_PARS: number[] = [
+  4, 4, 3, 4, 4, 5, 4, 3, 5, 4, 3, 4, 5, 4, 4, 3, 4, 5,
+];
+const TPC_RIVER_HIGHLANDS_PARS: number[] = [
+  4, 4, 4, 4, 3, 5, 4, 3, 4, 4, 3, 4, 5, 4, 4, 3, 4, 4,
+];
+const TPC_SCOTTSDALE_PARS: number[] = [
+  4, 3, 4, 4, 3, 4, 4, 3, 4, 4, 5, 4, 3, 4, 4, 3, 4, 5,
+];
+const VALHALLA_PARS: number[] = [
+  4, 4, 3, 4, 4, 4, 5, 3, 4, 5, 3, 4, 4, 3, 4, 4, 4, 5,
+];
+const WAIALAE_PARS: number[] = [
+  4, 3, 4, 5, 4, 4, 4, 3, 5, 5, 4, 4, 3, 4, 4, 3, 4, 5,
+];
+const WHISTLING_IRISH_PARS: number[] = [
+  4, 4, 3, 4, 5, 3, 4, 5, 4, 4, 3, 4, 3, 5, 4, 4, 4, 5,
+];
+const WHISTLING_STRAITS_PARS: number[] = [
+  4, 5, 3, 4, 5, 4, 3, 4, 4, 4, 5, 3, 4, 4, 5, 4, 3, 4,
+];
+const ARCADIA_BLUFFS_PARS: number[] = [
+  5, 3, 5, 4, 5, 3, 4, 4, 3, 4, 5, 4, 3, 4, 5, 4, 3, 4,
+];
+const CYPRESS_POINT_PARS: number[] = [
+  4, 5, 3, 4, 5, 5, 3, 4, 4, 5, 4, 4, 4, 4, 3, 3, 4, 4,
+];
+const GAMBLE_SANDS_PARS: number[] = [
+  4, 4, 5, 3, 4, 3, 5, 4, 4, 3, 4, 4, 5, 4, 4, 3, 4, 5,
+];
+const MUIRFIELD_PARS: number[] = [
+  4, 4, 4, 3, 5, 4, 3, 4, 5, 4, 4, 4, 3, 4, 4, 3, 5, 4,
+];
+const PASATIEMPO_PARS: number[] = [
+  4, 4, 3, 4, 3, 5, 4, 3, 5, 4, 4, 4, 5, 4, 3, 4, 4, 3,
+];
+const PAYNES_VALLEY_PARS: number[] = [
+  4, 3, 4, 5, 3, 4, 4, 5, 4, 3, 4, 4, 5, 4, 4, 3, 4, 5,
+];
+const POPPY_HILLS_PARS: number[] = [
+  4, 3, 4, 5, 4, 3, 4, 4, 5, 5, 3, 4, 4, 4, 3, 4, 3, 5,
+];
+const PORT_RUSH_DUNLUCE_PARS: number[] = [
+  4, 5, 3, 4, 4, 3, 5, 4, 4, 4, 4, 5, 3, 4, 4, 3, 4, 4,
+];
+const QUAIL_HOLLOW_PARS: number[] = [
+  5, 4, 4, 3, 4, 3, 5, 4, 4, 5, 4, 4, 3, 4, 5, 4, 3, 4,
+];
+const ROYAL_LYTHAM_PARS: number[] = [
+  3, 4, 4, 4, 3, 4, 5, 4, 3, 4, 5, 3, 4, 4, 4, 4, 4, 4,
+];
+const SAND_HILLS_PARS: number[] = [
+  5, 4, 3, 4, 4, 3, 4, 4, 4, 4, 4, 4, 3, 5, 4, 5, 3, 4,
+];
+const SAND_VALLEY_PARS: number[] = [
+  4, 4, 3, 5, 3, 4, 5, 3, 4, 5, 4, 5, 4, 3, 4, 4, 3, 5,
+];
+const SEA_ISLAND_SEASIDE_PARS: number[] = [
+  4, 4, 3, 4, 4, 3, 5, 4, 4, 4, 4, 3, 4, 4, 5, 4, 3, 4,
+];
+const STREAMSONG_BLACK_PARS: number[] = [
+  5, 4, 4, 5, 3, 4, 3, 4, 4, 5, 4, 5, 4, 4, 3, 4, 3, 5,
+];
+const STREAMSONG_BLUE_PARS: number[] = [
+  4, 5, 4, 4, 3, 4, 3, 4, 5, 3, 4, 4, 4, 5, 4, 3, 5, 4,
+];
+const STREAMSONG_RED_PARS: number[] = [
+  4, 5, 4, 4, 4, 3, 5, 3, 4, 4, 4, 4, 5, 3, 4, 3, 4, 5,
+];
+const SUNNINGDALE_OLD_PARS: number[] = [
+  5, 4, 4, 3, 4, 4, 4, 3, 4, 4, 4, 4, 3, 5, 3, 4, 4, 4,
+];
+const TOBACCO_ROAD_PARS: number[] = [
+  5, 4, 3, 5, 4, 3, 4, 3, 4, 4, 5, 4, 5, 3, 4, 4, 3, 4,
+];
+const TROON_OLD_PARS: number[] = [
+  4, 4, 4, 5, 3, 5, 4, 3, 4, 4, 4, 4, 4, 3, 4, 5, 3, 4,
+];
+const VALDERRAMA_PARS: number[] = [
+  4, 4, 3, 5, 4, 3, 4, 4, 4, 4, 5, 3, 4, 4, 3, 4, 5, 4,
+];
+const WOLF_CREEK_PARS: number[] = [
+  5, 4, 3, 4, 5, 4, 4, 3, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4,
+];
+
 /**
  * Pre-seeded sim courses. IDs are stable: existing rounds reference `courseId`.
  * Ratings/slopes follow the app’s default tee per course (uniform across platforms).
@@ -90,7 +275,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Augusta National Golf Club',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(74.2, 132),
-    pars: P72,
+    pars: AUGUSTA_PARS,
     tees: [
       { name: 'Red', rating: 69.1, slope: 118 },
       { name: 'White', rating: 72.8, slope: 128 },
@@ -104,7 +289,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'TPC Sawgrass',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(74.7, 135),
-    pars: P72,
+    pars: SAWGRASS_PARS,
     tees: [
       { name: 'Red', rating: 69.8, slope: 122 },
       { name: 'White', rating: 72.4, slope: 129 },
@@ -117,7 +302,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Bethpage Black',
     defaultTee: 'Black',
     byPlatform: uniformByPlatform(75.4, 144),
-    pars: P72,
+    pars: BETHPAGE_PARS,
     tees: [
       { name: 'Red', rating: 70.5, slope: 125 },
       { name: 'White', rating: 73.0, slope: 133 },
@@ -130,7 +315,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Pinehurst No. 2',
     defaultTee: 'Gold',
     byPlatform: uniformByPlatform(75.0, 131),
-    pars: P72,
+    pars: PINEHURST_2_PARS,
     tees: [
       { name: 'Red', rating: 68.5, slope: 117 },
       { name: 'Green', rating: 72.2, slope: 127 },
@@ -143,7 +328,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'St Andrews Old Course',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.1, 132),
-    pars: P72,
+    pars: ST_ANDREWS_OLD_PARS,
     tees: [
       { name: 'Red', rating: 67.5, slope: 114 },
       { name: 'White', rating: 72.1, slope: 132 },
@@ -156,7 +341,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Torrey Pines South',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(75.3, 144),
-    pars: P72,
+    pars: TORREY_SOUTH_PARS,
     tees: [
       { name: 'Red', rating: 70.6, slope: 124 },
       { name: 'White', rating: 72.9, slope: 131 },
@@ -170,7 +355,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     location: 'La Jolla, CA',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(72.0, 130),
-    pars: P72,
+    pars: TORREY_NORTH_PARS,
     tees: [
       { name: 'Silver', rating: 66.0, slope: 112 },
       { name: 'Gold', rating: 69.3, slope: 120 },
@@ -196,7 +381,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     location: 'Hollister, MO',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.0, 130),
-    pars: P72,
+    pars: PAYNES_VALLEY_PARS,
     tees: [
       { name: 'Red', rating: 64.0, slope: 102 },
       { name: 'White', rating: 69.4, slope: 119 },
@@ -211,7 +396,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     location: 'Santa Cruz, CA',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.0, 130),
-    pars: P72,
+    pars: PASATIEMPO_PARS,
     tees: [
       { name: 'Hollins', rating: 63.2, slope: 117 },
       { name: 'Green', rating: 68.5, slope: 132 },
@@ -226,7 +411,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     location: 'Hutchinson, KS',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.0, 130),
-    pars: P72,
+    pars: PRAIRIE_DUNES_PARS,
     tees: [
       { name: 'Bronze', rating: 67.4, slope: 131 },
       { name: 'Silver', rating: 69.2, slope: 135 },
@@ -242,7 +427,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     location: 'Mullen, NE',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.0, 130),
-    pars: P72,
+    pars: SAND_HILLS_PARS,
     tees: [{ name: 'White', rating: 72.0, slope: 130 }],
     confident: false,
   },
@@ -251,7 +436,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Whistling Straits',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(75.1, 140),
-    pars: P72,
+    pars: WHISTLING_STRAITS_PARS,
     tees: [
       { name: 'Red', rating: 69.0, slope: 116 },
       { name: 'White', rating: 72.5, slope: 127 },
@@ -264,7 +449,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Kiawah Island Ocean',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(74.7, 141),
-    pars: P72,
+    pars: KIAWAH_OCEAN_PARS,
     tees: [
       { name: 'Red', rating: 69.8, slope: 121 },
       { name: 'White', rating: 72.5, slope: 128 },
@@ -277,7 +462,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Oakmont Country Club',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(73.1, 132),
-    pars: P72,
+    pars: OAKMONT_PARS,
     tees: [
       { name: 'Red', rating: 70.2, slope: 123 },
       { name: 'White', rating: 73.1, slope: 132 },
@@ -290,7 +475,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Merion Golf Club East',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.8, 134),
-    pars: P72,
+    pars: MERION_EAST_PARS,
     tees: [
       { name: 'Red', rating: 69.5, slope: 120 },
       { name: 'White', rating: 72.8, slope: 134 },
@@ -302,7 +487,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Congressional Blue',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(75.4, 138),
-    pars: P72,
+    pars: CONGRESSIONAL_BLUE_PARS,
     tees: [
       { name: 'Green', rating: 67.3, slope: 118 },
       { name: 'Silver', rating: 68.6, slope: 121 },
@@ -318,7 +503,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Olympic Club Lake',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(71.8, 130),
-    pars: P72,
+    pars: OLYMPIC_LAKE_PARS,
     tees: [
       { name: 'Red', rating: 69.3, slope: 128 },
       { name: 'White', rating: 71.8, slope: 130 },
@@ -333,7 +518,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Riviera Country Club',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.8, 134),
-    pars: P72,
+    pars: RIVIERA_PARS,
     tees: [
       { name: 'Red', rating: 70.0, slope: 121 },
       { name: 'White', rating: 72.6, slope: 128 },
@@ -346,7 +531,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Chambers Bay',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(72.4, 134),
-    pars: P72,
+    pars: CHAMBERS_BAY_PARS,
     tees: [
       { name: 'Teal', rating: 63.0, slope: 109 },
       { name: 'White', rating: 68.0, slope: 122 },
@@ -362,7 +547,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Erin Hills',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(75.2, 131),
-    pars: P72,
+    pars: ERIN_HILLS_PARS,
     tees: [
       { name: 'Red', rating: 70.8, slope: 118 },
       { name: 'White', rating: 73.4, slope: 126 },
@@ -375,7 +560,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Hazeltine National',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(75.6, 152),
-    pars: P72,
+    pars: HAZELTINE_PARS,
     tees: [
       { name: 'Black', rating: 71.2, slope: 131 },
       { name: 'White', rating: 71.4, slope: 143 },
@@ -390,7 +575,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Southern Hills',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(72.8, 139),
-    pars: P72,
+    pars: SOUTHERN_HILLS_PARS,
     tees: [
       { name: 'Silver', rating: 70.6, slope: 122 },
       { name: 'Gold', rating: 70.0, slope: 127 },
@@ -404,7 +589,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Valhalla Golf Club',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(69.9, 132),
-    pars: P72,
+    pars: VALHALLA_PARS,
     tees: [
       { name: 'Silver', rating: 66.2, slope: 126 },
       { name: 'Blue', rating: 69.9, slope: 132 },
@@ -419,7 +604,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'East Lake Golf Club',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(71.7, 130),
-    pars: P72,
+    pars: EAST_LAKE_PARS,
     tees: [
       { name: 'Gold', rating: 66.9, slope: 122 },
       { name: 'Blue', rating: 71.7, slope: 130 },
@@ -432,7 +617,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Carnoustie Championship',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(75.0, 139),
-    pars: P72,
+    pars: CARNOUSTIE_PARS,
     tees: [
       { name: 'Red', rating: 71.0, slope: 130 },
       { name: 'Yellow', rating: 73.6, slope: 135 },
@@ -459,7 +644,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Muirfield',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.5, 139),
-    pars: P72,
+    pars: MUIRFIELD_PARS,
     tees: [
       { name: 'Blue', rating: 70.4, slope: 132 },
       { name: 'White', rating: 72.5, slope: 139 },
@@ -472,7 +657,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Royal Portrush Dunluce',
     defaultTee: 'Medal',
     byPlatform: uniformByPlatform(72.4, 131),
-    pars: P72,
+    pars: PORT_RUSH_DUNLUCE_PARS,
     tees: [
       { name: 'Society', rating: 70.0, slope: 113 },
       { name: 'Medal', rating: 72.4, slope: 131 },
@@ -485,7 +670,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Royal Troon Old',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(73.4, 140),
-    pars: P72,
+    pars: TROON_OLD_PARS,
     tees: [
       { name: 'Yellow', rating: 71.5, slope: 136 },
       { name: 'White', rating: 73.4, slope: 140 },
@@ -509,7 +694,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Bandon Dunes',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(71.1, 133),
-    pars: P72,
+    pars: BANDON_DUNES_PARS,
     tees: [
       { name: 'Royal Blue', rating: 61.6, slope: 105 },
       { name: 'Gold', rating: 69.1, slope: 124 },
@@ -523,7 +708,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Bandon Trails',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(72.0, 137),
-    pars: P72,
+    pars: BANDON_TRAILS_PARS,
     tees: [
       { name: 'Royal Blue', rating: 63.0, slope: 113 },
       { name: 'Orange', rating: 66.7, slope: 126 },
@@ -538,7 +723,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Pacific Dunes',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(70.8, 135),
-    pars: P72,
+    pars: PACIFIC_DUNES_PARS,
     tees: [
       { name: 'Royal Blue', rating: 61.5, slope: 113 },
       { name: 'Orange', rating: 65.8, slope: 126 },
@@ -553,7 +738,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Old Macdonald',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(71.4, 127),
-    pars: P72,
+    pars: OLD_MACDONALD_PARS,
     tees: [
       { name: 'Royal Blue', rating: 62.6, slope: 104 },
       { name: 'Gold', rating: 67.8, slope: 117 },
@@ -567,7 +752,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Sheep Ranch',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(70.0, 116),
-    pars: P72,
+    pars: SHEEP_RANCH_PARS,
     tees: [
       { name: 'Royal Blue', rating: 61.0, slope: 97 },
       { name: 'Gold', rating: 67.9, slope: 109 },
@@ -581,7 +766,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Sand Valley',
     defaultTee: 'Sand',
     byPlatform: uniformByPlatform(70.2, 129),
-    pars: P72,
+    pars: SAND_VALLEY_PARS,
     tees: [
       { name: 'Royal Blue', rating: 60.8, slope: 100 },
       { name: 'Silver', rating: 63.9, slope: 113 },
@@ -598,7 +783,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Whistling Straits Irish',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.5, 141),
-    pars: P72,
+    pars: WHISTLING_IRISH_PARS,
     tees: [
       { name: 'Red', rating: 65.6, slope: 122 },
       { name: 'White', rating: 70.3, slope: 133 },
@@ -613,7 +798,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Bay Hill Club',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.8, 135),
-    pars: P72,
+    pars: BAY_HILL_PARS,
     tees: [
       { name: 'Red', rating: 70.5, slope: 124 },
       { name: 'White', rating: 72.6, slope: 129 },
@@ -626,7 +811,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Harbour Town Golf Links',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(72.9, 126),
-    pars: P72,
+    pars: HARBOUR_TOWN_PARS,
     tees: [
       { name: 'Red', rating: 69.2, slope: 118 },
       { name: 'White', rating: 71.5, slope: 123 },
@@ -639,7 +824,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'TPC Scottsdale Stadium',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(72.7, 133),
-    pars: P72,
+    pars: TPC_SCOTTSDALE_PARS,
     tees: [
       { name: 'Red', rating: 69.5, slope: 121 },
       { name: 'White', rating: 71.4, slope: 126 },
@@ -652,7 +837,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'TPC River Highlands',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(72.0, 129),
-    pars: P72,
+    pars: TPC_RIVER_HIGHLANDS_PARS,
     tees: [
       { name: 'Red', rating: 68.8, slope: 116 },
       { name: 'White', rating: 70.6, slope: 122 },
@@ -665,7 +850,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Muirfield Village',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.8, 150),
-    pars: P72,
+    pars: MUIRFIELD_VILLAGE_PARS,
     tees: [
       { name: 'Grey', rating: 69.8, slope: 144 },
       { name: 'Green', rating: 70.8, slope: 146 },
@@ -680,7 +865,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Kapalua Plantation',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.3, 129),
-    pars: P72,
+    pars: KAPALUA_PLANTATION_PARS,
     tees: [
       { name: 'Red', rating: 69.5, slope: 118 },
       { name: 'White', rating: 71.8, slope: 124 },
@@ -693,7 +878,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Waialae Country Club',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.8, 133),
-    pars: P72,
+    pars: WAIALAE_PARS,
     tees: [
       { name: 'Red', rating: 70.2, slope: 122 },
       { name: 'White', rating: 72.5, slope: 128 },
@@ -706,7 +891,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Sea Island Seaside',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(72.0, 130),
-    pars: P72,
+    pars: SEA_ISLAND_SEASIDE_PARS,
     tees: [
       { name: 'Red', rating: 69.5, slope: 120 },
       { name: 'White', rating: 71.2, slope: 125 },
@@ -719,7 +904,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Spyglass Hill',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(73.4, 136),
-    pars: P72,
+    pars: SPYGLASS_PARS,
     tees: [
       { name: 'Red', rating: 69.5, slope: 120 },
       { name: 'White', rating: 72.0, slope: 127 },
@@ -732,7 +917,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Poppy Hills',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(71.6, 134),
-    pars: P72,
+    pars: POPPY_HILLS_PARS,
     tees: [
       { name: 'Green', rating: 61.8, slope: 103 },
       { name: 'Orange', rating: 66.2, slope: 120 },
@@ -748,7 +933,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Cypress Point',
     defaultTee: 'White',
     byPlatform: uniformByPlatform(72.1, 139),
-    pars: P72,
+    pars: CYPRESS_POINT_PARS,
     tees: [
       { name: 'Green', rating: 69.9, slope: 132 },
       { name: 'White', rating: 72.1, slope: 139 },
@@ -822,7 +1007,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Royal Birkdale',
     defaultTee: 'Yellow',
     byPlatform: uniformByPlatform(72.0, 132),
-    pars: P72,
+    pars: ROYAL_BIRKDALE_PARS,
     tees: [{ name: 'Yellow', rating: 72.0, slope: 132 }],
     confident: false,
   },
@@ -831,7 +1016,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Royal Lytham St Annes',
     defaultTee: 'Red',
     byPlatform: uniformByPlatform(74.3, 147),
-    pars: P72,
+    pars: ROYAL_LYTHAM_PARS,
     tees: [
       { name: 'Green', rating: 72.5, slope: 139 },
       { name: 'Red', rating: 74.3, slope: 147 },
@@ -858,7 +1043,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Sunningdale Old',
     defaultTee: 'Medal',
     byPlatform: uniformByPlatform(68.5, 116),
-    pars: P72,
+    pars: SUNNINGDALE_OLD_PARS,
     tees: [
       { name: 'Yellow', rating: 66.1, slope: 113 },
       { name: 'Medal', rating: 68.5, slope: 116 },
@@ -871,7 +1056,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Valderrama',
     defaultTee: 'Executive',
     byPlatform: uniformByPlatform(71.2, 141),
-    pars: P72,
+    pars: VALDERRAMA_PARS,
     tees: [
       { name: 'Mayor', rating: 68.3, slope: 128 },
       { name: 'Executive', rating: 71.2, slope: 141 },
@@ -981,7 +1166,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Streamsong Red',
     defaultTee: 'Black',
     byPlatform: uniformByPlatform(71.6, 132),
-    pars: P72,
+    pars: STREAMSONG_RED_PARS,
     tees: [
       { name: 'Gold', rating: 64.7, slope: 113 },
       { name: 'Silver', rating: 69.5, slope: 124 },
@@ -995,7 +1180,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Streamsong Blue',
     defaultTee: 'Black',
     byPlatform: uniformByPlatform(71.8, 130),
-    pars: P72,
+    pars: STREAMSONG_BLUE_PARS,
     tees: [
       { name: 'Gold', rating: 66.4, slope: 113 },
       { name: 'Silver', rating: 69.5, slope: 127 },
@@ -1009,7 +1194,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Streamsong Black',
     defaultTee: 'Black',
     byPlatform: uniformByPlatform(72.0, 130),
-    pars: P72,
+    pars: STREAMSONG_BLACK_PARS,
     tees: [
       { name: 'Gold', rating: 65.1, slope: 116 },
       { name: 'Silver', rating: 69.5, slope: 125 },
@@ -1022,8 +1207,8 @@ export const COURSE_SEEDS: CourseSeed[] = [
     id: 'cabot-links',
     name: 'Cabot Links',
     defaultTee: 'Green',
-    byPlatform: uniformByPlatform(70.9, 125),
-    pars: P72,
+    byPlatform: uniformByPlatform(71.6, 125),
+    pars: CABOT_LINKS_PARS,
     tees: [
       { name: 'Blue', rating: 57.5, slope: 94 },
       { name: 'Orange', rating: 63.3, slope: 106 },
@@ -1038,7 +1223,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Cabot Cliffs',
     defaultTee: 'Green',
     byPlatform: uniformByPlatform(72.5, 142),
-    pars: P72,
+    pars: CABOT_CLIFFS_PARS,
     tees: [
       { name: 'Blue', rating: 62.5, slope: 106 },
       { name: 'Orange', rating: 66.5, slope: 118 },
@@ -1053,7 +1238,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Wolf Creek',
     defaultTee: 'Champions - Blue',
     byPlatform: uniformByPlatform(71.1, 140),
-    pars: P72,
+    pars: WOLF_CREEK_PARS,
     tees: [
       { name: 'Classics - Red', rating: 61.4, slope: 109 },
       { name: 'Signature - Gold', rating: 64.6, slope: 116 },
@@ -1068,7 +1253,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Gamble Sands',
     defaultTee: 'Sands',
     byPlatform: uniformByPlatform(70.0, 117),
-    pars: P72,
+    pars: GAMBLE_SANDS_PARS,
     tees: [
       { name: 'Forward', rating: 62.5, slope: 100 },
       { name: 'Intermediate', rating: 66.2, slope: 107 },
@@ -1084,7 +1269,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Arcadia Bluffs',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(74.2, 150),
-    pars: P72,
+    pars: ARCADIA_BLUFFS_PARS,
     tees: [
       { name: 'Red', rating: 65.5, slope: 122 },
       { name: 'Gold', rating: 68.4, slope: 133 },
@@ -1099,7 +1284,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Tobacco Road',
     defaultTee: 'Disc Tees',
     byPlatform: uniformByPlatform(71.3, 143),
-    pars: P72,
+    pars: TOBACCO_ROAD_PARS,
     tees: [
       { name: 'Cultivator Tees', rating: 62.6, slope: 117 },
       { name: 'Points Tees', rating: 66.9, slope: 125 },
@@ -1114,7 +1299,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Pinehurst No. 4',
     defaultTee: 'Blue Tees',
     byPlatform: uniformByPlatform(73.7, 135),
-    pars: P72,
+    pars: PINEHURST_4_PARS,
     tees: [
       { name: 'Red Tees', rating: 65.4, slope: 116 },
       { name: 'Green Tees', rating: 68.5, slope: 123 },
@@ -1145,7 +1330,7 @@ export const COURSE_SEEDS: CourseSeed[] = [
     name: 'Quail Hollow',
     defaultTee: 'Blue',
     byPlatform: uniformByPlatform(74.2, 135),
-    pars: P72,
+    pars: QUAIL_HOLLOW_PARS,
     tees: [
       { name: 'Red', rating: 70.2, slope: 122 },
       { name: 'White', rating: 72.6, slope: 128 },

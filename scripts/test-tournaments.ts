@@ -26,7 +26,8 @@ import {
 } from '../src/lib/handicap';
 import { isLeagueReadyToAutoComplete } from '../src/lib/leagueCompletion';
 import { autoAssignMembersToTeams } from '../src/lib/tournamentTeamCount';
-import { getCourseById } from '../src/lib/courses';
+import { getCourseById, COURSE_SEEDS } from '../src/lib/courses';
+import type { CourseSeed } from '../src/lib/courses';
 import {
   aggregateBestBallTeamRounds,
   bestBallStandingsScores,
@@ -101,6 +102,11 @@ const PROFILE_SPECS: ProfileSpec[] = [
 
 const TEST_GROUP_NAME = 'The Scratch Pad';
 const PARS = [4, 4, 3, 4, 5, 4, 3, 4, 4, 4, 4, 3, 4, 5, 4, 4, 3, 5];
+
+/** Generic default par layout from courses.ts (P72) — flag matches as warnings. */
+const GENERIC_P72: number[] = [
+  4, 4, 3, 4, 5, 4, 3, 4, 4, 4, 4, 3, 4, 5, 4, 4, 3, 5,
+];
 
 type LoadedProfile = ProfileSpec & { id: string; email: string; password: string };
 
@@ -1450,6 +1456,74 @@ async function testHandicapValidator(ctx: TestContext): Promise<TestRun> {
   return run;
 }
 
+function parsArraysEqual(a: number[], b: number[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+type ParValidationOutcome = 'pass' | 'p72' | 'fail';
+
+function validateCoursePars(course: CourseSeed): { outcome: ParValidationOutcome; detail?: string } {
+  const { pars } = course;
+  if (pars.length !== 18) {
+    return { outcome: 'fail', detail: `expected 18 holes, got ${pars.length}` };
+  }
+  for (let i = 0; i < pars.length; i++) {
+    const par = pars[i]!;
+    if (par !== 3 && par !== 4 && par !== 5) {
+      return { outcome: 'fail', detail: `hole ${i + 1} has invalid par ${par}` };
+    }
+  }
+  const total = pars.reduce((sum, par) => sum + par, 0);
+  if (total < 68 || total > 74) {
+    return { outcome: 'fail', detail: `total par ${total} is outside 68–74` };
+  }
+  if (parsArraysEqual(pars, GENERIC_P72)) {
+    return { outcome: 'p72', detail: 'still using generic P72 default' };
+  }
+  return { outcome: 'pass' };
+}
+
+async function testCourseParDataValidator(): Promise<TestRun> {
+  const run: TestRun = { name: 'Course Par Data Validator', steps: [] };
+  console.log('\n⛳ Course Par Data Validator');
+
+  const courses = COURSE_SEEDS.filter((c) => c.confident !== false);
+  let passed = 0;
+  let onP72 = 0;
+  let failed = 0;
+
+  for (const course of courses) {
+    const { outcome, detail } = validateCoursePars(course);
+    if (outcome === 'pass') {
+      console.log(`  ✅ ${course.name} (${course.id})`);
+      passed++;
+    } else if (outcome === 'p72') {
+      console.log(`  ⚠️  ${course.name} (${course.id}) — ${detail}`);
+      onP72++;
+    } else {
+      console.log(`  ❌ ${course.name} (${course.id}) — ${detail}`);
+      failed++;
+    }
+  }
+
+  console.log('');
+  console.log(
+    `  Summary: ${courses.length} checked, ${passed} passed, ${onP72} still on P72, ${failed} failed`
+  );
+
+  await runStep(run, 'Par data integrity (no invalid layouts)', async () => {
+    if (failed > 0) {
+      return { ok: false, detail: `${failed} course(s) with invalid par data` };
+    }
+    return {
+      ok: true,
+      detail: `${passed} verified${onP72 > 0 ? `, ${onP72} still on P72` : ''}`,
+    };
+  });
+
+  return run;
+}
+
 // --- main ------------------------------------------------------------------
 
 function printSummary(runs: TestRun[]): void {
@@ -1519,6 +1593,17 @@ async function main(): Promise<void> {
       runs.push({ name: fn.name, steps: [{ label: 'suite error', result: { ok: false, detail: msg } }] });
       await cleanupTestRun(ctx);
     }
+  }
+
+  try {
+    runs.push(await testCourseParDataValidator());
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.error(`\n❌ Test suite crashed: ${msg}`);
+    runs.push({
+      name: 'Course Par Data Validator',
+      steps: [{ label: 'suite error', result: { ok: false, detail: msg } }],
+    });
   }
 
   printSummary(runs);
