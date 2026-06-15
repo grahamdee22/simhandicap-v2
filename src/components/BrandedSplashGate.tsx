@@ -15,13 +15,15 @@ type Props = {
  * Branded intro: SimCap lockup on forest background, then cross-fade into the app (native-safe `Animated`).
  */
 export function BrandedSplashGate({ children }: Props) {
-  const { loading } = useAuth();
+  const { loading, onboardingReady } = useAuth();
   const splashOpacity = useRef(new Animated.Value(1)).current;
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const [finished, setFinished] = useState(false);
 
+  const bootReady = !loading && onboardingReady;
+
   useEffect(() => {
-    if (loading) return;
+    if (!bootReady) return;
 
     let cancelled = false;
     const holdTimer = setTimeout(() => {
@@ -46,7 +48,7 @@ export function BrandedSplashGate({ children }: Props) {
       cancelled = true;
       clearTimeout(holdTimer);
     };
-  }, [loading, splashOpacity, contentOpacity]);
+  }, [bootReady, splashOpacity, contentOpacity]);
 
   return (
     <View style={styles.root}>

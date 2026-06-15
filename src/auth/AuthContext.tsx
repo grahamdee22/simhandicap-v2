@@ -27,6 +27,8 @@ type AuthContextValue = {
   loading: boolean;
   /** False until AsyncStorage onboarding flag has been read (blocks auth redirects). */
   onboardingReady: boolean;
+  /** True after the user has completed or skipped the intro carousel (native only). */
+  onboardingSeen: boolean;
   session: Session | null;
   user: User | null;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
@@ -95,6 +97,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const hasRedirectedToCompleteOauth = useRef(false);
   const signOutRedirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevSessionRef = useRef<Session | null>(null);
 
   useEffect(() => {
     hasRedirectedToCompleteOauth.current = false;
@@ -215,18 +218,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const segs = segments as readonly string[];
     const onCompleteOauth =
       p.includes('complete-oauth-profile') || segs.includes('complete-oauth-profile');
+    const onOnboarding = segs.includes('onboarding') || p.includes('/onboarding');
+    const hadSession = prevSessionRef.current != null;
 
     if (!session && !inAuth && !onOAuthCallback) {
       if (signOutRedirectTimer.current) return;
-      signOutRedirectTimer.current = setTimeout(() => {
+      const target = !onboardingSeen ? '/(auth)/onboarding' : '/(auth)/sign-in';
+      const runRedirect = () => {
         signOutRedirectTimer.current = null;
         useAppStore.getState().setDisplayName('');
-        if (!onboardingSeen) {
-          router.replace('/(auth)/onboarding');
-        } else {
-          router.replace('/(auth)/sign-in');
-        }
-      }, 300);
+        router.replace(target as Href);
+      };
+      if (hadSession) {
+        signOutRedirectTimer.current = setTimeout(runRedirect, 300);
+      } else {
+        runRedirect();
+      }
+    } else if (!session && onboardingSeen && onOnboarding) {
+      router.replace('/(auth)/sign-in');
     } else if (!session && onCompleteOauth) {
       router.replace('/(auth)/sign-in');
     } else if (
@@ -239,10 +248,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       hasRedirectedToCompleteOauth.current = true;
       router.replace('/(auth)/complete-oauth-profile' as Href);
     } else if (session && inAuth && !onPasswordReset) {
-      if (!needsOauthDisplayName && !onOAuthCallback) {
+      if (!needsOauthDisplayName && !onOAuthCallback && (onboardingSeen || !onOnboarding)) {
         router.replace('/');
       }
     }
+
+    prevSessionRef.current = session;
 
     return () => {
       if (signOutRedirectTimer.current) clearTimeout(signOutRedirectTimer.current);
@@ -352,6 +363,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       configured,
       loading,
       onboardingReady,
+      onboardingSeen,
       session,
       user: session?.user ?? null,
       signIn,
@@ -365,6 +377,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       configured,
       loading,
       onboardingReady,
+      onboardingSeen,
       session,
       signIn,
       signUp,

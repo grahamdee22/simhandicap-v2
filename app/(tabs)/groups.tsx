@@ -221,13 +221,66 @@ export default function GroupsScreen() {
     setCreateOpen(true);
   };
 
+  const createGroupModal = (
+    <Modal visible={createOpen} animationType="fade" transparent>
+      <Pressable style={styles.modalBackdrop} onPress={() => !createBusy && setCreateOpen(false)}>
+        <KeyboardAvoidingView
+          style={styles.modalKeyboardAvoid}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+          keyboardVerticalOffset={Math.max(insets.bottom, 12)}
+        >
+          <ScrollView
+            style={styles.modalScroll}
+            contentContainerStyle={styles.modalScrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
+              <Text style={styles.modalTitle}>New group</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Group name"
+                placeholderTextColor={colors.subtle}
+                value={newName}
+                onChangeText={setNewName}
+                autoFocus
+                editable={!createBusy}
+              />
+              <View style={styles.modalActions}>
+                <Pressable onPress={() => !createBusy && setCreateOpen(false)} style={styles.modalBtn}>
+                  <Text style={styles.modalBtnTxt}>Cancel</Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => void submitCreate()}
+                  disabled={createBusy}
+                  style={[styles.modalBtn, styles.modalBtnPrimary, createBusy && styles.modalBtnDisabled]}
+                >
+                  {createBusy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Create</Text>
+                  )}
+                </Pressable>
+              </View>
+            </Pressable>
+          </ScrollView>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+
   const submitCreate = async () => {
     const n = newName.trim();
-    if (!n) return;
+    if (!n) {
+      showAppAlert('New group', 'Enter a group name.');
+      return;
+    }
     if (supabaseOn) {
       setCreateBusy(true);
       try {
-        const res = await createSocialGroup(n, googleOAuthAccessToken ?? undefined);
+        const accessToken =
+          googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+        const res = await createSocialGroup(n, accessToken);
         if ('error' in res) {
           showAppAlert('Create group', res.error);
           return;
@@ -236,7 +289,7 @@ export default function GroupsScreen() {
         setCreateOpen(false);
         void (async () => {
           try {
-            await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
+            await fetchMySocialGroupsIntoStore(user?.id, accessToken);
             recomputeGroupsFromYou();
             const ng = useAppStore.getState().groups;
             const i = ng.findIndex((gr) => gr.id === res.id);
@@ -640,38 +693,7 @@ export default function GroupsScreen() {
               </Pressable>
             </ScrollView>
 
-            <Modal visible={createOpen} animationType="fade" transparent>
-              <Pressable style={styles.modalBackdrop} onPress={() => !createBusy && setCreateOpen(false)}>
-                <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-                  <Text style={styles.modalTitle}>New group</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    placeholder="Group name"
-                    placeholderTextColor={colors.subtle}
-                    value={newName}
-                    onChangeText={setNewName}
-                    autoFocus
-                    editable={!createBusy}
-                  />
-                  <View style={styles.modalActions}>
-                    <Pressable onPress={() => !createBusy && setCreateOpen(false)} style={styles.modalBtn}>
-                      <Text style={styles.modalBtnTxt}>Cancel</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => void submitCreate()}
-                      disabled={createBusy}
-                      style={[styles.modalBtn, styles.modalBtnPrimary, createBusy && styles.modalBtnDisabled]}
-                    >
-                      {createBusy ? (
-                        <ActivityIndicator color="#fff" />
-                      ) : (
-                        <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Create</Text>
-                      )}
-                    </Pressable>
-                  </View>
-                </Pressable>
-              </Pressable>
-            </Modal>
+            {createGroupModal}
 
             <Modal
               visible={socialSectionInfo != null}
@@ -985,38 +1007,7 @@ export default function GroupsScreen() {
             </Pressable>
           </ScrollView>
 
-          <Modal visible={createOpen} animationType="fade" transparent>
-            <Pressable style={styles.modalBackdrop} onPress={() => !createBusy && setCreateOpen(false)}>
-              <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-                <Text style={styles.modalTitle}>New group</Text>
-                <TextInput
-                  style={styles.modalInput}
-                  placeholder="Group name"
-                  placeholderTextColor={colors.subtle}
-                  value={newName}
-                  onChangeText={setNewName}
-                  autoFocus
-                  editable={!createBusy}
-                />
-                <View style={styles.modalActions}>
-                  <Pressable onPress={() => !createBusy && setCreateOpen(false)} style={styles.modalBtn}>
-                    <Text style={styles.modalBtnTxt}>Cancel</Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => void submitCreate()}
-                    disabled={createBusy}
-                    style={[styles.modalBtn, styles.modalBtnPrimary, createBusy && styles.modalBtnDisabled]}
-                  >
-                    {createBusy ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Create</Text>
-                    )}
-                  </Pressable>
-                </View>
-              </Pressable>
-            </Pressable>
-          </Modal>
+          {createGroupModal}
 
           <Modal visible={inviteOpen} animationType="fade" transparent>
             <Pressable style={styles.modalBackdrop} onPress={() => !inviteBusy && closeInvite()}>

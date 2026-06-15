@@ -4,6 +4,7 @@ import { colors } from '@/src/lib/constants';
 export default function AuthLayout() {
   return (
     <Stack
+      initialRouteName="index"
       screenOptions={{
         headerStyle: { backgroundColor: colors.header },
         headerTintColor: '#fff',
@@ -11,6 +12,7 @@ export default function AuthLayout() {
         contentStyle: { flex: 1, backgroundColor: colors.bg },
       }}
     >
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
       <Stack.Screen name="sign-up" options={{ title: 'Create account' }} />
