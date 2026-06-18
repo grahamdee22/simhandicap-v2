@@ -252,6 +252,34 @@ const WOLF_CREEK_PARS: number[] = [
   5, 4, 3, 4, 5, 4, 4, 3, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4,
 ];
 
+const ARONIMINK_PARS: number[] = [
+  4, 4, 4, 4, 3, 4, 4, 3, 5, 4, 4, 4, 4, 3, 4, 5, 3, 4,
+];
+const BALTUSROL_LOWER_PARS: number[] = [
+  5, 4, 4, 3, 4, 4, 5, 4, 3, 4, 4, 3, 4, 4, 4, 3, 5, 5,
+];
+const BROOKLINE_US_OPEN_PARS: number[] = [
+  4, 3, 4, 4, 4, 3, 4, 5, 4, 4, 3, 4, 4, 5, 4, 3, 4, 4,
+];
+const FIELDS_RANCH_EAST_PARS: number[] = [
+  5, 4, 5, 3, 4, 4, 4, 3, 4, 4, 4, 4, 3, 5, 4, 4, 3, 5,
+];
+const LACC_NORTH_PARS: number[] = [
+  5, 4, 4, 3, 4, 4, 3, 5, 3, 4, 3, 4, 4, 5, 3, 4, 4, 4,
+];
+const OAK_HILL_EAST_PARS: number[] = [
+  4, 4, 3, 5, 3, 4, 4, 4, 4, 4, 3, 4, 5, 4, 3, 4, 4, 4,
+];
+const OAKLAND_HILLS_SOUTH_PARS: number[] = [
+  4, 5, 3, 4, 4, 4, 4, 5, 3, 4, 4, 5, 3, 4, 4, 4, 3, 5,
+];
+const SHINNECOCK_PARS: number[] = [
+  4, 4, 3, 4, 5, 4, 3, 4, 4, 4, 4, 3, 4, 4, 4, 3, 4, 5,
+];
+const WINGED_FOOT_WEST_PARS: number[] = [
+  4, 4, 3, 4, 5, 4, 3, 4, 5, 3, 4, 5, 3, 4, 4, 5, 4, 4,
+];
+
 /**
  * Pre-seeded sim courses. IDs are stable: existing rounds reference `courseId`.
  * Ratings/slopes follow the app’s default tee per course (uniform across platforms).
@@ -1004,12 +1032,18 @@ export const COURSE_SEEDS: CourseSeed[] = [
   },
   {
     id: 'royal-birkdale',
-    name: 'Royal Birkdale',
-    defaultTee: 'Yellow',
-    byPlatform: uniformByPlatform(72.0, 132),
+    name: 'Royal Birkdale Golf Club',
+    location: 'Southport, England',
+    defaultTee: 'Medal',
+    byPlatform: uniformByPlatform(73.2, 140),
     pars: ROYAL_BIRKDALE_PARS,
-    tees: [{ name: 'Yellow', rating: 72.0, slope: 132 }],
-    confident: false,
+    tees: [
+      { name: 'Gold', rating: 68.1, slope: 132 },
+      { name: 'White', rating: 70.8, slope: 134 },
+      { name: 'Medal', rating: 73.2, slope: 140 },
+      { name: 'Red', rating: 74.5, slope: 149 },
+      { name: 'Championship', rating: 76.5, slope: 151 },
+    ],
   },
   {
     id: 'royal-lytham-st-annes',
@@ -1401,18 +1435,133 @@ export const COURSE_SEEDS: CourseSeed[] = [
     confident: false,
   },
   {
-    id: 'winged-foot',
-    name: 'Winged Foot (West)',
-    defaultTee: 'U.S. Open',
-    byPlatform: {
-      Trackman: rp(76.9, 147),
-      Foresight: rp(76.7, 146),
-      'Full Swing': rp(76.5, 145),
-      E6: rp(76.6, 146),
-      GSPro: rp(76.8, 147),
-    },
-    pars: P72,
+    id: 'aronimink',
+    name: 'Aronimink Golf Club',
+    location: 'Newtown Square, PA',
+    defaultTee: 'Blue',
+    byPlatform: uniformByPlatform(72.2, 130),
+    pars: ARONIMINK_PARS,
+    tees: [
+      redTeeFromChampionship(75.5, 138),
+      { name: 'White', rating: 69.7, slope: 125 },
+      { name: 'Blue', rating: 72.2, slope: 130 },
+      { name: 'Black', rating: 75.5, slope: 138 },
+    ],
+  },
+  {
+    id: 'baltusrol-lower',
+    name: 'Baltusrol Golf Club (Lower)',
+    location: 'Springfield, NJ',
+    defaultTee: 'Tillinghast',
+    byPlatform: uniformByPlatform(73.9, 139),
+    pars: BALTUSROL_LOWER_PARS,
+    tees: [
+      { name: 'Club', rating: 70.7, slope: 133 },
+      { name: 'Baltusrol', rating: 72.2, slope: 136 },
+      { name: 'Tillinghast', rating: 73.9, slope: 139 },
+      { name: 'Championship', rating: 75.6, slope: 140 },
+    ],
+  },
+  {
+    id: 'country-club-brookline',
+    name: 'The Country Club (Brookline)',
+    location: 'Brookline, MA',
+    defaultTee: 'Blue',
+    byPlatform: uniformByPlatform(72.6, 136),
+    pars: BROOKLINE_US_OPEN_PARS,
+    tees: [
+      { name: 'Red', rating: 67.6, slope: 118 },
+      { name: 'White', rating: 71.4, slope: 131 },
+      { name: 'Blue', rating: 72.6, slope: 136 },
+      { name: 'Black', rating: 73.3, slope: 138 },
+    ],
     confident: false,
+  },
+  {
+    id: 'la-country-north',
+    name: 'Los Angeles Country Club (North)',
+    location: 'Los Angeles, CA',
+    defaultTee: 'Black',
+    byPlatform: uniformByPlatform(74.6, 139),
+    pars: LACC_NORTH_PARS,
+    tees: [
+      { name: 'Green', rating: 67.7, slope: 122 },
+      { name: 'White', rating: 70.2, slope: 131 },
+      { name: 'Thomas', rating: 71.8, slope: 134 },
+      { name: 'Black', rating: 74.6, slope: 139 },
+      { name: 'U.S. Open', rating: 76.9, slope: 148 },
+    ],
+  },
+  {
+    id: 'oak-hill-east',
+    name: 'Oak Hill Country Club (East)',
+    location: 'Rochester, NY',
+    defaultTee: 'Blue',
+    byPlatform: uniformByPlatform(73.8, 145),
+    pars: OAK_HILL_EAST_PARS,
+    tees: [
+      { name: 'White', rating: 71.7, slope: 141 },
+      { name: 'Blue', rating: 73.8, slope: 145 },
+      { name: 'Black', rating: 75.8, slope: 150 },
+      { name: 'Championship', rating: 77.7, slope: 155 },
+    ],
+  },
+  {
+    id: 'oakland-hills-south',
+    name: 'Oakland Hills Country Club (South)',
+    location: 'Bloomfield Hills, MI',
+    defaultTee: 'Back',
+    byPlatform: uniformByPlatform(76.0, 139),
+    pars: OAKLAND_HILLS_SOUTH_PARS,
+    tees: [
+      { name: 'Forward', rating: 73.2, slope: 135 },
+      { name: 'Middle', rating: 74.5, slope: 137 },
+      { name: 'Back', rating: 76.0, slope: 139 },
+      { name: 'Championship', rating: 76.9, slope: 145 },
+    ],
+  },
+  {
+    id: 'pga-frisco-east',
+    name: 'PGA Frisco (Fields Ranch East)',
+    location: 'Frisco, TX',
+    defaultTee: 'II',
+    byPlatform: uniformByPlatform(75.8, 146),
+    pars: FIELDS_RANCH_EAST_PARS,
+    tees: [
+      { name: 'IV', rating: 69.4, slope: 132 },
+      { name: 'III', rating: 73.0, slope: 142 },
+      { name: 'II', rating: 75.8, slope: 146 },
+      { name: 'I', rating: 77.2, slope: 150 },
+      { name: 'PGA Championship', rating: 78.9, slope: 151 },
+    ],
+    confident: false,
+  },
+  {
+    id: 'shinnecock-hills',
+    name: 'Shinnecock Hills Golf Club',
+    location: 'Southampton, NY',
+    defaultTee: 'Green',
+    byPlatform: uniformByPlatform(72.5, 140),
+    pars: SHINNECOCK_PARS,
+    tees: [
+      { name: 'White', rating: 67.4, slope: 128 },
+      { name: 'Blue', rating: 70.8, slope: 135 },
+      { name: 'Green', rating: 72.5, slope: 140 },
+      { name: 'Red', rating: 74.7, slope: 145 },
+    ],
+  },
+  {
+    id: 'winged-foot',
+    name: 'Winged Foot Golf Club (West)',
+    location: 'Mamaroneck, NY',
+    defaultTee: 'Blue',
+    byPlatform: uniformByPlatform(76.4, 140),
+    pars: WINGED_FOOT_WEST_PARS,
+    tees: [
+      { name: 'White', rating: 67.4, slope: 124 },
+      { name: 'Green', rating: 72.2, slope: 132 },
+      { name: 'Blue', rating: 76.4, slope: 140 },
+    ],
   },
 ];
 
