@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../lib/constants';
 import {
@@ -35,6 +35,7 @@ import {
   getTournamentSectionCache,
   setTournamentSectionCache,
 } from '../lib/tournamentSectionCache';
+import { supabase } from '../lib/supabase';
 import type { FriendGroup } from '../store/useAppStore';
 
 function ordinalSuffix(n: number): string {
@@ -126,6 +127,7 @@ export function GroupTournamentsSection({
   const [matchPreviewLine, setMatchPreviewLine] = useState<string | null>(null);
   const [scrambleTeamLine, setScrambleTeamLine] = useState<string | null>(null);
   const [bestBallTeamLine, setBestBallTeamLine] = useState<string | null>(null);
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     const cached = getTournamentSectionCache(group.id);
@@ -218,6 +220,55 @@ export function GroupTournamentsSection({
       void load();
     }, [load])
   );
+
+  useEffect(() => {
+    const client = supabase;
+    if (!client || !group.id) return;
+
+    let cancelled = false;
+    let channel: ReturnType<typeof client.channel> | null = null;
+
+    const scheduleLoad = () => {
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current);
+      }
+      realtimeDebounceRef.current = setTimeout(() => {
+        realtimeDebounceRef.current = null;
+        void load();
+      }, 280);
+    };
+
+    void (async () => {
+      const token = (await resolveSocialGroupsAccessToken()) ?? null;
+      await client.realtime.setAuth(token);
+      if (cancelled) return;
+
+      channel = client
+        .channel(`group-tournaments:${group.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'leagues',
+            filter: `group_id=eq.${group.id}`,
+          },
+          scheduleLoad
+        )
+        .subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current);
+        realtimeDebounceRef.current = null;
+      }
+      if (channel) {
+        void client.removeChannel(channel);
+      }
+    };
+  }, [group.id, load]);
 
   const activeLeague = useMemo(
     () => leagues.find((l) => l.status === 'active' && isLeagueActive(l)) ?? null,

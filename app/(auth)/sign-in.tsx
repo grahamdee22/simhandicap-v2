@@ -60,7 +60,8 @@ export default function SignInScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.flex}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Math.max(insets.bottom, 12)}
     >
       <ScrollView
         keyboardShouldPersistTaps="handled"

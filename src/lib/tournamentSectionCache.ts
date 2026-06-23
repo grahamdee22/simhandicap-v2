@@ -14,3 +14,7 @@ export function getTournamentSectionCache(groupId: string): TournamentSectionCac
 export function setTournamentSectionCache(groupId: string, entry: TournamentSectionCacheEntry): void {
   cacheByGroupId.set(groupId, entry);
 }
+
+export function clearTournamentSectionCache(groupId: string): void {
+  cacheByGroupId.delete(groupId);
+}

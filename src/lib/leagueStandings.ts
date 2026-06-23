@@ -2,6 +2,7 @@ import {
   aggregateBestBallTeamRounds,
   bestBallStandingsScores,
 } from './bestBallTournament';
+import { todayLocalYmd } from './dates';
 import { designatedScorerLabel } from './scrambleTournament';
 import type { DbTournamentTeamHoleScoreRow } from './tournamentTypes';
 import type { DbLeagueRow, DbLeagueEntryRow, DbLeagueRoundRow, DbLeagueTeamRow, LeagueFormat } from './leagues';
@@ -237,7 +238,7 @@ export function leagueDaysRemaining(league: DbLeagueRow): number {
 
 export function isLeagueActive(league: DbLeagueRow): boolean {
   if (league.status !== 'active') return false;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalYmd();
   return today >= league.start_date && today <= league.end_date;
 }
 

@@ -228,9 +228,15 @@ const webWheelStyles = StyleSheet.create({
 export function DatePlayedField({
   value,
   onChange,
+  label = 'Date played',
+  hint = 'Used for your index timeline and recent rounds order.',
+  large = false,
 }: {
   value: string;
   onChange: (ymd: string) => void;
+  label?: string;
+  hint?: string | null;
+  large?: boolean;
 }) {
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
@@ -269,9 +275,13 @@ export function DatePlayedField({
 
   return (
     <>
-      <Text style={fieldStyles.sectionLabel}>Date played</Text>
+      <Text style={fieldStyles.sectionLabel}>{label}</Text>
       <Pressable
-        style={({ pressed }) => [fieldStyles.pill, pressed && fieldStyles.pillPressed]}
+        style={({ pressed }) => [
+          fieldStyles.pill,
+          large && fieldStyles.pillLarge,
+          pressed && fieldStyles.pillPressed,
+        ]}
         onPress={() => {
           if (Platform.OS === 'android') {
             setAndroidOpen(true);
@@ -280,10 +290,10 @@ export function DatePlayedField({
           }
         }}
       >
-        <Text style={fieldStyles.pillVal}>{formatDisplay(value)}</Text>
+        <Text style={[fieldStyles.pillVal, large && fieldStyles.pillValLarge]}>{formatDisplay(value)}</Text>
         <Text style={fieldStyles.chev}>▾</Text>
       </Pressable>
-      <Text style={fieldStyles.dateHint}>Used for your index timeline and recent rounds order.</Text>
+      {hint ? <Text style={fieldStyles.dateHint}>{hint}</Text> : null}
 
       {Platform.OS === 'android' && androidOpen ? (
         <DateTimePicker
@@ -303,7 +313,7 @@ export function DatePlayedField({
                 <Pressable onPress={close} hitSlop={12}>
                   <Text style={fieldStyles.sheetCancel}>Cancel</Text>
                 </Pressable>
-                <Text style={fieldStyles.sheetTitle}>Date played</Text>
+                <Text style={fieldStyles.sheetTitle}>{label}</Text>
                 <Pressable
                   onPress={() => {
                     const dt = iosDraft;
@@ -338,7 +348,7 @@ export function DatePlayedField({
                 <Pressable onPress={close} hitSlop={12}>
                   <Text style={fieldStyles.sheetCancel}>Cancel</Text>
                 </Pressable>
-                <Text style={fieldStyles.sheetTitle}>Date played</Text>
+                <Text style={fieldStyles.sheetTitle}>{label}</Text>
                 <View style={{ width: 56 }} />
               </View>
               <WebDateWheels key={value} ymd={value} onApply={applyYmd} />
@@ -372,7 +382,13 @@ const fieldStyles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   pillPressed: { opacity: 0.85 },
+  pillLarge: {
+    minHeight: 48,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
   pillVal: { fontSize: 14, fontWeight: '600', color: colors.ink },
+  pillValLarge: { fontSize: 16 },
   chev: { fontSize: 9, color: colors.subtle },
   dateHint: { fontSize: 10, color: colors.muted, marginTop: 4 },
   modalRoot: {

@@ -1,5 +1,4 @@
 import { useFocusEffect } from '@react-navigation/native';
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,9 +16,11 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { DatePlayedField } from '../../../src/components/DatePlayedField';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { HandicapSourceBadge } from '../../../src/components/HandicapSourceBadge';
 import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
+import { dateFromYmdLocal, todayLocalYmd, ymdFromParts } from '../../../src/lib/dates';
 import { countMembersMissingHandicap } from '../../../src/lib/effectiveHandicap';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
@@ -48,20 +49,25 @@ import {
   type TeamFormat,
 } from '../../../src/lib/tournamentTeamCount';
 import { useResponsive } from '../../../src/lib/responsive';
+import { clearTournamentSectionCache } from '../../../src/lib/tournamentSectionCache';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 const MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS = 4;
 
-function ymd(d: Date): string {
-  return d.toISOString().slice(0, 10);
+function formatYmdDisplay(ymd: string): string {
+  return dateFromYmdLocal(ymd).toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 type WizardStep = 'basic' | 'teamCount' | 'settings' | 'teams' | 'review';
 
-function defaultEndDate(): Date {
+function defaultEndDateYmd(): string {
   const d = new Date();
   d.setDate(d.getDate() + 28);
-  return d;
+  return ymdFromParts(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
 const DEFAULT_USE_HANDICAP = true;
@@ -86,8 +92,8 @@ export default function LeagueCreateScreen() {
   const [step, setStep] = useState<WizardStep>('basic');
   const [name, setName] = useState('');
   const [format, setFormat] = useState<LeagueFormat>('stroke');
-  const [startDate, setStartDate] = useState(new Date());
-  const [endDate, setEndDate] = useState(defaultEndDate);
+  const [startDateYmd, setStartDateYmd] = useState(todayLocalYmd);
+  const [endDateYmd, setEndDateYmd] = useState(defaultEndDateYmd);
   const [roundsThatCount, setRoundsThatCount] = useState(4);
   const [scrambleHandicapOverride, setScrambleHandicapOverride] = useState('');
   const [useHandicap, setUseHandicap] = useState(DEFAULT_USE_HANDICAP);
@@ -113,8 +119,8 @@ export default function LeagueCreateScreen() {
     setStep('basic');
     setName('');
     setFormat('stroke');
-    setStartDate(new Date());
-    setEndDate(defaultEndDate());
+    setStartDateYmd(todayLocalYmd());
+    setEndDateYmd(defaultEndDateYmd());
     setRoundsThatCount(4);
     setScrambleHandicapOverride('');
     setUseHandicap(DEFAULT_USE_HANDICAP);
@@ -423,8 +429,8 @@ export default function LeagueCreateScreen() {
         groupId,
         name,
         format,
-        startDate: ymd(startDate),
-        endDate: ymd(endDate),
+        startDate: startDateYmd,
+        endDate: endDateYmd,
         roundsThatCount: isMatchPlay ? 1 : roundsThatCount,
         useHandicap,
         notes: notes.trim() || null,
@@ -471,6 +477,7 @@ export default function LeagueCreateScreen() {
       setBusy(false);
       showAppAlert('Tournament created', 'Members will see it in their group.');
     }
+    clearTournamentSectionCache(groupId);
     router.replace('/(tabs)/groups' as never);
   };
 
@@ -746,19 +753,19 @@ export default function LeagueCreateScreen() {
         {step === 'settings' ? (
           <>
             <Text style={styles.head}>Settings</Text>
-            <Text style={styles.lbl}>Start date</Text>
-            <DateTimePicker
-              value={startDate}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(_, d) => d && setStartDate(d)}
+            <DatePlayedField
+              label="Start date"
+              hint={null}
+              large
+              value={startDateYmd}
+              onChange={setStartDateYmd}
             />
-            <Text style={styles.lbl}>End date</Text>
-            <DateTimePicker
-              value={endDate}
-              mode="date"
-              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-              onChange={(_, d) => d && setEndDate(d)}
+            <DatePlayedField
+              label="End date"
+              hint={null}
+              large
+              value={endDateYmd}
+              onChange={setEndDateYmd}
             />
             {isMatchPlay ? (
               <View style={styles.bracketInfo}>
@@ -1067,7 +1074,7 @@ export default function LeagueCreateScreen() {
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLine}>{name}</Text>
               <Text style={styles.summaryMeta}>
-                {format.replace('_', ' ')} · {ymd(startDate)} – {ymd(endDate)}
+                {format.replace('_', ' ')} · {formatYmdDisplay(startDateYmd)} – {formatYmdDisplay(endDateYmd)}
               </Text>
               <Text style={styles.summaryMeta}>
                 {isMatchPlay

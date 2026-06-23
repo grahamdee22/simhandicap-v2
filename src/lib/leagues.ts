@@ -3,6 +3,7 @@
  */
 
 import Constants from 'expo-constants';
+import { todayLocalYmd } from './dates';
 import { supabase } from './supabase';
 import { currentIndexFromRounds, type GroupMember, type SimRound } from '../store/useAppStore';
 import { resolveEffectiveHandicap } from './effectiveHandicap';
@@ -209,7 +210,7 @@ export async function syncLeagueStatuses(
   leagues: DbLeagueRow[],
   accessToken?: string
 ): Promise<DbLeagueRow[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayLocalYmd();
   const token = (await resolveTournamentAccessToken(accessToken)) ?? accessToken;
   const out = [...leagues];
 
