@@ -46,8 +46,8 @@ export function applyParseScorecardToLogForm(
     out.grossScore = Math.min(120, Math.max(55, Math.round(d.total_score)));
   }
 
-  if (d.mulligans === true) out.mulligans = 'on';
-  else if (d.mulligans === false) out.mulligans = 'off';
+  if (d.mulligans === true) out.mulligans = 'one';
+  else if (d.mulligans === false) out.mulligans = 'none';
 
   if (d.wind === 'Off') out.wind = 'off';
   else if (d.wind === 'Light') out.wind = 'light';

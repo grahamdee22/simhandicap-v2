@@ -34,6 +34,8 @@ import {
   type CourseSeed,
 } from '../../../src/lib/courses';
 import {
+  mulliganDisplayLabel,
+  normalizeMulligans,
   type Mulligans,
   type PinDay,
   type PuttingMode,
@@ -71,11 +73,6 @@ const WIND_OPTS: { key: Wind; dn: string }[] = [
   { key: 'strong', dn: 'Strong' },
 ];
 
-const MULL_OPTS: { key: Mulligans; dn: string }[] = [
-  { key: 'off', dn: 'Off' },
-  { key: 'on', dn: 'On' },
-];
-
 function formatHolesLabel(m: DbMatchRow): string {
   if (m.holes === 18) return '18 holes';
   if (m.nine_selection === 'front') return 'Front 9';
@@ -87,7 +84,7 @@ function conditionsSummary(m: DbMatchRow): string {
   const p = PUTTING_OPTS.find((x) => x.key === m.putting_mode)?.dn ?? m.putting_mode;
   const pin = pinDisplayLabel((m.pin_placement as PinDay) || 'thu', m.player_1_platform as PlatformId);
   const w = WIND_OPTS.find((x) => x.key === m.wind)?.dn ?? m.wind;
-  const mu = MULL_OPTS.find((x) => x.key === m.mulligans)?.dn ?? m.mulligans;
+  const mu = mulliganDisplayLabel(m.mulligans);
   return `${p} putting · ${pin} pins · ${w} wind · ${mu} mulligans`;
 }
 
@@ -257,8 +254,10 @@ export default function MatchAcceptScreen() {
             if (WIND_OPTS.some((x) => x.key === src.wind) && src.wind !== displayMatch.wind) {
               prefs.wind = src.wind;
             }
-            if (MULL_OPTS.some((x) => x.key === src.mulligans) && src.mulligans !== displayMatch.mulligans) {
-              prefs.mulligans = src.mulligans;
+            const srcMull = normalizeMulligans(src.mulligans);
+            const displayMull = normalizeMulligans(displayMatch.mulligans);
+            if (srcMull !== displayMull) {
+              prefs.mulligans = srcMull;
             }
             if (Object.keys(prefs).length > 0) {
               const prefUpd = await updateMatchById(displayMatch.id, prefs, googleOAuthAccessToken ?? undefined);

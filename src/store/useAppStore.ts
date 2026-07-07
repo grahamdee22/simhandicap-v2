@@ -8,6 +8,7 @@ import {
   CURRENT_DIFFERENTIAL_VERSION,
   grossFromHoles,
   handicapIndexFromDifferentials,
+  normalizeMulligans,
   type Mulligans,
   type PinDay,
   type PuttingMode,
@@ -380,6 +381,7 @@ export const useAppStore = create<AppState>()(
           typeof input.slope === 'number' && Number.isFinite(input.slope) && input.slope > 0
             ? input.slope
             : baseline.slope;
+        const mulligans = normalizeMulligans(input.mulligans);
         const math = computeRoundMathFromRatingSlope(
           grossForMath,
           cr,
@@ -387,7 +389,7 @@ export const useAppStore = create<AppState>()(
           input.putting,
           input.pin,
           input.wind,
-          input.mulligans,
+          mulligans,
           CURRENT_DIFFERENTIAL_VERSION
         );
         const trialDiffs = excludeFromIndex
@@ -396,6 +398,7 @@ export const useAppStore = create<AppState>()(
         const after = excludeFromIndex ? before : handicapIndexFromDifferentials(trialDiffs);
         const withoutId: Omit<SimRound, 'id'> = {
           ...input,
+          mulligans,
           holeScores,
           grossScore: grossForMath,
           courseName: course.name,
@@ -461,7 +464,12 @@ export const useAppStore = create<AppState>()(
         const indexAtSave = currentIndexFromRounds(s.rounds);
         const rounds = s.rounds.map((r) => {
           if (r.id !== roundId) return r;
-          const next: SimRound = { ...r, ...patch, simcapIndexAtTime: indexAtSave };
+          const next: SimRound = {
+            ...r,
+            ...patch,
+            simcapIndexAtTime: indexAtSave,
+            mulligans: normalizeMulligans(patch.mulligans ?? r.mulligans),
+          };
           const effectiveGross = grossFromHoles(next.holeScores) ?? next.grossScore;
           const effectiveVersion = next.differentialVersion ?? r.differentialVersion ?? CURRENT_DIFFERENTIAL_VERSION;
           return {

@@ -6,7 +6,7 @@ import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { IconCalendarOutline } from '../../src/components/SvgUiIcons';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
-import { formatDifferentialDisplay, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
+import { formatDifferentialDisplay, MULLIGAN_PICKER_OPTS, normalizeMulligans, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
 import { pinFilterOptions } from '../../src/lib/pinPlacement';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
@@ -44,8 +44,7 @@ const WIND_FILTER_OPTS: { key: Wind | null; label: string }[] = [
 
 const MULL_FILTER_OPTS: { key: Mulligans | null; label: string }[] = [
   { key: null, label: 'All' },
-  { key: 'on', label: 'On' },
-  { key: 'off', label: 'Off' },
+  ...MULLIGAN_PICKER_OPTS.map((o) => ({ key: o.key, label: o.dn })),
 ];
 
 const PLATFORM_FILTER_OPTS: { key: PlatformId | null; label: string }[] = [
@@ -57,7 +56,7 @@ function matchesRoundFilters(r: SimRound, f: RoundFilters): boolean {
   if (f.putting != null && r.putting !== f.putting) return false;
   if (f.pin != null && r.pin !== f.pin) return false;
   if (f.wind != null && r.wind !== f.wind) return false;
-  if (f.mulligans != null && r.mulligans !== f.mulligans) return false;
+  if (f.mulligans != null && normalizeMulligans(r.mulligans) !== f.mulligans) return false;
   if (f.platform != null && r.platform !== f.platform) return false;
   return true;
 }

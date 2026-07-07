@@ -1,5 +1,6 @@
 import type { PlatformId } from './constants';
 import type { Mulligans, PinDay, PuttingMode, Wind } from './handicap';
+import { normalizeMulligans } from './handicap';
 import { findCourseSeedIdByCourseName } from './courses';
 import type { DbMatchHoleRow, DbMatchRow } from './matchPlay';
 import type { NewRoundInput } from '../store/useAppStore';
@@ -7,7 +8,6 @@ import type { NewRoundInput } from '../store/useAppStore';
 const PUTTING: readonly PuttingMode[] = ['auto_2putt', 'gimme_5', 'putt_all'];
 const PIN: readonly PinDay[] = ['thu', 'fri', 'sat', 'sun'];
 const WIND: readonly Wind[] = ['off', 'light', 'strong'];
-const MULL: readonly Mulligans[] = ['on', 'off'];
 
 function coercePutting(v: string): PuttingMode {
   return PUTTING.includes(v as PuttingMode) ? (v as PuttingMode) : 'auto_2putt';
@@ -22,7 +22,7 @@ function coerceWind(v: string): Wind {
 }
 
 function coerceMull(v: string): Mulligans {
-  return MULL.includes(v as Mulligans) ? (v as Mulligans) : 'off';
+  return normalizeMulligans(v);
 }
 
 export function matchIndexRoundStorageKey(matchId: string, userId: string): string {

@@ -6,7 +6,35 @@
 export type PuttingMode = 'auto_2putt' | 'gimme_5' | 'putt_all';
 export type PinDay = 'thu' | 'fri' | 'sat' | 'sun';
 export type Wind = 'off' | 'light' | 'strong';
-export type Mulligans = 'on' | 'off';
+export type Mulligans = 'none' | 'one' | 'two' | 'three_plus';
+
+/** Log / match-create picker rows (dn = primary label, ds = sublabel). */
+export const MULLIGAN_PICKER_OPTS: { key: Mulligans; dn: string; ds: string }[] = [
+  { key: 'none', dn: 'None', ds: 'No mulligans' },
+  { key: 'one', dn: '1', ds: 'One allowed' },
+  { key: 'two', dn: '2', ds: 'Two allowed' },
+  { key: 'three_plus', dn: '3+', ds: 'Three or more' },
+];
+
+/** Map legacy `on`/`off` (and aliases) to tiered mulligan values. */
+export function normalizeMulligans(v: string | null | undefined): Mulligans {
+  const t = (v ?? '').trim().toLowerCase();
+  if (t === 'off' || t === 'none' || t === '') return 'none';
+  if (t === 'on' || t === 'one' || t === '1') return 'one';
+  if (t === 'two' || t === '2') return 'two';
+  if (t === 'three_plus' || t === '3+' || t === '3plus' || t === 'three') return 'three_plus';
+  return 'none';
+}
+
+export function mulliganDisplayLabel(m: Mulligans | string): string {
+  const key = typeof m === 'string' ? normalizeMulligans(m) : m;
+  return MULLIGAN_PICKER_OPTS.find((o) => o.key === key)?.ds ?? key;
+}
+
+export function mulliganShortLabel(m: Mulligans | string): string {
+  const key = typeof m === 'string' ? normalizeMulligans(m) : m;
+  return MULLIGAN_PICKER_OPTS.find((o) => o.key === key)?.dn ?? key;
+}
 
 /**
  * Version marker stored with each logged round so future formula changes only affect new rounds.
@@ -56,8 +84,10 @@ export function windDifficultyMultiplier(mode: Wind): number {
 }
 
 const MULLIGANS: Record<Mulligans, number> = {
-  on: 1.15,
-  off: 1.0,
+  none: 1.0,
+  one: 1.15,
+  two: 1.3,
+  three_plus: 1.5,
 };
 
 /**

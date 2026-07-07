@@ -26,7 +26,7 @@ describe('scorecardParseApply', () => {
       ['Red', 'White', 'Blue']
     );
     assert.equal(applied.grossScore, 77);
-    assert.equal(applied.mulligans, 'on');
+    assert.equal(applied.mulligans, 'one');
     assert.equal(applied.wind, 'off');
     assert.equal(applied.pin, 'thu');
     assert.equal(applied.putting, 'auto_2putt');

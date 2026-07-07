@@ -24,7 +24,7 @@ function round(adjustedDiff: number, id = '1'): SimRound {
     putting: 'auto_2putt',
     pin: 'sat',
     wind: 'off',
-    mulligans: 'off',
+    mulligans: 'none',
     playedAt: '2026-01-01T12:00:00.000Z',
     courseRating: 72.1,
     slope: 128,

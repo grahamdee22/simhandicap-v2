@@ -460,7 +460,7 @@ async function insertRound(
     'auto_2putt',
     'sat',
     'off',
-    'off'
+    'none'
   );
 
   const { data, error } = await admin
@@ -475,7 +475,7 @@ async function insertRound(
       putting_mode: 'auto_2putt',
       pin_placement: 'sat',
       wind: 'off',
-      mulligans: 'off',
+      mulligans: 'none',
       difficulty_modifier: modifier,
       differential: adjusted,
       differential_version: 1,
@@ -1370,7 +1370,7 @@ async function testHandicapValidator(ctx: TestContext): Promise<TestRun> {
   const putting = 'auto_2putt' as const;
   const pin = 'sat' as const;
   const wind = 'off' as const;
-  const mulligans = 'off' as const;
+  const mulligans = 'none' as const;
 
   const raw = rawDifferential(gross, whiteTee.rating, whiteTee.slope);
   const modifier = difficultyProduct(putting, pin, wind, mulligans);

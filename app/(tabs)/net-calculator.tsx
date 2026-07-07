@@ -33,6 +33,9 @@ import {
 import {
   difficultyProduct,
   formatHandicapIndexDisplay,
+  MULLIGAN_PICKER_OPTS,
+  mulliganDisplayLabel,
+  normalizeMulligans,
   type Mulligans,
   type PinDay,
   type PuttingMode,
@@ -55,10 +58,7 @@ const WIND_OPTS: { key: Wind; label: string }[] = [
   { key: 'strong', label: 'Strong' },
 ];
 
-const MULL_OPTS: { key: Mulligans; label: string }[] = [
-  { key: 'off', label: 'Off' },
-  { key: 'on', label: 'On' },
-];
+const MULL_OPTS = MULLIGAN_PICKER_OPTS.map((o) => ({ key: o.key, label: o.dn }));
 
 type PlayerSlot =
   | { kind: 'empty' }
@@ -183,7 +183,7 @@ export default function CrewMatchCalculatorScreen() {
   const [putting, setPutting] = useState<PuttingMode>('auto_2putt');
   const [pin, setPin] = useState<PinDay>('thu');
   const [wind, setWind] = useState<Wind>('off');
-  const [mulligans, setMulligans] = useState<Mulligans>('off');
+  const [mulligans, setMulligans] = useState<Mulligans>('none');
   const [courseOpen, setCourseOpen] = useState(false);
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [platOpen, setPlatOpen] = useState(false);
@@ -270,7 +270,7 @@ export default function CrewMatchCalculatorScreen() {
     const put =
       putting === 'auto_2putt' ? 'Auto 2-putt' : putting === 'gimme_5' ? 'Gimme <5ft' : 'Putt everything';
     const pinL = pinDisplayLabel(pin, platform);
-    const mull = mulligans === 'on' ? 'Mulligans on' : 'Mulligans off';
+    const mull = mulliganDisplayLabel(mulligans);
     return `${platform} · ${put} · ${pinL} · ${windL} · ${mull}`;
   }, [platform, putting, pin, wind, mulligans]);
 

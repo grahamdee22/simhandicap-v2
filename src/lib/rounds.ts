@@ -2,6 +2,7 @@ import Constants from 'expo-constants';
 import { PLATFORMS, type PlatformId } from './constants';
 import {
   CURRENT_DIFFERENTIAL_VERSION,
+  normalizeMulligans,
   type Mulligans,
   type PinDay,
   type PuttingMode,
@@ -20,7 +21,6 @@ export function isCloudRoundId(id: string): boolean {
 const PUTTING: readonly PuttingMode[] = ['auto_2putt', 'gimme_5', 'putt_all'];
 const PIN: readonly PinDay[] = ['thu', 'fri', 'sat', 'sun'];
 const WIND: readonly Wind[] = ['off', 'light', 'strong'];
-const MULL: readonly Mulligans[] = ['on', 'off'];
 
 function asPlatformId(v: string): PlatformId {
   return (PLATFORMS as readonly string[]).includes(v) ? (v as PlatformId) : 'Trackman';
@@ -39,7 +39,7 @@ function asWind(v: string): Wind {
 }
 
 function asMull(v: string): Mulligans {
-  return (MULL as readonly string[]).includes(v) ? (v as Mulligans) : 'off';
+  return normalizeMulligans(v);
 }
 
 function normalizeHoleScores(raw: unknown): (number | null)[] {

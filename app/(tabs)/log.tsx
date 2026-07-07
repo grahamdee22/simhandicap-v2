@@ -16,6 +16,8 @@ import {
   CURRENT_DIFFERENTIAL_VERSION,
   difficultyProduct,
   formatDifferentialDisplay,
+  MULLIGAN_PICKER_OPTS,
+  normalizeMulligans,
   round1,
   type Mulligans,
   type PinDay,
@@ -71,10 +73,7 @@ const WIND_OPTS: { key: Wind; dn: string; ds: string }[] = [
   { key: 'strong', dn: 'Strong', ds: 'Heavy' },
 ];
 
-const MULL_OPTS: { key: Mulligans; dn: string; ds: string }[] = [
-  { key: 'off', dn: 'Off', ds: 'None' },
-  { key: 'on', dn: 'On', ds: 'Allowed' },
-];
+const MULL_OPTS = MULLIGAN_PICKER_OPTS;
 
 /** Set true to log gross resolution in dev tools when saving a round. */
 const DEBUG_LOG_GROSS_SAVE = false;
@@ -115,7 +114,7 @@ export default function LogRoundScreen() {
   const [putting, setPutting] = useState<PuttingMode>('auto_2putt');
   const [pin, setPin] = useState<PinDay>('thu');
   const [wind, setWind] = useState<Wind>('off');
-  const [mulligans, setMulligans] = useState<Mulligans>('off');
+  const [mulligans, setMulligans] = useState<Mulligans>('none');
   const [teePickKey, setTeePickKey] = useState('White');
   const [customRating, setCustomRating] = useState('');
   const [customSlope, setCustomSlope] = useState('');
@@ -166,7 +165,7 @@ export default function LogRoundScreen() {
     setPutting('auto_2putt');
     setPin('thu');
     setWind('off');
-    setMulligans('off');
+    setMulligans('none');
     setPlayedDate(todayLocalYmd());
     const c0 = getCourseById('pebble');
     if (c0) {
@@ -245,7 +244,7 @@ export default function LogRoundScreen() {
     setPutting(p.putting);
     setPin(p.pin);
     setWind(p.wind);
-    setMulligans(p.mulligans);
+    setMulligans(normalizeMulligans(p.mulligans));
     setPendingH2hMatchup(null);
   }, [editId, pendingH2hMatchup, setPendingH2hMatchup]);
 
@@ -257,7 +256,7 @@ export default function LogRoundScreen() {
     setPutting(existing.putting);
     setPin(existing.pin);
     setWind(existing.wind);
-    setMulligans(existing.mulligans);
+    setMulligans(normalizeMulligans(existing.mulligans));
     setPlayedDate(isoToLocalYmd(existing.playedAt));
     const ec = getCourseById(existing.courseId);
     if (ec) {
@@ -392,7 +391,7 @@ export default function LogRoundScreen() {
       if (applied.putting) setPutting(applied.putting);
       if (applied.pin) setPin(applied.pin);
       if (applied.wind) setWind(applied.wind);
-      if (applied.mulligans) setMulligans(applied.mulligans);
+      if (applied.mulligans) setMulligans(normalizeMulligans(applied.mulligans));
       if (applied.teePickKey) {
         setTeePickKey(applied.teePickKey);
         setCustomRating('');

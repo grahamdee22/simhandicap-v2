@@ -34,6 +34,9 @@ import {
 } from '../../src/lib/courses';
 import {
   formatHandicapIndexDisplay,
+  MULLIGAN_PICKER_OPTS,
+  mulliganDisplayLabel,
+  normalizeMulligans,
   round1,
   type Mulligans,
   type PinDay,
@@ -77,10 +80,7 @@ const WIND_OPTS: { key: Wind; dn: string; ds: string }[] = [
   { key: 'strong', dn: 'Strong', ds: 'Heavy' },
 ];
 
-const MULL_OPTS: { key: Mulligans; dn: string; ds: string }[] = [
-  { key: 'off', dn: 'Off', ds: 'None' },
-  { key: 'on', dn: 'On', ds: 'Allowed' },
-];
+const MULL_OPTS = MULLIGAN_PICKER_OPTS;
 
 type OpponentPick = {
   userId: string;
@@ -185,7 +185,7 @@ export default function MatchCreateScreen() {
   const [putting, setPutting] = useState<PuttingMode>('auto_2putt');
   const [pin, setPin] = useState<PinDay>('thu');
   const [wind, setWind] = useState<Wind>('off');
-  const [mulligans, setMulligans] = useState<Mulligans>('off');
+  const [mulligans, setMulligans] = useState<Mulligans>('none');
   const [holesChoice, setHolesChoice] = useState<HolesChoice>('18');
   const [verificationRequired, setVerificationRequired] = useState(false);
   const [settingsImage, setSettingsImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
@@ -224,7 +224,7 @@ export default function MatchCreateScreen() {
     setPutting('auto_2putt');
     setPin('thu');
     setWind('off');
-    setMulligans('off');
+    setMulligans('none');
     setHolesChoice('18');
     setSettingsImage(null);
     setPlatOpen(false);
@@ -372,9 +372,7 @@ export default function MatchCreateScreen() {
             : 'thu'
         );
         setWind(WIND_OPTS.some((x) => x.key === source.wind) ? (source.wind as Wind) : 'off');
-        setMulligans(
-          MULL_OPTS.some((x) => x.key === source.mulligans) ? (source.mulligans as Mulligans) : 'off'
-        );
+        setMulligans(normalizeMulligans(source.mulligans));
 
         if (source.holes === 18) {
           setHolesChoice('18');
@@ -1295,7 +1293,7 @@ export default function MatchCreateScreen() {
                   <Text style={styles.summaryLbl}>Conditions · </Text>
                   {PUTTING_OPTS.find((p) => p.key === putting)?.dn} putting ·{' '}
                   {pinDisplayLabel(pin, platform)} pins · {WIND_OPTS.find((p) => p.key === wind)?.dn} wind ·{' '}
-                  {MULL_OPTS.find((p) => p.key === mulligans)?.dn} mulligans
+                  {mulliganDisplayLabel(mulligans)}
                 </Text>
               </View>
               {settingsImage?.uri ? (

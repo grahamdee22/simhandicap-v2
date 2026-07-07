@@ -21,6 +21,7 @@ import { useResponsive } from '../../../src/lib/responsive';
 import {
   formatDifferentialDisplay,
   formatHandicapIndexDisplay,
+  mulliganDisplayLabel,
   scoreToParStyle,
 } from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
@@ -227,7 +228,7 @@ export default function RoundDetailScreen() {
                   </View>
                   <View style={[styles.chip, isVeryWide && styles.chipLg]}>
                     <Text style={styles.chipLbl}>Mulligans</Text>
-                    <Text style={[styles.chipVal, styles.chipHi]}>{r.mulligans === 'on' ? 'On' : 'Off'}</Text>
+                    <Text style={[styles.chipVal, styles.chipHi]}>{mulliganDisplayLabel(r.mulligans)}</Text>
                   </View>
                 </View>
               </View>
@@ -259,7 +260,7 @@ export default function RoundDetailScreen() {
                 </View>
                 <View style={styles.chip}>
                   <Text style={styles.chipLbl}>Mulligans</Text>
-                  <Text style={[styles.chipVal, styles.chipHi]}>{r.mulligans === 'on' ? 'On' : 'Off'}</Text>
+                  <Text style={[styles.chipVal, styles.chipHi]}>{mulliganDisplayLabel(r.mulligans)}</Text>
                 </View>
               </View>
             </>
