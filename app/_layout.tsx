@@ -3,6 +3,7 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { PlayfairDisplay_900Black } from '@expo-google-fonts/playfair-display';
 import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
+import Head from 'expo-router/head';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -72,6 +73,11 @@ function RootLayoutNav() {
 
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      {Platform.OS === 'web' ? (
+        <Head>
+          <meta name="robots" content="noindex, nofollow" />
+        </Head>
+      ) : null}
       <GestureHandlerRootView
         style={[
           { flex: 1, width: '100%', backgroundColor: colors.bg, minHeight: 0 },

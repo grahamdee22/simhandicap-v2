@@ -1,0 +1,30 @@
+# app.sim-cap.com — product app (auth + logged-in UI). Not for search indexing.
+# Copied into dist on `npm run export:web` via public/ → dist/.
+User-agent: *
+Disallow: /sign-in
+Disallow: /sign-up
+Disallow: /forgot-password
+Disallow: /reset-password
+Disallow: /onboarding
+Disallow: /complete-oauth-profile
+Disallow: /auth/
+Disallow: /log
+Disallow: /groups
+Disallow: /profile
+Disallow: /analyze
+Disallow: /contact
+Disallow: /net-calculator
+Disallow: /match-create
+Disallow: /match-history
+Disallow: /match-accept
+Disallow: /match-open-accept
+Disallow: /match-results
+Disallow: /match-score
+Disallow: /league
+Disallow: /league-create
+Disallow: /league-manage
+Disallow: /league-match
+Disallow: /tournament-holes
+Disallow: /group-chat
+Disallow: /round
+Disallow: /
