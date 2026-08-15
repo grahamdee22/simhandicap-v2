@@ -126,16 +126,18 @@ export default function HomeScreen() {
         </Text>
       ) : (
         rounds.slice(0, 8).map((r, idx) => (
-          <View key={r.id} style={[styles.roundRowOuter, idx > 0 && styles.roundRowGapBefore]}>
+          <View
+            key={r.id}
+            style={[
+              styles.roundRowOuter,
+              idx > 0 && styles.roundRowGapBefore,
+              idx > 0 && styles.roundRowBorder,
+            ]}
+          >
             <Link href={`/round/${r.id}`} asChild>
               <Pressable
                 style={({ pressed }) =>
-                  mergeViewStyles(
-                    styles.roundRow,
-                    idx > 0 && styles.roundRowBorder,
-                    { width: '100%' as const },
-                    pressed && styles.roundRowPressed
-                  )
+                  mergeViewStyles(styles.roundRow, pressed && styles.roundRowPressed)
                 }
               >
                 <View style={styles.roundRowFlagIcon} pointerEvents="none">
@@ -708,14 +710,15 @@ const styles = StyleSheet.create({
   roundRowGapBefore: { marginTop: 12 },
   roundRow: {
     flex: 1,
+    flexShrink: 1,
     minWidth: 0,
+    flexBasis: 0,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
     alignSelf: 'stretch',
     paddingVertical: 20,
     backgroundColor: colors.surface,
-    maxWidth: '100%',
   },
   roundRowFlagIcon: {
     width: 32,

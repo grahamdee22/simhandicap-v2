@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Modal,
@@ -7,6 +7,7 @@ import {
   StyleSheet,
   Text,
   View,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { colors } from '../../lib/constants';
@@ -29,6 +30,7 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
   const rounds = useAppStore((s) => s.rounds);
   const captureRef = useRef<View>(null);
   const [sharing, setSharing] = useState(false);
+  const [cardLaidOut, setCardLaidOut] = useState(false);
 
   const data = useMemo(() => {
     if (!round) return null;
@@ -39,8 +41,30 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
   const scale = previewWidth / SHARE_CARD_WIDTH;
   const previewHeight = SHARE_CARD_HEIGHT * scale;
 
+  const roundId = round?.id ?? null;
+
+  /** Re-arm the layout gate whenever a different round's card is mounted. */
+  useEffect(() => {
+    setCardLaidOut(false);
+    if (!visible || !roundId) return;
+    // Fallback in case onLayout does not fire again for an already-measured card.
+    const t = setTimeout(() => setCardLaidOut(true), 700);
+    return () => clearTimeout(t);
+  }, [roundId, visible]);
+
+  /**
+   * The capture target must report its full 1080x1920 box before we snapshot it,
+   * otherwise view-shot can grab a partially laid out card and clip the header.
+   */
+  const onCaptureLayout = useCallback((e: LayoutChangeEvent) => {
+    const { width, height } = e.nativeEvent.layout;
+    if (width >= SHARE_CARD_WIDTH - 1 && height >= SHARE_CARD_HEIGHT - 1) {
+      setCardLaidOut(true);
+    }
+  }, []);
+
   const onShare = useCallback(async () => {
-    if (sharing) return;
+    if (sharing || !cardLaidOut) return;
     setSharing(true);
     try {
       const result = await captureAndShareRoundCard(captureRef);
@@ -52,7 +76,9 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
     } finally {
       setSharing(false);
     }
-  }, [onClose, sharing]);
+  }, [cardLaidOut, onClose, sharing]);
+
+  const shareBusy = sharing || !cardLaidOut;
 
   return (
     <Modal
@@ -84,23 +110,14 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
             </View>
           ) : null}
 
-          {/* Off-screen full-resolution card for capture */}
-          {data ? (
-            <View style={styles.offscreen} pointerEvents="none">
-              <View ref={captureRef} collapsable={false}>
-                <ShareRoundCard data={data} />
-              </View>
-            </View>
-          ) : null}
-
           <Pressable
-            style={[styles.primaryBtn, sharing && styles.btnDisabled]}
+            style={[styles.primaryBtn, shareBusy && styles.btnDisabled]}
             onPress={() => void onShare()}
-            disabled={sharing}
+            disabled={shareBusy}
             accessibilityRole="button"
             accessibilityLabel="Share round card"
           >
-            {sharing ? (
+            {shareBusy ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.primaryTxt}>Share</Text>
@@ -116,6 +133,23 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
             <Text style={styles.secondaryTxt}>Not Now</Text>
           </Pressable>
         </View>
+
+        {/*
+          Full-resolution capture target. It lives outside the sheet because the
+          sheet's border radius clips subviews on iOS, which cut off the card header.
+        */}
+        {data ? (
+          <View style={styles.captureHost} pointerEvents="none">
+            <View
+              ref={captureRef}
+              collapsable={false}
+              style={styles.captureTarget}
+              onLayout={onCaptureLayout}
+            >
+              <ShareRoundCard data={data} />
+            </View>
+          </View>
+        ) : null}
       </View>
     </Modal>
   );
@@ -157,10 +191,18 @@ const styles = StyleSheet.create({
     backgroundColor: '#122A1F',
     marginBottom: 16,
   },
-  offscreen: {
+  captureHost: {
     position: 'absolute',
-    left: -4000,
+    left: -(SHARE_CARD_WIDTH + 200),
     top: 0,
+    width: SHARE_CARD_WIDTH,
+    height: SHARE_CARD_HEIGHT,
+    overflow: 'visible',
+  },
+  captureTarget: {
+    width: SHARE_CARD_WIDTH,
+    height: SHARE_CARD_HEIGHT,
+    overflow: 'visible',
   },
   primaryBtn: {
     backgroundColor: colors.header,

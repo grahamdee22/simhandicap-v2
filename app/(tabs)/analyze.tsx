@@ -760,6 +760,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: colors.accentSoft,
+    flexShrink: 0,
   },
   emptyRounds: { paddingVertical: 12, fontSize: 13, color: colors.muted },
 });

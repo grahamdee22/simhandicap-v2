@@ -797,7 +797,7 @@ export default function LeagueCreateScreen() {
               </View>
             ) : (
               <>
-                <Text style={styles.lbl}>Rounds that count toward standings</Text>
+                <Text style={[styles.lbl, { marginTop: 10 }]}>Rounds that count toward standings</Text>
                 <View style={styles.stepperRow}>
                   <Pressable
                     style={styles.stepperBtn}

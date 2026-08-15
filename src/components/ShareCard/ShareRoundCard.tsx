@@ -410,7 +410,7 @@ const styles = StyleSheet.create({
     fontSize: 52,
     fontWeight: '800',
     lineHeight: 62,
-    marginTop: 48,
+    marginTop: 40,
     paddingHorizontal: 12,
   },
   metaRow: {
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   statsRow: {
-    marginTop: 56,
+    marginTop: 48,
     flexDirection: 'row',
     alignItems: 'stretch',
     justifyContent: 'space-between',
@@ -480,7 +480,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   conditionsCard: {
-    marginTop: 56,
+    marginTop: 48,
     backgroundColor: '#ffffff',
     borderRadius: 28,
     padding: 28,
