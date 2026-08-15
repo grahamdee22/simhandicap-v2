@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -19,6 +19,7 @@ import { ContentWidth } from '../../../../src/components/ContentWidth';
 import { IconCameraOutline, IconImageOutline } from '../../../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../../../src/lib/alertCompat';
 import { colors } from '../../../../src/lib/constants';
+import { PRACTICE_ANALYZER_ENABLED } from '../../../../src/lib/featureFlags';
 import { googleOAuthAccessToken } from '../../../../src/lib/googleOAuthAccessToken';
 import {
   invokeAnalyzePractice,
@@ -186,6 +187,10 @@ export default function PracticeAnalyzerScreen() {
       { text: 'Upload Photo', onPress: () => void pick('library') },
     ]);
   }, [pick]);
+
+  if (!PRACTICE_ANALYZER_ENABLED) {
+    return <Redirect href={'/(tabs)/log/round' as never} />;
+  }
 
   if (!supabaseOn) {
     return (

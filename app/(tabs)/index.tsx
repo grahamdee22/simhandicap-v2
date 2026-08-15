@@ -454,7 +454,7 @@ const styles = StyleSheet.create({
    * card's pressed-state style function so a `mergeViewStyles` arg can never override it.
    * latestCard adds 14px of its own paddingTop above the flag icon.
    */
-  statsTilesBlock: { marginTop: 8, marginBottom: 44 },
+  statsTilesBlock: { marginTop: 8, marginBottom: 24 },
   latestCard: {
     position: 'relative',
     flexDirection: 'row',

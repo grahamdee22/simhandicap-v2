@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../../../src/components/ContentWidth';
 import { confirmDestructive, showAppAlert } from '../../../../src/lib/alertCompat';
 import { colors } from '../../../../src/lib/constants';
+import { PRACTICE_ANALYZER_ENABLED } from '../../../../src/lib/featureFlags';
 import { googleOAuthAccessToken } from '../../../../src/lib/googleOAuthAccessToken';
 import {
   createPracticeAnalysisSignedUrl,
@@ -145,6 +146,10 @@ export default function PracticeAnalysisDetailScreen() {
     }
     router.replace('/(tabs)/log/practice' as never);
   }, [detail, deleting, token, router]);
+
+  if (!PRACTICE_ANALYZER_ENABLED) {
+    return <Redirect href={'/(tabs)/log/round' as never} />;
+  }
 
   if (loading) {
     return (

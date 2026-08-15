@@ -1,21 +1,24 @@
 import { Stack } from 'expo-router';
-import { HeaderInstagramAndSimCap } from '../../../src/components/HeaderInstagramSimCap';
+import { ForestStackHeader } from '../../../src/components/ForestStackHeader';
 import { colors } from '../../../src/lib/constants';
+import { PRACTICE_ANALYZER_ENABLED } from '../../../src/lib/featureFlags';
 
 /**
  * Center-tab stack: choice screen → Log a Round or Analyze Practice.
- * Tab chrome (label/icon) stays on `(tabs)/_layout`; titles live here.
+ * When Practice Analyzer is disabled, open Log a Round directly (choice redirects too).
+ * Custom header avoids native headerRight liquid-glass/pill wrapping.
  */
 export default function LogStackLayout() {
   return (
     <Stack
+      initialRouteName={PRACTICE_ANALYZER_ENABLED ? 'index' : 'round'}
       screenOptions={{
+        header: (props) => <ForestStackHeader {...props} />,
         headerStyle: { backgroundColor: colors.header },
         headerTintColor: '#fff',
         headerShadowVisible: false,
         headerTitleAlign: 'left',
         headerTitleStyle: { fontWeight: '700', fontSize: 22 },
-        headerRight: HeaderInstagramAndSimCap,
         contentStyle: { backgroundColor: colors.bg },
       }}
     >

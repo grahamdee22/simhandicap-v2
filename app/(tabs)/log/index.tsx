@@ -1,18 +1,24 @@
-import { useRouter } from 'expo-router';
+import { Redirect, useRouter } from 'expo-router';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { IconAnalyticsBars, IconChevronForward, IconGolf } from '../../../src/components/SvgUiIcons';
 import { colors } from '../../../src/lib/constants';
+import { PRACTICE_ANALYZER_ENABLED } from '../../../src/lib/featureFlags';
 import { useResponsive } from '../../../src/lib/responsive';
 
 /**
- * Center-tab gate: Log a Round (index) vs Analyze Practice (coaching only).
+ * Center-tab gate: Log a Round vs Analyze Practice (when enabled).
+ * When Practice Analyzer is disabled, skip straight to Log a Round.
  */
 export default function LogChoiceScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
+
+  if (!PRACTICE_ANALYZER_ENABLED) {
+    return <Redirect href={'/(tabs)/log/round' as never} />;
+  }
 
   return (
     <ContentWidth bg={colors.bg}>
