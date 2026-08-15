@@ -270,7 +270,7 @@ export default function HomeScreen() {
               <Link href={`/round/${latest.id}`} asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.latestCard, { marginTop: 20 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.latestCard, { marginTop: 32 }, pressed && { opacity: 0.94 })
                   }
                   accessibilityRole="button"
                   accessibilityLabel="Open latest saved round"
@@ -301,7 +301,7 @@ export default function HomeScreen() {
               <Link href="/(tabs)/log" asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.ctaCard, { marginTop: 20 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.ctaCard, { marginTop: 32 }, pressed && { opacity: 0.94 })
                   }
                 >
                   <Text style={styles.ctaTitle}>Log your first round</Text>

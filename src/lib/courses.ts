@@ -251,6 +251,36 @@ const VALDERRAMA_PARS: number[] = [
 const WOLF_CREEK_PARS: number[] = [
   5, 4, 3, 4, 5, 4, 4, 3, 4, 4, 3, 5, 4, 4, 3, 4, 5, 4,
 ];
+const BLACK_DESERT_PARS: number[] = [
+  4, 4, 3, 4, 4, 4, 5, 3, 5, 4, 4, 4, 5, 4, 3, 4, 3, 5,
+];
+const SAND_HOLLOW_CHAMP_PARS: number[] = [
+  4, 5, 3, 4, 4, 4, 5, 3, 4, 5, 3, 4, 4, 4, 3, 4, 5, 4,
+];
+const CORAL_CANYON_PARS: number[] = [
+  4, 3, 4, 3, 5, 4, 5, 3, 5, 4, 5, 3, 4, 4, 3, 5, 4, 4,
+];
+const LEDGES_PARS: number[] = [
+  4, 3, 5, 4, 3, 4, 5, 4, 4, 3, 5, 3, 4, 4, 4, 5, 4, 4,
+];
+const ENTRADA_PARS: number[] = [
+  4, 4, 4, 4, 3, 4, 4, 3, 5, 4, 5, 3, 4, 4, 3, 5, 4, 4,
+];
+const SKY_MOUNTAIN_PARS: number[] = [
+  4, 3, 4, 4, 4, 5, 4, 3, 5, 5, 4, 3, 4, 4, 4, 3, 4, 5,
+];
+const CONESTOGA_PARS: number[] = [
+  4, 3, 4, 4, 3, 5, 4, 4, 5, 3, 4, 5, 4, 3, 4, 5, 4, 4,
+];
+const PALMS_MESQUITE_PARS: number[] = [
+  5, 4, 3, 5, 4, 4, 3, 4, 4, 5, 3, 4, 4, 3, 5, 4, 4, 4,
+];
+const FALCON_RIDGE_PARS: number[] = [
+  5, 3, 4, 4, 3, 4, 5, 3, 4, 5, 4, 5, 4, 3, 4, 5, 3, 4,
+];
+const OASIS_PALMER_PARS: number[] = [
+  4, 3, 4, 4, 5, 4, 3, 5, 3, 4, 4, 5, 4, 4, 4, 3, 4, 4,
+];
 
 const ARONIMINK_PARS: number[] = [
   4, 4, 4, 4, 3, 4, 4, 3, 5, 4, 4, 4, 4, 3, 4, 5, 3, 4,
@@ -1269,16 +1299,17 @@ export const COURSE_SEEDS: CourseSeed[] = [
   },
   {
     id: 'wolf-creek',
-    name: 'Wolf Creek',
-    defaultTee: 'Champions - Blue',
-    byPlatform: uniformByPlatform(71.1, 140),
+    name: 'Wolf Creek Golf Club',
+    location: 'Mesquite, NV',
+    defaultTee: 'Champions',
+    byPlatform: uniformByPlatform(71.8, 144),
     pars: WOLF_CREEK_PARS,
     tees: [
-      { name: 'Classics - Red', rating: 61.4, slope: 109 },
-      { name: 'Signature - Gold', rating: 64.6, slope: 116 },
-      { name: 'Masters - White', rating: 69.0, slope: 133 },
-      { name: 'Champions - Blue', rating: 71.1, slope: 140 },
-      { name: 'Challenger - Black', rating: 74.4, slope: 147 },
+      { name: 'Classics', rating: 62.8, slope: 114 },
+      { name: 'Signature', rating: 66.1, slope: 117 },
+      { name: 'Masters', rating: 68.8, slope: 137 },
+      { name: 'Champions', rating: 71.8, slope: 144 },
+      { name: 'Challenger', rating: 75.4, slope: 154 },
     ],
     confident: true,
   },
@@ -1562,6 +1593,158 @@ export const COURSE_SEEDS: CourseSeed[] = [
       { name: 'Green', rating: 72.2, slope: 132 },
       { name: 'Blue', rating: 76.4, slope: 140 },
     ],
+  },
+  {
+    id: 'black-desert-resort',
+    name: 'Black Desert Resort',
+    location: 'Ivins, UT',
+    defaultTee: 'Black Desert',
+    byPlatform: uniformByPlatform(73.3, 134),
+    pars: BLACK_DESERT_PARS,
+    tees: [
+      { name: 'Red Cliffs', rating: 63.4, slope: 112 },
+      { name: 'Snow Canyon', rating: 67.1, slope: 120 },
+      { name: 'Combination', rating: 68.7, slope: 126 },
+      { name: 'Weiskopf', rating: 71.2, slope: 128 },
+      { name: 'Black Desert', rating: 73.3, slope: 134 },
+      { name: 'Tournament', rating: 75.4, slope: 139 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'sand-hollow-resort',
+    name: 'Sand Hollow Resort',
+    location: 'Hurricane, UT',
+    defaultTee: 'Championship',
+    byPlatform: uniformByPlatform(72.2, 132),
+    pars: SAND_HOLLOW_CHAMP_PARS,
+    tees: [
+      { name: 'Resort', rating: 65.8, slope: 108 },
+      { name: 'Fought - Combo', rating: 67.5, slope: 116 },
+      { name: 'Signature', rating: 69.4, slope: 125 },
+      { name: 'Championship', rating: 72.2, slope: 132 },
+      { name: 'Tournament', rating: 74.0, slope: 137 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'coral-canyon',
+    name: 'Coral Canyon Golf Course',
+    location: 'Washington, UT',
+    defaultTee: 'Blue',
+    byPlatform: uniformByPlatform(72.6, 143),
+    pars: CORAL_CANYON_PARS,
+    tees: [
+      { name: 'Red', rating: 64.1, slope: 118 },
+      { name: 'White', rating: 69.0, slope: 128 },
+      { name: 'Blue', rating: 72.6, slope: 143 },
+      { name: 'Black', rating: 75.2, slope: 148 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'the-ledges',
+    name: 'The Ledges Golf Club',
+    location: 'St. George, UT',
+    defaultTee: 'Black',
+    byPlatform: uniformByPlatform(73.4, 131),
+    pars: LEDGES_PARS,
+    tees: [
+      { name: 'Red', rating: 63.5, slope: 106 },
+      { name: 'Silver', rating: 66.3, slope: 116 },
+      { name: 'White', rating: 69.0, slope: 120 },
+      { name: 'Blue', rating: 71.1, slope: 127 },
+      { name: 'Black', rating: 73.4, slope: 131 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'entrada-snow-canyon',
+    name: 'Entrada at Snow Canyon',
+    location: 'St. George, UT',
+    defaultTee: 'I',
+    byPlatform: uniformByPlatform(73.5, 139),
+    pars: ENTRADA_PARS,
+    tees: [
+      { name: 'IV', rating: 66.6, slope: 117 },
+      { name: 'III', rating: 68.8, slope: 129 },
+      { name: 'II', rating: 71.2, slope: 135 },
+      { name: 'I', rating: 73.5, slope: 139 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'sky-mountain',
+    name: 'Sky Mountain Golf Course',
+    location: 'Hurricane, UT',
+    defaultTee: 'Blue',
+    byPlatform: uniformByPlatform(70.4, 125),
+    pars: SKY_MOUNTAIN_PARS,
+    tees: [
+      { name: 'White', rating: 67.8, slope: 118 },
+      { name: 'Blue', rating: 70.4, slope: 125 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'conestoga',
+    name: 'Conestoga Golf Club',
+    location: 'Mesquite, NV',
+    defaultTee: 'Black',
+    byPlatform: uniformByPlatform(74.9, 137),
+    pars: CONESTOGA_PARS,
+    tees: [
+      { name: 'Jade', rating: 64.3, slope: 107 },
+      { name: 'Copper', rating: 68.3, slope: 114 },
+      { name: 'Silver', rating: 70.1, slope: 127 },
+      { name: 'Gold', rating: 72.3, slope: 132 },
+      { name: 'Black', rating: 74.9, slope: 137 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'the-palms-mesquite',
+    name: 'The Palms Golf Club',
+    location: 'Mesquite, NV',
+    defaultTee: 'Blue',
+    byPlatform: uniformByPlatform(73.2, 131),
+    pars: PALMS_MESQUITE_PARS,
+    tees: [
+      { name: 'Gold', rating: 66.1, slope: 116 },
+      { name: 'White', rating: 69.7, slope: 126 },
+      { name: 'Blue', rating: 73.2, slope: 131 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'falcon-ridge',
+    name: 'Falcon Ridge Golf Club',
+    location: 'Mesquite, NV',
+    defaultTee: 'Black',
+    byPlatform: uniformByPlatform(70.9, 135),
+    pars: FALCON_RIDGE_PARS,
+    tees: [
+      { name: 'Maroon', rating: 62.5, slope: 112 },
+      { name: 'Gold', rating: 66.0, slope: 114 },
+      { name: 'Silver', rating: 68.9, slope: 127 },
+      { name: 'Black', rating: 70.9, slope: 135 },
+    ],
+    confident: true,
+  },
+  {
+    id: 'oasis-palmer',
+    name: 'Oasis Golf Club (Palmer Course)',
+    location: 'Mesquite, NV',
+    defaultTee: 'Black',
+    byPlatform: uniformByPlatform(71.5, 138),
+    pars: OASIS_PALMER_PARS,
+    tees: [
+      { name: 'Gold', rating: 64.6, slope: 108 },
+      { name: 'White', rating: 67.1, slope: 122 },
+      { name: 'Blue', rating: 69.3, slope: 128 },
+      { name: 'Black', rating: 71.5, slope: 138 },
+    ],
+    confident: true,
   },
 ];
 
