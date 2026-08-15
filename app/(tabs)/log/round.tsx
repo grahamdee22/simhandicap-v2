@@ -1,16 +1,16 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useAuth } from '../../src/auth/AuthContext';
+import { useAuth } from '../../../src/auth/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert, ActivityIndicator } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
-import { ContentWidth } from '../../src/components/ContentWidth';
-import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
-import { IconCheckmark } from '../../src/components/SvgUiIcons';
-import { DatePlayedField } from '../../src/components/DatePlayedField';
-import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
-import { useResponsive } from '../../src/lib/responsive';
+import { ContentWidth } from '../../../src/components/ContentWidth';
+import { PendingTournamentHolesBanner } from '../../../src/components/PendingTournamentHolesBanner';
+import { IconCheckmark } from '../../../src/components/SvgUiIcons';
+import { DatePlayedField } from '../../../src/components/DatePlayedField';
+import { PLATFORMS, colors, type PlatformId } from '../../../src/lib/constants';
+import { useResponsive } from '../../../src/lib/responsive';
 import {
   adjustedDifferentialForVersion,
   CURRENT_DIFFERENTIAL_VERSION,
@@ -23,29 +23,29 @@ import {
   type PinDay,
   type PuttingMode,
   type Wind,
-} from '../../src/lib/handicap';
-import { pinOptionsForPlatform, isGsProPlatform } from '../../src/lib/pinPlacement';
-import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../src/lib/dates';
-import { showAppAlert } from '../../src/lib/alertCompat';
-import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
+} from '../../../src/lib/handicap';
+import { pinOptionsForPlatform, isGsProPlatform } from '../../../src/lib/pinPlacement';
+import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../../src/lib/dates';
+import { showAppAlert } from '../../../src/lib/alertCompat';
+import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import {
   effectiveHandicapForLeagueRecording,
   fetchActiveTournamentsForUser,
   isTeamLeagueFormat,
   recordOptedInLeagueRounds,
   type ActiveTournamentOption,
-} from '../../src/lib/leagues';
-import { resolveSocialGroupsAccessToken } from '../../src/lib/socialGroups';
-import { yardageForCourseTee } from '../../src/lib/courseTeeYardages';
-import { uploadLogScorecardForParse } from '../../src/lib/logScorecardStorage';
-import { invokeParseScorecard } from '../../src/lib/parseScorecard';
+} from '../../../src/lib/leagues';
+import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
+import { yardageForCourseTee } from '../../../src/lib/courseTeeYardages';
+import { uploadLogScorecardForParse } from '../../../src/lib/logScorecardStorage';
+import { invokeParseScorecard } from '../../../src/lib/parseScorecard';
 import {
   applyParseScorecardToLogForm,
   scanBannerMessage,
   type ScanBannerKind,
-} from '../../src/lib/scorecardParseApply';
-import { settingsScreenshotPickerOptions } from '../../src/lib/settingsScreenshotPicker';
-import { supabase, isSupabaseConfigured } from '../../src/lib/supabase';
+} from '../../../src/lib/scorecardParseApply';
+import { settingsScreenshotPickerOptions } from '../../../src/lib/settingsScreenshotPicker';
+import { supabase, isSupabaseConfigured } from '../../../src/lib/supabase';
 import {
   COURSE_SEEDS,
   courseMatchesSearch,
@@ -54,10 +54,10 @@ import {
   getCourseTees,
   middleCourseTee,
   ratingForCourse,
-} from '../../src/lib/courses';
-import { targetGrossToImprove } from '../../src/lib/preRoundPrediction';
-import { latestGhinIndex } from '../../src/lib/realVsSim';
-import { currentIndexFromRounds, useAppStore, type SimRound } from '../../src/store/useAppStore';
+} from '../../../src/lib/courses';
+import { targetGrossToImprove } from '../../../src/lib/preRoundPrediction';
+import { latestGhinIndex } from '../../../src/lib/realVsSim';
+import { currentIndexFromRounds, useAppStore, type SimRound } from '../../../src/store/useAppStore';
 
 type DiffInfoKind = 'adjusted' | 'expected' | null;
 
@@ -784,8 +784,16 @@ export default function LogRoundScreen() {
           {course && showTeeSelector ? (
             <>
               <Text style={styles.sectionLabel}>Tee</Text>
+              <Text style={styles.teeTip}>
+                Pick the tee closest to the total yardage you actually played, tee names and colors vary by
+                simulator. If nothing's close, use Custom.
+              </Text>
               <View style={styles.teeChipWrap}>
-                {courseTees.map((t) => (
+                {courseTees.map((t) => {
+                  const yards =
+                    (typeof t.yards === 'number' && Number.isFinite(t.yards) ? t.yards : undefined) ??
+                    yardageForCourseTee(course.id, t.name);
+                  return (
                   <Pressable
                     key={t.name}
                     style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
@@ -797,10 +805,13 @@ export default function LogRoundScreen() {
                   >
                     <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
                     <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
-                      {t.rating} / {t.slope}
+                      {yards != null
+                        ? `${t.rating} / ${t.slope} · ${yards.toLocaleString('en-US')} yds`
+                        : `${t.rating} / ${t.slope}`}
                     </Text>
                   </Pressable>
-                ))}
+                  );
+                })}
                 <Pressable
                   style={[styles.teeChip, teePickKey === CUSTOM_TEE_ID && styles.teeChipOn]}
                   onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
@@ -1208,6 +1219,12 @@ const styles = StyleSheet.create({
   scanBannerTxtGreen: { color: colors.forestMid },
   scanBannerTxtYellow: { color: colors.warn },
   scanBannerTxtRed: { color: colors.danger },
+  teeTip: {
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
+    marginBottom: 10,
+  },
   teeChipWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
   teeChip: {
     paddingVertical: 8,

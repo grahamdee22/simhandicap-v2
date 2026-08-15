@@ -1,5 +1,5 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { Link, useRouter } from 'expo-router';
+import { Link, useRouter, type Href } from 'expo-router';
 import { Fragment, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable as RNPressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
@@ -265,12 +265,12 @@ export default function HomeScreen() {
         <PendingTournamentHolesBanner gutter={gutter} />
         <Fragment>
           <View style={[styles.homeBody, { paddingHorizontal: gutter }]}>
-            <View style={{ marginTop: 8 }}>{statsTiles}</View>
+            <View style={styles.statsTilesBlock}>{statsTiles}</View>
             {latest ? (
               <Link href={`/round/${latest.id}`} asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.latestCard, { marginTop: 32 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.latestCard, pressed && { opacity: 0.94 })
                   }
                   accessibilityRole="button"
                   accessibilityLabel="Open latest saved round"
@@ -298,10 +298,10 @@ export default function HomeScreen() {
                 </Pressable>
               </Link>
             ) : (
-              <Link href="/(tabs)/log" asChild>
+              <Link href={'/(tabs)/log/round' as Href} asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.ctaCard, { marginTop: 32 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.ctaCard, pressed && { opacity: 0.94 })
                   }
                 >
                   <Text style={styles.ctaTitle}>Log your first round</Text>
@@ -449,6 +449,12 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: '100%',
   },
+  /**
+   * Owns the gap down to the Latest round / CTA card. Lives on this wrapper rather than the
+   * card's pressed-state style function so a `mergeViewStyles` arg can never override it.
+   * latestCard adds 14px of its own paddingTop above the flag icon.
+   */
+  statsTilesBlock: { marginTop: 8, marginBottom: 44 },
   latestCard: {
     position: 'relative',
     flexDirection: 'row',

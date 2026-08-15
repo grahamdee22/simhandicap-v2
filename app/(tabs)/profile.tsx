@@ -1,5 +1,5 @@
 import { useFocusEffect } from '@react-navigation/native';
-import { Link, useRouter } from 'expo-router';
+import { Link, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -347,7 +347,7 @@ export default function ProfileScreen() {
               </Pressable>
             </Link>
           ) : (
-            <Link href="/(tabs)/log" asChild>
+            <Link href={'/(tabs)/log/round' as Href} asChild>
               <Pressable style={styles.logCta}>
                 <Text style={styles.logCtaTxt}>Log a round — your index and chart start here</Text>
                 <IconAddCircleOutline size={20} color={colors.accent} />

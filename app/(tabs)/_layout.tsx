@@ -121,7 +121,7 @@ export default function TabLayout() {
         name="log"
         options={{
           title: 'Log a round',
-          headerRight: HeaderInstagramAndSimCap,
+          headerShown: false,
           tabBarLabel: 'Log a round',
           tabBarIcon: ({ color }) => <TabIcon name="add-circle" color={color} />,
         }}

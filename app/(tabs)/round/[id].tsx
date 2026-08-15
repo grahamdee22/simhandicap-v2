@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Link, Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useCallback } from 'react';
 import {
   Alert,
@@ -149,7 +149,7 @@ export default function RoundDetailScreen() {
           headerBackVisible: false,
           headerLeft: () => null,
           headerRight: () => (
-            <Link href={{ pathname: '/(tabs)/log', params: { editId: r.id } }} asChild>
+            <Link href={{ pathname: '/(tabs)/log/round', params: { editId: r.id } } as unknown as Href} asChild>
               <Pressable style={{ paddingHorizontal: 12 }}>
                 <Text style={{ color: colors.accentMuted, fontSize: 13, fontWeight: '600' }}>Edit</Text>
               </Pressable>
@@ -318,7 +318,7 @@ export default function RoundDetailScreen() {
           ) : null}
 
           <View style={[styles.actions, { marginHorizontal: gutter }]}>
-            <Link href="/(tabs)/log" asChild>
+            <Link href={'/(tabs)/log/round' as Href} asChild>
               <Pressable style={mergeViewStyles(styles.actionBtn, styles.actionPrimary)}>
                 <Text style={[styles.actionTxt, styles.actionPrimaryTxt]}>Log another</Text>
               </Pressable>

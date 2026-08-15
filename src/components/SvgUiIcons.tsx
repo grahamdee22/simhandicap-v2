@@ -142,3 +142,37 @@ export function IconShareOutline({ size, color }: Props) {
     </Slot>
   );
 }
+
+/** Camera outline */
+export function IconCameraOutline({ size, color }: Props) {
+  return (
+    <Slot size={size}>
+      <Path
+        d="M4 8.5h3.2l1.3-2h7l1.3 2H20a1.5 1.5 0 011.5 1.5v8A1.5 1.5 0 0120 19.5H4A1.5 1.5 0 012.5 18v-8A1.5 1.5 0 014 8.5z"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+      <Circle cx="12" cy="13.5" r="3.2" fill="none" stroke={color} strokeWidth="1.6" />
+    </Slot>
+  );
+}
+
+/** Image / photo outline */
+export function IconImageOutline({ size, color }: Props) {
+  return (
+    <Slot size={size}>
+      <Rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke={color} strokeWidth="1.6" />
+      <Circle cx="9" cy="10" r="1.6" fill={color} />
+      <Path
+        d="M5.5 17.5l4.2-4.2 2.3 2.3 3.2-3.6 3.3 5.5"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Slot>
+  );
+}

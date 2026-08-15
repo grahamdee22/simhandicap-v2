@@ -1,7 +1,10 @@
 /**
  * Optional total yardage per course tee for GS Pro scorecard tee matching.
- * When absent, parse-scorecard falls back to direct tee name matching only.
+ * Prefer `CourseTee.yards` on COURSE_SEEDS when present; this map is a legacy fallback.
  */
+
+import { getCourseById } from './courses';
+
 export const COURSE_TEE_YARDAGES: Partial<Record<string, Partial<Record<string, number>>>> = {
   pebble: { Red: 5500, White: 6048, Blue: 6528, Black: 6828 },
   augusta: { Red: 5460, White: 6245, Green: 6510, Tournament: 6745, Black: 7045 },
@@ -14,5 +17,9 @@ export const COURSE_TEE_YARDAGES: Partial<Record<string, Partial<Record<string, 
 };
 
 export function yardageForCourseTee(courseId: string, teeName: string): number | undefined {
+  const fromSeed = getCourseById(courseId)?.tees?.find((t) => t.name === teeName)?.yards;
+  if (typeof fromSeed === 'number' && Number.isFinite(fromSeed) && fromSeed > 0) {
+    return fromSeed;
+  }
   return COURSE_TEE_YARDAGES[courseId]?.[teeName];
 }
