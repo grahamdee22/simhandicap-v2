@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { ShareRoundCardModal } from '../../src/components/ShareCard';
-import { IconCalendarOutline, IconShareOutline } from '../../src/components/SvgUiIcons';
+import { IconGolf, IconShareOutline } from '../../src/components/SvgUiIcons';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
 import { formatDifferentialDisplay, MULLIGAN_PICKER_OPTS, normalizeMulligans, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
 import { pinFilterOptions } from '../../src/lib/pinPlacement';
@@ -473,25 +473,28 @@ export default function AnalyzeScreen() {
             key={r.id}
             style={mergeViewStyles(styles.roundRow, { paddingHorizontal: gutter })}
           >
-            <Link href={`/round/${r.id}`} asChild>
-              <Pressable style={styles.roundRowMain}>
-                <View style={styles.roundIcon}>
-                  <IconCalendarOutline size={isWide ? 18 : 16} color={colors.subtle} />
-                </View>
-                <View style={styles.roundInfo}>
-                  <Text style={[styles.roundCourse, isWide && styles.roundCourseLg]} numberOfLines={1}>
-                    {r.courseName}
-                  </Text>
-                  <Text style={[styles.roundMeta, isWide && styles.roundMetaLg]} numberOfLines={2}>
-                    {formatRoundMeta(r)}
-                  </Text>
-                </View>
-                <View style={styles.roundRight}>
-                  <Text style={[styles.roundScore, isWide && styles.roundScoreLg]}>{r.grossScore}</Text>
-                  <Text style={styles.roundDiff}>diff {formatDifferentialDisplay(r.adjustedDiff)}</Text>
-                </View>
-              </Pressable>
-            </Link>
+            <Pressable
+              style={styles.roundRowMain}
+              onPress={() => router.push(`/round/${r.id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${r.courseName} round`}
+            >
+              <View style={styles.roundIcon}>
+                <IconGolf size={isWide ? 18 : 16} color={colors.subtle} />
+              </View>
+              <View style={styles.roundInfo}>
+                <Text style={[styles.roundCourse, isWide && styles.roundCourseLg]} numberOfLines={1}>
+                  {r.courseName}
+                </Text>
+                <Text style={[styles.roundMeta, isWide && styles.roundMetaLg]} numberOfLines={2}>
+                  {formatRoundMeta(r)}
+                </Text>
+              </View>
+              <View style={styles.roundRight}>
+                <Text style={[styles.roundScore, isWide && styles.roundScoreLg]}>{r.grossScore}</Text>
+                <Text style={styles.roundDiff}>diff {formatDifferentialDisplay(r.adjustedDiff)}</Text>
+              </View>
+            </Pressable>
             <Pressable
               style={styles.shareBtn}
               onPress={() => setShareRoundId(r.id)}
@@ -721,6 +724,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 12, fontWeight: '700', color: colors.ink },
   sectionTitleLg: { fontSize: 14 },
   roundRow: {
+    width: '100%',
+    alignSelf: 'stretch',
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
@@ -731,6 +736,8 @@ const styles = StyleSheet.create({
   },
   roundRowMain: {
     flex: 1,
+    flexBasis: 0,
+    flexShrink: 1,
     minWidth: 0,
     flexDirection: 'row',
     alignItems: 'center',
@@ -749,7 +756,7 @@ const styles = StyleSheet.create({
   roundCourseLg: { fontSize: 14 },
   roundMeta: { fontSize: 10, fontWeight: '600', color: colors.subtle, marginTop: 1 },
   roundMetaLg: { fontSize: 11 },
-  roundRight: { alignItems: 'flex-end' },
+  roundRight: { alignItems: 'flex-end', flexShrink: 0 },
   roundScore: { fontSize: 14, fontWeight: '700', color: colors.ink },
   roundScoreLg: { fontSize: 16 },
   roundDiff: { fontSize: 10, fontWeight: '600', color: colors.sage },

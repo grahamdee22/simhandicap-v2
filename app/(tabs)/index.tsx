@@ -1,5 +1,5 @@
 import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
-import { Link } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { Fragment, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable as RNPressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
@@ -56,12 +56,11 @@ export default function HomeScreen() {
   const tabBarHeight = useBottomTabBarHeight();
   const {
     gutter,
-    maxContent,
-    homeSplit,
     isWide,
     isVeryWide,
     isCompactHome,
   } = useResponsive();
+  const router = useRouter();
   const rounds = useAppStore((s) => s.rounds);
   const displayName = useAppStore((s) => s.displayName);
   const [indexInfoOpen, setIndexInfoOpen] = useState(false);
@@ -90,8 +89,6 @@ export default function HomeScreen() {
   const badge = trendBadge(rounds);
   const latest = rounds[0];
   const heroPadTop = Math.max(insets.top, 12) + 4;
-  const rightColW = Math.min(420, Math.floor(maxContent * 0.4));
-
   const statsRowStyle = useMemo(
     () =>
       mergeViewStyles(styles.statsRow, {
@@ -134,41 +131,40 @@ export default function HomeScreen() {
               idx > 0 && styles.roundRowBorder,
             ]}
           >
-            <Link href={`/round/${r.id}`} asChild>
-              <Pressable
-                style={({ pressed }) =>
-                  mergeViewStyles(styles.roundRow, pressed && styles.roundRowPressed)
-                }
-              >
-                <View style={styles.roundRowFlagIcon} pointerEvents="none">
-                  <IconGolf size={isWide ? 18 : 16} color={colors.sage} />
-                </View>
-                <View style={styles.roundRowMain}>
-                  <View style={styles.roundInfo}>
-                    <Text style={[styles.roundCourse, isWide && styles.roundCourseLg]} numberOfLines={1}>
-                      {r.courseName}
-                    </Text>
-                    <Text style={[styles.roundMeta, isWide && styles.roundMetaLg]} numberOfLines={2}>
-                      {formatRoundMeta(r)}
-                    </Text>
-                  </View>
-                  <View style={styles.roundRight}>
-                    <Text
-                      style={[styles.roundScore, isWide && styles.roundScoreLg]}
-                      {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
-                    >
-                      {r.grossScore}
-                    </Text>
-                    <Text
-                      style={styles.roundDiff}
-                      {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
-                    >
-                      diff {formatDifferentialDisplay(r.adjustedDiff)}
-                    </Text>
-                  </View>
-                </View>
-              </Pressable>
-            </Link>
+            <Pressable
+              style={({ pressed }) =>
+                mergeViewStyles(styles.roundRow, pressed && styles.roundRowPressed)
+              }
+              onPress={() => router.push(`/round/${r.id}`)}
+              accessibilityRole="button"
+              accessibilityLabel={`Open ${r.courseName} round`}
+            >
+              <View style={styles.roundRowFlagIcon} pointerEvents="none">
+                <IconGolf size={isWide ? 18 : 16} color={colors.sage} />
+              </View>
+              <View style={styles.roundInfo}>
+                <Text style={[styles.roundCourse, isWide && styles.roundCourseLg]} numberOfLines={1}>
+                  {r.courseName}
+                </Text>
+                <Text style={[styles.roundMeta, isWide && styles.roundMetaLg]} numberOfLines={2}>
+                  {formatRoundMeta(r)}
+                </Text>
+              </View>
+              <View style={styles.roundRight}>
+                <Text
+                  style={[styles.roundScore, isWide && styles.roundScoreLg]}
+                  {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
+                >
+                  {r.grossScore}
+                </Text>
+                <Text
+                  style={styles.roundDiff}
+                  {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
+                >
+                  diff {formatDifferentialDisplay(r.adjustedDiff)}
+                </Text>
+              </View>
+            </Pressable>
             <Pressable
               style={styles.shareBtn}
               onPress={() => setShareRoundId(r.id)}
@@ -182,6 +178,32 @@ export default function HomeScreen() {
         ))
       )}
     </>
+  );
+
+  const statsTiles = (
+    <View style={statsRowStyle}>
+      <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
+        <Text style={styles.statLbl}>Rounds</Text>
+        <Text style={[styles.statVal, isWide && styles.statValLg]}>{stats.roundsN}</Text>
+        <Text style={styles.statSub}>Logged</Text>
+      </View>
+      <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
+        <Text style={styles.statLbl}>Best diff.</Text>
+        <Text style={[styles.statVal, isWide && styles.statValLg]}>
+          {formatDifferentialDisplay(stats.bestDiff)}
+        </Text>
+        <Text style={[styles.statSub, { color: colors.subtle }]} numberOfLines={1}>
+          {stats.bestCourse || '—'}
+        </Text>
+      </View>
+      <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
+        <Text style={styles.statLbl}>Avg score</Text>
+        <Text style={[styles.statVal, isWide && styles.statValLg]}>
+          {stats.avg != null ? stats.avg : '—'}
+        </Text>
+        <Text style={styles.statSub}>Gross</Text>
+      </View>
+    </View>
   );
 
   /**
@@ -290,89 +312,13 @@ export default function HomeScreen() {
         >
         <PendingTournamentHolesBanner gutter={gutter} />
         <Fragment>
-        {homeSplit ? (
-          <>
-            <View style={[styles.homeBody, { paddingHorizontal: gutter, marginTop: 8 }]}>
-              {latest ? (
-                <Link href={`/round/${latest.id}`} asChild>
-                  <Pressable
-                    style={({ pressed }) => mergeViewStyles(styles.latestCard, pressed && { opacity: 0.94 })}
-                    accessibilityRole="button"
-                    accessibilityLabel="Open latest saved round"
-                  >
-                    <View style={styles.latestIcon}>
-                      <IconGolf size={20} color={colors.sage} />
-                    </View>
-                    <View style={styles.latestBody}>
-                      <Text style={styles.latestKicker}>Latest round</Text>
-                      <Text style={styles.latestTitle} numberOfLines={1}>
-                        {latest.courseName}
-                      </Text>
-                      <Text style={styles.latestMeta} numberOfLines={2}>
-                        {new Date(latest.playedAt).toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric',
-                        })}{' '}
-                        · Gross {latest.grossScore} · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
-                      </Text>
-                    </View>
-                    <View style={styles.latestChevron} pointerEvents="none">
-                      <IconChevronForward size={20} color={colors.subtle} />
-                    </View>
-                  </Pressable>
-                </Link>
-              ) : (
-                <Link href="/(tabs)/log" asChild>
-                  <Pressable style={({ pressed }) => mergeViewStyles(styles.ctaCard, pressed && { opacity: 0.94 })}>
-                    <Text style={styles.ctaTitle}>Log your first round</Text>
-                    <Text style={styles.ctaSub}>
-                      Score + sim settings → your index, Trends, and profile update instantly.
-                    </Text>
-                  </Pressable>
-                </Link>
-              )}
-            </View>
-            <View style={[styles.splitRow, { paddingHorizontal: gutter, gap: gutter, marginTop: 14 }]}>
-              <View style={[styles.splitLeft, { minWidth: 0 }]}>
-                <View style={statsRowStyle}>
-                  <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-                    <Text style={styles.statLbl}>Rounds</Text>
-                    <Text style={[styles.statVal, isWide && styles.statValLg]}>{stats.roundsN}</Text>
-                    <Text style={styles.statSub}>Logged</Text>
-                  </View>
-                  <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-                    <Text style={styles.statLbl}>Best diff.</Text>
-                    <Text style={[styles.statVal, isWide && styles.statValLg]}>
-                      {formatDifferentialDisplay(stats.bestDiff)}
-                    </Text>
-                    <Text style={[styles.statSub, { color: colors.subtle }]} numberOfLines={1}>
-                      {stats.bestCourse || '—'}
-                    </Text>
-                  </View>
-                  <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-                    <Text style={styles.statLbl}>Avg score</Text>
-                    <Text style={[styles.statVal, isWide && styles.statValLg]}>
-                      {stats.avg != null ? stats.avg : '—'}
-                    </Text>
-                    <Text style={styles.statSub}>Gross</Text>
-                  </View>
-                </View>
-              </View>
-              <View style={[styles.splitRight, { width: rightColW }]}>
-                <View style={[styles.listCard, styles.splitListCard]}>
-                  <View style={styles.listCardContent}>{roundList}</View>
-                </View>
-              </View>
-            </View>
-          </>
-        ) : (
           <View style={[styles.homeBody, { paddingHorizontal: gutter }]}>
+            <View style={{ marginTop: 8 }}>{statsTiles}</View>
             {latest ? (
               <Link href={`/round/${latest.id}`} asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.latestCard, { marginTop: 8 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.latestCard, { marginTop: 14 }, pressed && { opacity: 0.94 })
                   }
                   accessibilityRole="button"
                   accessibilityLabel="Open latest saved round"
@@ -403,7 +349,7 @@ export default function HomeScreen() {
               <Link href="/(tabs)/log" asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.ctaCard, { marginTop: 8 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.ctaCard, { marginTop: 14 }, pressed && { opacity: 0.94 })
                   }
                 >
                   <Text style={styles.ctaTitle}>Log your first round</Text>
@@ -413,34 +359,10 @@ export default function HomeScreen() {
                 </Pressable>
               </Link>
             )}
-            <View style={mergeViewStyles(statsRowStyle, { marginTop: 14 })}>
-              <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-                <Text style={styles.statLbl}>Rounds</Text>
-                <Text style={[styles.statVal, isWide && styles.statValLg]}>{stats.roundsN}</Text>
-                <Text style={styles.statSub}>Logged</Text>
-              </View>
-              <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-                <Text style={styles.statLbl}>Best diff.</Text>
-                <Text style={[styles.statVal, isWide && styles.statValLg]}>
-                  {formatDifferentialDisplay(stats.bestDiff)}
-                </Text>
-                <Text style={[styles.statSub, { color: colors.subtle }]} numberOfLines={1}>
-                  {stats.bestCourse || '—'}
-                </Text>
-              </View>
-              <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-                <Text style={styles.statLbl}>Avg score</Text>
-                <Text style={[styles.statVal, isWide && styles.statValLg]}>
-                  {stats.avg != null ? stats.avg : '—'}
-                </Text>
-                <Text style={styles.statSub}>Gross</Text>
-              </View>
-            </View>
             <View style={[styles.listCard, { marginTop: 12 }]}>
               <View style={styles.listCardContent}>{roundList}</View>
             </View>
           </View>
-        )}
         </Fragment>
         </ScrollView>
         <ShareRoundCardModal
@@ -714,7 +636,7 @@ const styles = StyleSheet.create({
     minWidth: 0,
     flexBasis: 0,
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'stretch',
     gap: 10,
     alignSelf: 'stretch',
     paddingVertical: 20,
@@ -741,15 +663,6 @@ const styles = StyleSheet.create({
   },
   roundRowBorder: { borderTopWidth: 0.5, borderTopColor: colors.border },
   roundRowPressed: { backgroundColor: colors.accentSoft },
-  /** Course + meta beside score + diff so the right column can stretch to meta height only. */
-  roundRowMain: {
-    flex: 1,
-    minWidth: 0,
-    maxWidth: '100%',
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 8,
-  },
   /** flex:1 + fixed score column — predictable gutters vs percentage maxWidth. */
   roundInfo: {
     flex: 1,
@@ -778,6 +691,7 @@ const styles = StyleSheet.create({
   roundRight: {
     justifyContent: 'space-between',
     alignItems: 'flex-end',
+    alignSelf: 'stretch',
     flexShrink: 0,
     flexGrow: 0,
     paddingLeft: 6,
