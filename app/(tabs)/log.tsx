@@ -125,13 +125,12 @@ export default function LogRoundScreen() {
   const [diffInfoOpen, setDiffInfoOpen] = useState<DiffInfoKind>(null);
   const [activeTournaments, setActiveTournaments] = useState<ActiveTournamentOption[]>([]);
   const [tournamentApply, setTournamentApply] = useState<Record<string, boolean>>({});
-  const [tournamentsLoading, setTournamentsLoading] = useState(false);
+  /** False until the latest active-tournament fetch finishes — prevents stale prompt flash. */
+  const [tournamentsReady, setTournamentsReady] = useState(false);
+  const tournamentsFetchGen = useRef(0);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanBanner, setScanBanner] = useState<ScanBannerKind>(null);
   /** Latest form fields for save (deferred save must not read stale render closures). */
-  const activeTournamentsRef = useRef<ActiveTournamentOption[]>([]);
-  activeTournamentsRef.current = activeTournaments;
-
   const latestSaveRef = useRef<{
     grossScore: number;
     playedDate: string;
@@ -188,16 +187,16 @@ export default function LogRoundScreen() {
   }, [preferredLogPlatform]);
 
   const loadActiveTournaments = useCallback(async () => {
+    const fetchGen = ++tournamentsFetchGen.current;
     if (!supabaseOn || !user?.id || existing) {
-      if (existing) {
-        setActiveTournaments([]);
-        setTournamentApply({});
-      }
-      setTournamentsLoading(false);
+      setActiveTournaments([]);
+      setTournamentApply({});
+      setTournamentsReady(true);
       return;
     }
-    const hadCached = activeTournamentsRef.current.length > 0;
-    if (!hadCached) setTournamentsLoading(true);
+    // Hide any prior list immediately so a deleted tournament can't flash.
+    setTournamentsReady(false);
+    setActiveTournaments([]);
     try {
       const accessToken =
         googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
@@ -210,12 +209,15 @@ export default function LogRoundScreen() {
         playedAt: localYmdToIso(playedDate),
         accessToken,
       });
+      if (fetchGen !== tournamentsFetchGen.current) return;
       setActiveTournaments(list);
       setTournamentApply((prev) =>
         Object.fromEntries(list.map((t) => [t.leagueId, prev[t.leagueId] ?? true]))
       );
     } finally {
-      setTournamentsLoading(false);
+      if (fetchGen === tournamentsFetchGen.current) {
+        setTournamentsReady(true);
+      }
     }
   }, [supabaseOn, user?.id, existing, groups, playedDate]);
 
@@ -978,13 +980,10 @@ export default function LogRoundScreen() {
           </View>
         ) : null}
 
-        {!existing && (activeTournaments.length > 0 || tournamentsLoading) ? (
+        {!existing && tournamentsReady && activeTournaments.length > 0 ? (
           <View style={styles.tournamentSection}>
             <Text style={styles.tournamentSectionTitle}>Active Tournaments</Text>
-            {tournamentsLoading && activeTournaments.length === 0 ? (
-              <Text style={styles.tournamentLoading}>Checking active tournaments…</Text>
-            ) : (
-              activeTournaments.map((t) => {
+            {activeTournaments.map((t) => {
                 const apply = tournamentApply[t.leagueId] !== false;
                 return (
                   <View key={t.leagueId} style={styles.tournamentCard}>
@@ -1027,8 +1026,7 @@ export default function LogRoundScreen() {
                     ) : null}
                   </View>
                 );
-              })
-            )}
+              })}
           </View>
         ) : null}
 
@@ -1389,7 +1387,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.6,
     marginBottom: 12,
   },
-  tournamentLoading: { fontSize: 13, color: colors.muted, marginBottom: 8 },
   tournamentCard: {
     paddingVertical: 12,
     borderTopWidth: StyleSheet.hairlineWidth,

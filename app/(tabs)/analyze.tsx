@@ -4,14 +4,14 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
+import { RoundListRow } from '../../src/components/RoundListRow';
 import { ShareRoundCardModal } from '../../src/components/ShareCard';
-import { IconGolf, IconShareOutline } from '../../src/components/SvgUiIcons';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
 import { formatDifferentialDisplay, MULLIGAN_PICKER_OPTS, normalizeMulligans, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
 import { pinFilterOptions } from '../../src/lib/pinPlacement';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
-import { formatRoundMeta, useAppStore, type SimRound } from '../../src/store/useAppStore';
+import { useAppStore, type SimRound } from '../../src/store/useAppStore';
 
 type RoundFilters = {
   putting: PuttingMode | null;
@@ -469,42 +469,14 @@ export default function AnalyzeScreen() {
         </Text>
       ) : (
         filteredRounds.map((r) => (
-          <View
+          <RoundListRow
             key={r.id}
-            style={mergeViewStyles(styles.roundRow, { paddingHorizontal: gutter })}
-          >
-            <Pressable
-              style={styles.roundRowMain}
-              onPress={() => router.push(`/round/${r.id}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${r.courseName} round`}
-            >
-              <View style={styles.roundIcon}>
-                <IconGolf size={isWide ? 18 : 16} color={colors.subtle} />
-              </View>
-              <View style={styles.roundInfo}>
-                <Text style={[styles.roundCourse, isWide && styles.roundCourseLg]} numberOfLines={1}>
-                  {r.courseName}
-                </Text>
-                <Text style={[styles.roundMeta, isWide && styles.roundMetaLg]} numberOfLines={2}>
-                  {formatRoundMeta(r)}
-                </Text>
-              </View>
-              <View style={styles.roundRight}>
-                <Text style={[styles.roundScore, isWide && styles.roundScoreLg]}>{r.grossScore}</Text>
-                <Text style={styles.roundDiff}>diff {formatDifferentialDisplay(r.adjustedDiff)}</Text>
-              </View>
-            </Pressable>
-            <Pressable
-              style={styles.shareBtn}
-              onPress={() => setShareRoundId(r.id)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Share ${r.courseName} round`}
-            >
-              <IconShareOutline size={18} color={colors.sage} />
-            </Pressable>
-          </View>
+            round={r}
+            isWide={isWide}
+            paddingHorizontal={gutter}
+            onPress={() => router.push(`/round/${r.id}`)}
+            onShare={() => setShareRoundId(r.id)}
+          />
         ))
       )}
     </>
@@ -723,51 +695,5 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { fontSize: 12, fontWeight: '700', color: colors.ink },
   sectionTitleLg: { fontSize: 14 },
-  roundRow: {
-    width: '100%',
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderTopWidth: 0.5,
-    borderTopColor: colors.border,
-    backgroundColor: colors.surface,
-  },
-  roundRowMain: {
-    flex: 1,
-    flexBasis: 0,
-    flexShrink: 1,
-    minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  roundIcon: {
-    width: 30,
-    height: 30,
-    borderRadius: 8,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  roundInfo: { flex: 1, minWidth: 0 },
-  roundCourse: { fontSize: 12, fontWeight: '700', color: colors.ink },
-  roundCourseLg: { fontSize: 14 },
-  roundMeta: { fontSize: 10, fontWeight: '600', color: colors.subtle, marginTop: 1 },
-  roundMetaLg: { fontSize: 11 },
-  roundRight: { alignItems: 'flex-end', flexShrink: 0 },
-  roundScore: { fontSize: 14, fontWeight: '700', color: colors.ink },
-  roundScoreLg: { fontSize: 16 },
-  roundDiff: { fontSize: 10, fontWeight: '600', color: colors.sage },
-  shareBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentSoft,
-    flexShrink: 0,
-  },
   emptyRounds: { paddingVertical: 12, fontSize: 13, color: colors.muted },
 });

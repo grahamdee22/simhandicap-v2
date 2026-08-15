@@ -7,12 +7,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { HomeHeroInstagramButton } from '../../src/components/HeaderInstagramSimCap';
+import { RoundListRow } from '../../src/components/RoundListRow';
 import { ShareRoundCardModal } from '../../src/components/ShareCard';
-import {
-  IconChevronForward,
-  IconGolf,
-  IconShareOutline,
-} from '../../src/components/SvgUiIcons';
+import { IconChevronForward, IconGolf } from '../../src/components/SvgUiIcons';
 import { SimCapLogoHero, SIM_CAP_LOGO_ASPECT } from '../../src/components/SimCapLogoHero';
 import { colors } from '../../src/lib/constants';
 import { formatDifferentialDisplay, formatHandicapIndexDisplay, indexHistoryFromRounds } from '../../src/lib/handicap';
@@ -20,7 +17,6 @@ import { mergeViewStyles } from '../../src/lib/mergeStyles';
 import { useResponsive } from '../../src/lib/responsive';
 import {
   currentIndexFromRounds,
-  formatRoundMeta,
   useAppStore,
   type SimRound,
 } from '../../src/store/useAppStore';
@@ -123,58 +119,14 @@ export default function HomeScreen() {
         </Text>
       ) : (
         rounds.slice(0, 8).map((r, idx) => (
-          <View
+          <RoundListRow
             key={r.id}
-            style={[
-              styles.roundRowOuter,
-              idx > 0 && styles.roundRowGapBefore,
-              idx > 0 && styles.roundRowBorder,
-            ]}
-          >
-            <Pressable
-              style={({ pressed }) =>
-                mergeViewStyles(styles.roundRow, pressed && styles.roundRowPressed)
-              }
-              onPress={() => router.push(`/round/${r.id}`)}
-              accessibilityRole="button"
-              accessibilityLabel={`Open ${r.courseName} round`}
-            >
-              <View style={styles.roundRowFlagIcon} pointerEvents="none">
-                <IconGolf size={isWide ? 18 : 16} color={colors.sage} />
-              </View>
-              <View style={styles.roundInfo}>
-                <Text style={[styles.roundCourse, isWide && styles.roundCourseLg]} numberOfLines={1}>
-                  {r.courseName}
-                </Text>
-                <Text style={[styles.roundMeta, isWide && styles.roundMetaLg]} numberOfLines={2}>
-                  {formatRoundMeta(r)}
-                </Text>
-              </View>
-              <View style={styles.roundRight}>
-                <Text
-                  style={[styles.roundScore, isWide && styles.roundScoreLg]}
-                  {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
-                >
-                  {r.grossScore}
-                </Text>
-                <Text
-                  style={styles.roundDiff}
-                  {...(Platform.OS === 'android' ? { includeFontPadding: false } : {})}
-                >
-                  diff {formatDifferentialDisplay(r.adjustedDiff)}
-                </Text>
-              </View>
-            </Pressable>
-            <Pressable
-              style={styles.shareBtn}
-              onPress={() => setShareRoundId(r.id)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel={`Share ${r.courseName} round`}
-            >
-              <IconShareOutline size={16} color={colors.sage} />
-            </Pressable>
-          </View>
+            round={r}
+            isWide={isWide}
+            showTopBorder={idx > 0}
+            onPress={() => router.push(`/round/${r.id}`)}
+            onShare={() => setShareRoundId(r.id)}
+          />
         ))
       )}
     </>
@@ -318,7 +270,7 @@ export default function HomeScreen() {
               <Link href={`/round/${latest.id}`} asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.latestCard, { marginTop: 14 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.latestCard, { marginTop: 20 }, pressed && { opacity: 0.94 })
                   }
                   accessibilityRole="button"
                   accessibilityLabel="Open latest saved round"
@@ -349,7 +301,7 @@ export default function HomeScreen() {
               <Link href="/(tabs)/log" asChild>
                 <Pressable
                   style={({ pressed }) =>
-                    mergeViewStyles(styles.ctaCard, { marginTop: 14 }, pressed && { opacity: 0.94 })
+                    mergeViewStyles(styles.ctaCard, { marginTop: 20 }, pressed && { opacity: 0.94 })
                   }
                 >
                   <Text style={styles.ctaTitle}>Log your first round</Text>
@@ -618,102 +570,5 @@ const styles = StyleSheet.create({
     paddingRight: 4,
   },
   analyzeLinkTxt: { fontSize: 12, fontWeight: '700', color: colors.sage },
-  /** Block wrapper so each Link/row participates in column height on web + native. */
-  roundRowOuter: {
-    width: '100%',
-    maxWidth: '100%',
-    alignSelf: 'stretch',
-    flexShrink: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  /** Air between the prior round’s meta and the next row’s course / Trackman line. */
-  roundRowGapBefore: { marginTop: 12 },
-  roundRow: {
-    flex: 1,
-    flexShrink: 1,
-    minWidth: 0,
-    flexBasis: 0,
-    flexDirection: 'row',
-    alignItems: 'stretch',
-    gap: 10,
-    alignSelf: 'stretch',
-    paddingVertical: 20,
-    backgroundColor: colors.surface,
-  },
-  roundRowFlagIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: colors.accentSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    marginTop: 1,
-  },
-  shareBtn: {
-    width: 34,
-    height: 34,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.accentSoft,
-    flexShrink: 0,
-  },
-  roundRowBorder: { borderTopWidth: 0.5, borderTopColor: colors.border },
-  roundRowPressed: { backgroundColor: colors.accentSoft },
-  /** flex:1 + fixed score column — predictable gutters vs percentage maxWidth. */
-  roundInfo: {
-    flex: 1,
-    minWidth: 0,
-    paddingRight: 4,
-  },
-  roundCourse: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: colors.ink,
-    lineHeight: 17,
-  },
-  roundCourseLg: { fontSize: 14, lineHeight: 20 },
-  roundMeta: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: colors.subtle,
-    marginTop: 4,
-    lineHeight: 15,
-  },
-  roundMetaLg: { fontSize: 12, lineHeight: 16 },
-  /**
-   * space-between: score with course (top), diff with bottom of meta (incl. 2-line wrap).
-   * No fixed width — 76px clipped bold “72” / “diff -0.9” under overflow:hidden. Size to content + inner pad.
-   */
-  roundRight: {
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-    alignSelf: 'stretch',
-    flexShrink: 0,
-    flexGrow: 0,
-    paddingLeft: 6,
-    /** Extra cushion; outer inset is on listCardContent — this balances “Analyze” tap padding visually. */
-    paddingRight: 2,
-  },
-  roundScore: {
-    fontSize: 14,
-    fontWeight: '700',
-    color: colors.ink,
-    lineHeight: 17,
-    textAlign: 'right',
-    flexShrink: 0,
-  },
-  roundScoreLg: { fontSize: 16, lineHeight: 20 },
-  roundDiff: {
-    fontSize: 10,
-    fontWeight: '600',
-    color: colors.sage,
-    lineHeight: 14,
-    textAlign: 'right',
-    flexShrink: 0,
-  },
   emptyRounds: { paddingVertical: 12, fontSize: 13, color: colors.muted },
 });
