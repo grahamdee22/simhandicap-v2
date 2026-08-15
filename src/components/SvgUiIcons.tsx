@@ -111,3 +111,34 @@ export function IconTrashOutline({ size, color }: Props) {
     </Slot>
   );
 }
+
+/** Share / export — outline arrow from tray */
+export function IconShareOutline({ size, color }: Props) {
+  return (
+    <Slot size={size}>
+      <Path
+        d="M12 3v11"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+      />
+      <Path
+        d="M8 7l4-4 4 4"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d="M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4"
+        fill="none"
+        stroke={color}
+        strokeWidth="1.8"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Slot>
+  );
+}

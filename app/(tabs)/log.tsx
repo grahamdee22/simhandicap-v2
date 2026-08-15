@@ -665,6 +665,7 @@ export default function LogRoundScreen() {
                   grossScore: String(saved.grossScore),
                   courseId: snap.courseId,
                   leagueName: first.leagueName,
+                  shareRoundId: saved.id,
                   ...(rest.length > 0
                     ? {
                         queue: JSON.stringify(
@@ -684,11 +685,13 @@ export default function LogRoundScreen() {
               return;
             }
           }
-          router.replace(
-            leagueBanner
-              ? { pathname: '/(tabs)/analyze', params: { leagueBanner } }
-              : '/(tabs)/analyze'
-          );
+          router.replace({
+            pathname: '/(tabs)/analyze',
+            params: {
+              ...(leagueBanner ? { leagueBanner } : {}),
+              shareRoundId: saved.id,
+            },
+          });
         }
       } catch (e) {
         showAppAlert('Could not save', String(e));

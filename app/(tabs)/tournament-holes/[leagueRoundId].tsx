@@ -67,6 +67,7 @@ export default function TournamentHolesScreen() {
     courseId?: string | string[];
     leagueName?: string | string[];
     queue?: string | string[];
+    shareRoundId?: string | string[];
   }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -87,6 +88,8 @@ export default function TournamentHolesScreen() {
   const leagueName =
     typeof params.leagueName === 'string' ? params.leagueName : params.leagueName?.[0] ?? 'Tournament';
   const queue = parseQueue(params.queue);
+  const shareRoundId =
+    typeof params.shareRoundId === 'string' ? params.shareRoundId : params.shareRoundId?.[0];
 
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -193,17 +196,20 @@ export default function TournamentHolesScreen() {
             courseId: next.courseId,
             leagueName: next.leagueName,
             queue: rest.length > 0 ? JSON.stringify(rest) : undefined,
+            shareRoundId,
           },
         } as never);
         return;
       }
-      router.replace(
-        banner
-          ? { pathname: '/(tabs)/analyze', params: { leagueBanner: banner } }
-          : '/(tabs)/analyze'
-      );
+      router.replace({
+        pathname: '/(tabs)/analyze',
+        params: {
+          ...(banner ? { leagueBanner: banner } : {}),
+          ...(shareRoundId ? { shareRoundId } : {}),
+        },
+      });
     },
-    [queue, router]
+    [queue, router, shareRoundId]
   );
 
   const onSubmit = async () => {

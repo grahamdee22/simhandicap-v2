@@ -7,9 +7,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { HomeHeroInstagramButton } from '../../src/components/HeaderInstagramSimCap';
+import { ShareRoundCardModal } from '../../src/components/ShareCard';
 import {
   IconChevronForward,
   IconGolf,
+  IconShareOutline,
 } from '../../src/components/SvgUiIcons';
 import { SimCapLogoHero, SIM_CAP_LOGO_ASPECT } from '../../src/components/SimCapLogoHero';
 import { colors } from '../../src/lib/constants';
@@ -63,6 +65,11 @@ export default function HomeScreen() {
   const rounds = useAppStore((s) => s.rounds);
   const displayName = useAppStore((s) => s.displayName);
   const [indexInfoOpen, setIndexInfoOpen] = useState(false);
+  const [shareRoundId, setShareRoundId] = useState<string | null>(null);
+  const shareRound = useMemo(
+    () => (shareRoundId ? rounds.find((r) => r.id === shareRoundId) ?? null : null),
+    [rounds, shareRoundId]
+  );
 
   const index = currentIndexFromRounds(rounds);
 
@@ -160,6 +167,15 @@ export default function HomeScreen() {
                 </View>
               </Pressable>
             </Link>
+            <Pressable
+              style={styles.shareBtn}
+              onPress={() => setShareRoundId(r.id)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={`Share ${r.courseName} round`}
+            >
+              <IconShareOutline size={16} color={colors.sage} />
+            </Pressable>
           </View>
         ))
       )}
@@ -425,6 +441,11 @@ export default function HomeScreen() {
         )}
         </Fragment>
         </ScrollView>
+        <ShareRoundCardModal
+          visible={!!shareRound}
+          round={shareRound}
+          onClose={() => setShareRoundId(null)}
+        />
       </ContentWidth>
     </View>
   );
@@ -679,10 +700,15 @@ const styles = StyleSheet.create({
     maxWidth: '100%',
     alignSelf: 'stretch',
     flexShrink: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
   },
   /** Air between the prior round’s meta and the next row’s course / Trackman line. */
   roundRowGapBefore: { marginTop: 12 },
   roundRow: {
+    flex: 1,
+    minWidth: 0,
     flexDirection: 'row',
     alignItems: 'flex-start',
     gap: 10,
@@ -700,6 +726,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     flexShrink: 0,
     marginTop: 1,
+  },
+  shareBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.accentSoft,
+    flexShrink: 0,
   },
   roundRowBorder: { borderTopWidth: 0.5, borderTopColor: colors.border },
   roundRowPressed: { backgroundColor: colors.accentSoft },
