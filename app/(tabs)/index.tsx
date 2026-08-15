@@ -1,4 +1,3 @@
-import { useBottomTabBarHeight } from '@react-navigation/bottom-tabs';
 import { Link, useRouter, type Href } from 'expo-router';
 import { Fragment, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable as RNPressable, ScrollView, StyleSheet, Text, View } from 'react-native';
@@ -49,7 +48,6 @@ const RECENT_LIST_INSET = 18;
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const tabBarHeight = useBottomTabBarHeight();
   const {
     gutter,
     isWide,
@@ -159,14 +157,11 @@ export default function HomeScreen() {
   );
 
   /**
-   * Bottom inset must match app/(tabs)/_layout.tsx (barPadTop + barRow + bottomInset).
-   * useBottomTabBarHeight is usually right, but we floor it so we never under-count the bar.
+   * The tab bar is laid out in flow (never `position: absolute`), so the scene already stops
+   * above it and its safe-area padding covers the home indicator. Adding tab bar height here
+   * only buys a dead white band under the last round — this is pure end-of-list breathing room.
    */
-  const tabBarBottomInset = Platform.OS === 'web' ? insets.bottom : Math.max(insets.bottom, 8);
-  const tabBarHeightFloor = 3 + 62 + tabBarBottomInset;
-  const effectiveTabBarHeight = Math.max(tabBarHeight, tabBarHeightFloor);
-  /** Only clear the tab bar — avoids a huge empty band below the last card when scrolling. */
-  const scrollBelowContent = Math.round(effectiveTabBarHeight + 12);
+  const scrollBelowContent = 16;
 
   return (
     <View style={styles.pageRoot}>
@@ -269,9 +264,7 @@ export default function HomeScreen() {
             {latest ? (
               <Link href={`/round/${latest.id}`} asChild>
                 <Pressable
-                  style={({ pressed }) =>
-                    mergeViewStyles(styles.latestCard, pressed && { opacity: 0.94 })
-                  }
+                  style={styles.latestCard}
                   accessibilityRole="button"
                   accessibilityLabel="Open latest saved round"
                 >
@@ -299,11 +292,7 @@ export default function HomeScreen() {
               </Link>
             ) : (
               <Link href={'/(tabs)/log/round' as Href} asChild>
-                <Pressable
-                  style={({ pressed }) =>
-                    mergeViewStyles(styles.ctaCard, pressed && { opacity: 0.94 })
-                  }
-                >
+                <Pressable style={styles.ctaCard}>
                   <Text style={styles.ctaTitle}>Log your first round</Text>
                   <Text style={styles.ctaSub}>
                     Score + sim settings → your index, Trends, and profile update instantly.
@@ -445,16 +434,17 @@ const styles = StyleSheet.create({
     alignItems: 'stretch',
     alignSelf: 'stretch',
     paddingHorizontal: RECENT_LIST_INSET,
-    paddingBottom: 56,
+    paddingBottom: 12,
     width: '100%',
     maxWidth: '100%',
   },
   /**
-   * Owns the gap down to the Latest round / CTA card. Lives on this wrapper rather than the
-   * card's pressed-state style function so a `mergeViewStyles` arg can never override it.
-   * latestCard adds 14px of its own paddingTop above the flag icon.
+   * Gap down to the Latest round / CTA card; matches listCard's marginTop so both card gaps match.
+   * Children of `<Link asChild>` must keep a plain-object `style` — expo-router's Slot merges via
+   * Radix mergeProps (`{ ...slotStyle, ...childStyle }`), which spreads a function style into `{}`
+   * and silently drops the whole card (padding, border, flexDirection).
    */
-  statsTilesBlock: { marginTop: 8, marginBottom: 24 },
+  statsTilesBlock: { marginTop: 8, marginBottom: 12 },
   latestCard: {
     position: 'relative',
     flexDirection: 'row',
