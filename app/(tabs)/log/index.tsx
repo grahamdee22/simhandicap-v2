@@ -66,7 +66,7 @@ export default function LogChoiceScreen() {
           <View style={styles.cardBody}>
             <Text style={styles.cardTitle}>Analyze Practice</Text>
             <Text style={styles.cardSub}>
-              Photo your range/stats screen for takeaways and tips. Does not affect your index.
+              Import a GSPro practice CSV for per-club takeaways and tips. Does not affect your index.
             </Text>
           </View>
           <IconChevronForward size={20} color={colors.subtle} />

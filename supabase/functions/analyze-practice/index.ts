@@ -1,3 +1,7 @@
+/**
+ * Photo-based Practice Analyzer. Replaced by CSV import
+ * (generate-practice-import-code + upload-practice-csv). Do not extend this.
+ */
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { corsHeaders, jsonResponse } from '../_shared/http.ts';
 

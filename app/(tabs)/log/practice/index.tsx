@@ -4,7 +4,6 @@ import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Image,
   Platform,
   Pressable,
   ScrollView,
@@ -12,23 +11,19 @@ import {
   Text,
   View,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../../src/components/ContentWidth';
-import { IconCameraOutline, IconImageOutline } from '../../../../src/components/SvgUiIcons';
+import { IconDesktopOutline } from '../../../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../../../src/lib/alertCompat';
 import { colors } from '../../../../src/lib/constants';
 import { PRACTICE_ANALYZER_ENABLED } from '../../../../src/lib/featureFlags';
 import { googleOAuthAccessToken } from '../../../../src/lib/googleOAuthAccessToken';
 import {
-  invokeAnalyzePractice,
   listPracticeAnalyses,
-  uploadPracticeAnalysisImage,
   type PracticeAnalysisListItem,
 } from '../../../../src/lib/practiceAnalysis';
 import { useResponsive } from '../../../../src/lib/responsive';
-import { settingsScreenshotPickerOptions } from '../../../../src/lib/settingsScreenshotPicker';
 import { isSupabaseConfigured } from '../../../../src/lib/supabase';
 
 function formatWhen(iso: string): string {
@@ -48,13 +43,10 @@ function formatWhen(iso: string): string {
 export default function PracticeAnalyzerScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { gutter, isWide } = useResponsive();
+  const { gutter } = useResponsive();
   const { user } = useAuth();
   const supabaseOn = isSupabaseConfigured();
 
-  const [previewUri, setPreviewUri] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [busyLabel, setBusyLabel] = useState('Analyzing…');
   const [history, setHistory] = useState<PracticeAnalysisListItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyErr, setHistoryErr] = useState<string | null>(null);
@@ -86,107 +78,27 @@ export default function PracticeAnalyzerScreen() {
     }, [loadHistory])
   );
 
-  const runAnalyze = useCallback(
-    async (localUri: string) => {
-      if (!user?.id) return;
-      setBusy(true);
-      setBusyLabel('Uploading photo…');
-      setPreviewUri(localUri);
-
-      const token = googleOAuthAccessToken ?? undefined;
-      const up = await uploadPracticeAnalysisImage({
-        userId: user.id,
-        localUri,
-        accessToken: token,
-      });
-      if ('error' in up) {
-        setBusy(false);
-        showAppAlert('Upload failed', up.error);
-        return;
-      }
-
-      setBusyLabel('Reading your stats…');
-      const analyzed = await invokeAnalyzePractice({
-        imagePath: up.path,
-        imageUrl: up.signedUrl,
-        accessToken: token,
-      });
-      setBusy(false);
-      if (!analyzed.success) {
-        showAppAlert('Analysis failed', analyzed.error);
-        return;
-      }
-
-      setPreviewUri(null);
-      await loadHistory();
-      router.push(`/(tabs)/log/practice/${analyzed.analysisId}` as never);
-    },
-    [user?.id, loadHistory, router]
-  );
-
-  const pick = useCallback(
-    async (source: 'camera' | 'library') => {
-      if (busy) return;
-      if (!supabaseOn) {
-        showAppAlert('Unavailable', 'Supabase is not configured for Practice Analyzer.');
-        return;
-      }
-      if (!user?.id) {
-        if (Platform.OS === 'web') {
-          const go = typeof window !== 'undefined' && window.confirm('Sign in required\n\nSign in to analyze practice screenshots and save history.');
-          if (go) router.push('/(auth)/sign-in' as never);
-        } else {
-          Alert.alert('Sign in required', 'Sign in to analyze practice screenshots and save history.', [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'Sign in', onPress: () => router.push('/(auth)/sign-in' as never) },
-          ]);
-        }
-        return;
-      }
-
-      const pickerOpts = settingsScreenshotPickerOptions();
-
-      if (source === 'camera') {
-        if (Platform.OS === 'web') {
-          showAppAlert('Camera', 'Use Upload Photo on web, or open the app on your phone to take a photo.');
-          return;
-        }
-        let camPerm = await ImagePicker.getCameraPermissionsAsync();
-        if (!camPerm.granted) camPerm = await ImagePicker.requestCameraPermissionsAsync();
-        if (!camPerm.granted) {
-          showAppAlert('Camera access needed', 'Allow camera access to photograph your practice stats screen.');
-          return;
-        }
-      } else if (Platform.OS !== 'web') {
-        let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
-        if (!perm.granted) perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
-        if (!perm.granted) {
-          showAppAlert('Photos access needed', 'Allow photo library access to upload your practice stats screen.');
-          return;
-        }
-      }
-
-      const result =
-        source === 'camera'
-          ? await ImagePicker.launchCameraAsync(pickerOpts)
-          : await ImagePicker.launchImageLibraryAsync(pickerOpts);
-      if (result.canceled || !result.assets[0]) return;
-      await runAnalyze(result.assets[0].uri);
-    },
-    [busy, supabaseOn, user?.id, router, runAnalyze]
-  );
-
-  const onChooseSource = useCallback(() => {
-    if (Platform.OS === 'web') {
-      void pick('library');
+  const onImport = useCallback(() => {
+    if (!supabaseOn) {
+      showAppAlert('Unavailable', 'Supabase is not configured for Practice Analyzer.');
       return;
     }
-    Alert.alert('Practice stats photo', 'Take a new photo or upload a screenshot from your sim.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Take Photo', onPress: () => void pick('camera') },
-      { text: 'Upload Photo', onPress: () => void pick('library') },
-    ]);
-  }, [pick]);
+    if (!user?.id) {
+      if (Platform.OS === 'web') {
+        const go =
+          typeof window !== 'undefined' &&
+          window.confirm('Sign in required\n\nSign in to import practice CSVs and save history.');
+        if (go) router.push('/(auth)/sign-in' as never);
+      } else {
+        Alert.alert('Sign in required', 'Sign in to import practice CSVs and save history.', [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Sign in', onPress: () => router.push('/(auth)/sign-in' as never) },
+        ]);
+      }
+      return;
+    }
+    router.push('/(tabs)/log/practice/import' as never);
+  }, [supabaseOn, user?.id, router]);
 
   if (!PRACTICE_ANALYZER_ENABLED) {
     return <Redirect href={'/(tabs)/log/round' as never} />;
@@ -214,15 +126,15 @@ export default function PracticeAnalyzerScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.lead}>
-          Photograph or upload your simulator practice/range stats screen. We&apos;ll extract the visible numbers and
-          turn them into takeaways and tips — this never affects your SimCap index.
+          Import a GSPro practice CSV from the sim computer. We group shots by club and only write a coaching
+          takeaway when a club has at least 3 shots — this never affects your SimCap index.
         </Text>
 
         {!user?.id ? (
           <View style={styles.signInCard}>
             <Text style={styles.signInTitle}>Sign in to analyze practice</Text>
             <Text style={styles.signInSub}>
-              Practice Analyzer needs an account so your photos and history stay private to you.
+              Practice Analyzer needs an account so your import codes and history stay private to you.
             </Text>
             <Pressable
               style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
@@ -232,50 +144,18 @@ export default function PracticeAnalyzerScreen() {
             </Pressable>
           </View>
         ) : (
-          <>
-            <View style={[styles.actionsRow, isWide && styles.actionsRowWide]}>
-              <Pressable
-                style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed, busy && styles.disabled]}
-                onPress={() => void pick('camera')}
-                disabled={busy || Platform.OS === 'web'}
-                accessibilityRole="button"
-                accessibilityLabel="Take photo of practice stats"
-              >
-                <IconCameraOutline size={20} color={colors.accent} />
-                <Text style={styles.actionBtnTxt}>Take Photo</Text>
-              </Pressable>
-              <Pressable
-                style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed, busy && styles.disabled]}
-                onPress={() => void pick('library')}
-                disabled={busy}
-                accessibilityRole="button"
-                accessibilityLabel="Upload practice stats photo"
-              >
-                <IconImageOutline size={20} color={colors.accent} />
-                <Text style={styles.actionBtnTxt}>Upload Photo</Text>
-              </Pressable>
-            </View>
-
-            {Platform.OS === 'web' ? (
-              <Text style={styles.webHint}>On web, use Upload Photo. Camera capture works in the native app.</Text>
-            ) : (
-              <Pressable onPress={onChooseSource} disabled={busy} hitSlop={8}>
-                <Text style={styles.altHint}>Or choose from a single prompt</Text>
-              </Pressable>
-            )}
-
-            {busy ? (
-              <View style={styles.loadingCard}>
-                {previewUri ? <Image source={{ uri: previewUri }} style={styles.preview} resizeMode="cover" /> : null}
-                <ActivityIndicator color={colors.header} style={{ marginTop: previewUri ? 14 : 0 }} />
-                <Text style={styles.loadingTxt}>{busyLabel}</Text>
-                <Text style={styles.loadingSub}>This usually takes a few seconds.</Text>
-              </View>
-            ) : null}
-          </>
+          <Pressable
+            style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
+            onPress={onImport}
+            accessibilityRole="button"
+            accessibilityLabel="Import practice session from computer"
+          >
+            <IconDesktopOutline size={20} color={colors.accent} />
+            <Text style={styles.actionBtnTxt}>Import from Computer</Text>
+          </Pressable>
         )}
 
-        <Text style={styles.sectionTitle}>Recent analyses</Text>
+        <Text style={styles.sectionTitle}>Recent sessions</Text>
         {!user?.id ? (
           <Text style={styles.empty}>Sign in to see your practice history.</Text>
         ) : historyLoading ? (
@@ -283,7 +163,7 @@ export default function PracticeAnalyzerScreen() {
         ) : historyErr ? (
           <Text style={styles.empty}>{historyErr}</Text>
         ) : history.length === 0 ? (
-          <Text style={styles.empty}>No practice analyses yet. Upload a stats screen to get started.</Text>
+          <Text style={styles.empty}>No practice sessions yet. Import a GSPro CSV to get started.</Text>
         ) : (
           history.map((row) => (
             <Pressable
@@ -291,18 +171,25 @@ export default function PracticeAnalyzerScreen() {
               style={({ pressed }) => [styles.historyCard, pressed && styles.pressed]}
               onPress={() => router.push(`/(tabs)/log/practice/${row.id}` as never)}
               accessibilityRole="button"
-              accessibilityLabel={`Open practice analysis from ${formatWhen(row.created_at)}`}
+              accessibilityLabel={`Open practice analysis from ${formatWhen(row.session_played_at ?? row.created_at)}`}
             >
               <Text style={styles.historyTitle} numberOfLines={1}>
                 {row.detected_system?.trim() || 'Practice session'}
               </Text>
-              <Text style={styles.historyMeta}>{formatWhen(row.created_at)}</Text>
-              {row.takeaways[0] ? (
+              <Text style={styles.historyMeta}>
+                {formatWhen(row.session_played_at ?? row.created_at)}
+                {row.status === 'processing' ? ' · Analyzing' : row.status === 'failed' ? ' · Failed' : ''}
+              </Text>
+              {row.session_notes ? (
+                <Text style={styles.historySnippet} numberOfLines={2}>
+                  {row.session_notes}
+                </Text>
+              ) : row.takeaways[0] ? (
                 <Text style={styles.historySnippet} numberOfLines={2}>
                   {row.takeaways[0]}
                 </Text>
               ) : null}
-              <Text style={styles.historyHint}>Tap for full analysis</Text>
+              <Text style={styles.historyHint}>Tap for per-club breakdown</Text>
             </Pressable>
           ))
         )}
@@ -335,10 +222,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   primaryBtnTxt: { color: '#fff', fontSize: 15, fontWeight: '700' },
-  actionsRow: { flexDirection: 'column', gap: 10, marginBottom: 8 },
-  actionsRowWide: { flexDirection: 'row' },
   actionBtn: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -349,35 +233,10 @@ const styles = StyleSheet.create({
     borderColor: colors.sage,
     backgroundColor: colors.accentSoft,
     paddingHorizontal: 14,
+    marginBottom: 16,
   },
   actionBtnTxt: { fontSize: 15, fontWeight: '700', color: colors.accent },
-  disabled: { opacity: 0.5 },
   pressed: { opacity: 0.9 },
-  webHint: { fontSize: 12, color: colors.subtle, marginBottom: 12, lineHeight: 17 },
-  altHint: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: colors.sage,
-    marginBottom: 12,
-    textAlign: 'center',
-  },
-  loadingCard: {
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    backgroundColor: colors.surface,
-    padding: 16,
-    alignItems: 'center',
-    marginBottom: 18,
-  },
-  preview: {
-    width: '100%',
-    height: 160,
-    borderRadius: 10,
-    backgroundColor: colors.border,
-  },
-  loadingTxt: { marginTop: 12, fontSize: 15, fontWeight: '700', color: colors.ink },
-  loadingSub: { marginTop: 4, fontSize: 12, color: colors.muted },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700',

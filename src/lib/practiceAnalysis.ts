@@ -1,38 +1,37 @@
 /**
- * Practice Analyzer client: upload screenshot, invoke Claude edge function, list/detail/delete.
+ * Practice Analyzer client: pairing-code CSV import, list/detail/delete.
  * Separate from rounds / handicap index — never writes to public.rounds.
  */
 
-import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system/legacy';
 import Constants from 'expo-constants';
-import { createClient } from '@supabase/supabase-js';
-import { Platform } from 'react-native';
+import { createClient, type RealtimeChannel, type SupabaseClient } from '@supabase/supabase-js';
 import { supabase } from './supabase';
 import {
-  normalizePracticeAnalysisPayload,
-  type NormalizedPracticeAnalysis,
-  type PracticeExtractedStats,
-} from './practiceAnalysisNormalize';
+  PRACTICE_CSV_SCHEMA,
+  formatMetricValue,
+  metricLabel,
+  type ClubSummary,
+  type ParsedPracticeSession,
+} from './practiceCsv';
 
-const BUCKET = 'practice-analysis-images';
-const SIGNED_URL_SEC = 60 * 60 * 24 * 7;
-const STORAGE_FILE_SIZE_LIMIT_BYTES = 5 * 1024 * 1024;
-const TARGET_UPLOAD_BYTES = STORAGE_FILE_SIZE_LIMIT_BYTES - 128 * 1024;
-const JPEG_UPLOAD_PRESETS = [
-  { maxDimension: 2200, compress: 0.82 },
-  { maxDimension: 1800, compress: 0.72 },
-  { maxDimension: 1440, compress: 0.62 },
-  { maxDimension: 1280, compress: 0.52 },
-] as const;
+const CSV_BUCKET = 'practice-analysis-csvs';
+
+export type PracticeAnalysisStatus = 'processing' | 'ready' | 'failed';
 
 export type PracticeAnalysisRow = {
   id: string;
   user_id: string;
-  image_path: string;
+  image_path: string | null;
+  csv_path: string | null;
+  source: string;
+  platform: string | null;
   detected_system: string | null;
   session_notes: string | null;
-  extracted_stats: PracticeExtractedStats | Record<string, unknown>;
+  original_filename: string | null;
+  session_played_at: string | null;
+  status: PracticeAnalysisStatus;
+  error_message: string | null;
+  extracted_stats: ParsedPracticeSession | Record<string, unknown>;
   takeaways: string[];
   tips: string[];
   created_at: string;
@@ -40,8 +39,39 @@ export type PracticeAnalysisRow = {
 
 export type PracticeAnalysisListItem = Pick<
   PracticeAnalysisRow,
-  'id' | 'detected_system' | 'session_notes' | 'created_at' | 'takeaways' | 'tips'
+  | 'id'
+  | 'detected_system'
+  | 'platform'
+  | 'session_notes'
+  | 'session_played_at'
+  | 'status'
+  | 'created_at'
+  | 'takeaways'
+  | 'tips'
 >;
+
+export type PracticeImportCodeRow = {
+  id: string;
+  code: string;
+  status: 'pending' | 'consumed' | 'expired';
+  expires_at: string;
+  analysis_id: string | null;
+};
+
+export type MappedPracticeAnalysis = {
+  id: string;
+  createdAt: string;
+  platformLabel: string;
+  sessionPlayedAt: string | null;
+  sessionNotes: string | null;
+  status: PracticeAnalysisStatus;
+  errorMessage: string | null;
+  clubs: ClubSummary[];
+  shotCount: number;
+  takeaways: string[];
+  tips: string[];
+  csvSession: ParsedPracticeSession | null;
+};
 
 function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string } {
   const extra = Constants.expoConfig?.extra as
@@ -58,7 +88,7 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
   };
 }
 
-function storageClientForAccessToken(accessToken: string) {
+function clientForAccessToken(accessToken: string): SupabaseClient | null {
   const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
   if (!supabaseUrl || !supabaseAnonKey) return null;
   return createClient(supabaseUrl, supabaseAnonKey, {
@@ -71,65 +101,8 @@ function storageClientForAccessToken(accessToken: string) {
   });
 }
 
-function resizeActionsForMaxDimension(width: number, height: number, maxDimension: number) {
-  const originalMaxDimension = Math.max(width, height);
-  if (!Number.isFinite(originalMaxDimension) || originalMaxDimension <= 0) return [];
-  if (originalMaxDimension <= maxDimension) return [];
-  return width >= height ? [{ resize: { width: maxDimension } }] : [{ resize: { height: maxDimension } }];
-}
-
-function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  const atobFn = globalThis.atob;
-  if (typeof atobFn !== 'function') {
-    throw new Error('base64 decode is not available in this environment');
-  }
-  const binaryString = atobFn(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes.buffer;
-}
-
-async function readLocalImageBytes(uri: string): Promise<ArrayBuffer> {
-  if (uri.startsWith('http://') || uri.startsWith('https://') || Platform.OS === 'web') {
-    const res = await fetch(uri);
-    if (!res.ok) throw new Error(`Could not read image (${res.status})`);
-    const buf = await res.arrayBuffer();
-    if (buf.byteLength === 0) throw new Error('Image is empty');
-    return buf;
-  }
-  const b64 = await FileSystem.readAsStringAsync(uri, {
-    encoding: FileSystem.EncodingType.Base64,
-  });
-  const buf = base64ToArrayBuffer(b64);
-  if (buf.byteLength === 0) throw new Error('Image file is empty');
-  return buf;
-}
-
-async function prepareImageForUpload(localUri: string): Promise<ArrayBuffer> {
-  const probe = await ImageManipulator.manipulateAsync(localUri, [], {
-    compress: 1,
-    format: ImageManipulator.SaveFormat.JPEG,
-  });
-  for (const preset of JPEG_UPLOAD_PRESETS) {
-    const result = await ImageManipulator.manipulateAsync(
-      localUri,
-      resizeActionsForMaxDimension(probe.width, probe.height, preset.maxDimension),
-      { compress: preset.compress, format: ImageManipulator.SaveFormat.JPEG }
-    );
-    const body = await readLocalImageBytes(result.uri);
-    if (body.byteLength <= TARGET_UPLOAD_BYTES) return body;
-  }
-  throw new Error('Photo is still too large after compression. Choose a smaller screenshot.');
-}
-
-function randomId(): string {
-  if (typeof globalThis.crypto?.randomUUID === 'function') {
-    return globalThis.crypto.randomUUID();
-  }
-  return `p_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
+function activeClient(accessToken?: string): SupabaseClient | null {
+  return accessToken ? clientForAccessToken(accessToken) : supabase;
 }
 
 function asStringArray(v: unknown): string[] {
@@ -137,101 +110,157 @@ function asStringArray(v: unknown): string[] {
   return v.filter((x): x is string => typeof x === 'string' && x.trim().length > 0).map((s) => s.trim());
 }
 
-export function mapPracticeAnalysisRow(row: PracticeAnalysisRow): NormalizedPracticeAnalysis & {
-  id: string;
-  imagePath: string;
-  createdAt: string;
-} {
-  const normalized = normalizePracticeAnalysisPayload({
-    detected_system: row.detected_system,
-    session_notes: row.session_notes,
-    extracted_stats: row.extracted_stats,
-    takeaways: row.takeaways,
-    tips: row.tips,
-  });
+function asStatus(v: unknown): PracticeAnalysisStatus {
+  if (v === 'processing' || v === 'failed' || v === 'ready') return v;
+  return 'ready';
+}
+
+export function isCsvPracticeSession(stats: unknown): stats is ParsedPracticeSession {
+  if (!stats || typeof stats !== 'object' || Array.isArray(stats)) return false;
+  const o = stats as Record<string, unknown>;
+  return o.schema === PRACTICE_CSV_SCHEMA && Array.isArray(o.clubs) && Array.isArray(o.shots);
+}
+
+export function mapPracticeAnalysisRow(row: PracticeAnalysisRow): MappedPracticeAnalysis {
+  const csvSession = isCsvPracticeSession(row.extracted_stats) ? row.extracted_stats : null;
+  const clubs = csvSession?.clubs ?? [];
+  const takeaways =
+    asStringArray(row.takeaways).length > 0
+      ? asStringArray(row.takeaways)
+      : clubs.map((c) => c.takeaway).filter((t): t is string => !!t);
   return {
-    ...normalized,
-    takeaways: asStringArray(row.takeaways).length ? asStringArray(row.takeaways) : normalized.takeaways,
-    tips: asStringArray(row.tips).length ? asStringArray(row.tips) : normalized.tips,
     id: row.id,
-    imagePath: row.image_path,
     createdAt: row.created_at,
+    platformLabel: row.detected_system?.trim() || row.platform?.trim() || csvSession?.platform_label || 'Practice session',
+    sessionPlayedAt: row.session_played_at,
+    sessionNotes: row.session_notes,
+    status: asStatus(row.status),
+    errorMessage: row.error_message,
+    clubs,
+    shotCount: csvSession?.shots.length ?? 0,
+    takeaways,
+    tips: asStringArray(row.tips),
+    csvSession,
   };
 }
 
-export async function uploadPracticeAnalysisImage(params: {
-  userId: string;
-  localUri: string;
-  accessToken?: string;
-}): Promise<{ path: string; signedUrl: string } | { error: string }> {
-  const storage = params.accessToken ? storageClientForAccessToken(params.accessToken) : supabase;
-  if (!storage) return { error: 'Supabase is not configured' };
+export { formatMetricValue, metricLabel };
 
-  const path = `${params.userId}/${randomId()}.jpg`;
-  try {
-    const body = await prepareImageForUpload(params.localUri);
-    const { error: upErr } = await storage.storage.from(BUCKET).upload(path, body, {
-      upsert: false,
-      contentType: 'image/jpeg',
-    });
-    if (upErr) return { error: upErr.message };
-
-    const { data: signed, error: signErr } = await storage.storage
-      .from(BUCKET)
-      .createSignedUrl(path, SIGNED_URL_SEC);
-    if (signErr || !signed?.signedUrl) {
-      return { error: signErr?.message ?? 'Could not create file URL' };
-    }
-    return { path, signedUrl: signed.signedUrl };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : 'Upload failed' };
-  }
+function mapRow(data: Record<string, unknown>): PracticeAnalysisRow {
+  return {
+    id: data.id as string,
+    user_id: data.user_id as string,
+    image_path: (data.image_path as string | null) ?? null,
+    csv_path: (data.csv_path as string | null) ?? null,
+    source: typeof data.source === 'string' ? data.source : 'csv',
+    platform: (data.platform as string | null) ?? null,
+    detected_system: (data.detected_system as string | null) ?? null,
+    session_notes: (data.session_notes as string | null) ?? null,
+    original_filename: (data.original_filename as string | null) ?? null,
+    session_played_at: (data.session_played_at as string | null) ?? null,
+    status: asStatus(data.status),
+    error_message: (data.error_message as string | null) ?? null,
+    extracted_stats: (data.extracted_stats as ParsedPracticeSession) ?? { clubs: [], shots: [] },
+    takeaways: asStringArray(data.takeaways),
+    tips: asStringArray(data.tips),
+    created_at: data.created_at as string,
+  };
 }
 
-export type InvokeAnalyzePracticeResult =
-  | { success: true; analysisId: string }
+async function authHeaderToken(accessToken?: string): Promise<string | null> {
+  if (accessToken) return accessToken;
+  if (!supabase) return null;
+  const { data } = await supabase.auth.getSession();
+  return data.session?.access_token ?? null;
+}
+
+export type GenerateImportCodeResult =
+  | { success: true; code: string; codeId: string; expiresAt: string }
   | { success: false; error: string };
 
-export async function invokeAnalyzePractice(params: {
-  imagePath: string;
-  imageUrl: string;
-  accessToken?: string;
-}): Promise<InvokeAnalyzePracticeResult> {
+export async function generatePracticeImportCode(accessToken?: string): Promise<GenerateImportCodeResult> {
   const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
   if (!supabaseUrl || !supabaseAnonKey) return { success: false, error: 'Supabase is not configured' };
-
-  let token = params.accessToken;
-  if (!token && supabase) {
-    const { data } = await supabase.auth.getSession();
-    token = data.session?.access_token;
-  }
+  const token = await authHeaderToken(accessToken);
   if (!token) return { success: false, error: 'Not signed in' };
 
-  const res = await fetch(`${supabaseUrl}/functions/v1/analyze-practice`, {
+  const res = await fetch(`${supabaseUrl}/functions/v1/generate-practice-import-code`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
       apikey: supabaseAnonKey,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      image_path: params.imagePath,
-      image_url: params.imageUrl,
-    }),
+    body: '{}',
   });
-
   const raw = await res.text().catch(() => '');
-  let parsed: { success?: boolean; analysis_id?: string; error?: string } = {};
+  let parsed: { success?: boolean; code?: string; code_id?: string; expires_at?: string; error?: string } = {};
   try {
     parsed = raw ? (JSON.parse(raw) as typeof parsed) : {};
   } catch {
-    return { success: false, error: raw || res.statusText || 'Analysis failed' };
+    return { success: false, error: raw || res.statusText || 'Could not generate a code' };
   }
+  if (!res.ok || !parsed.success || !parsed.code || !parsed.code_id || !parsed.expires_at) {
+    return { success: false, error: parsed.error ?? raw ?? res.statusText ?? 'Could not generate a code' };
+  }
+  return { success: true, code: parsed.code, codeId: parsed.code_id, expiresAt: parsed.expires_at };
+}
 
-  if (!res.ok || !parsed.success || !parsed.analysis_id) {
-    return { success: false, error: parsed.error ?? raw ?? res.statusText ?? 'Analysis failed' };
-  }
-  return { success: true, analysisId: parsed.analysis_id };
+export async function fetchPracticeImportCode(
+  codeId: string,
+  accessToken?: string
+): Promise<{ data: PracticeImportCodeRow | null; error?: string }> {
+  const client = activeClient(accessToken);
+  if (!client) return { data: null, error: 'Supabase is not configured' };
+  const { data, error } = await client
+    .from('practice_import_codes')
+    .select('id, code, status, expires_at, analysis_id')
+    .eq('id', codeId)
+    .maybeSingle();
+  if (error) return { data: null, error: error.message };
+  if (!data) return { data: null, error: 'Code not found' };
+  const status = data.status === 'consumed' || data.status === 'expired' ? data.status : 'pending';
+  return {
+    data: {
+      id: data.id as string,
+      code: data.code as string,
+      status,
+      expires_at: data.expires_at as string,
+      analysis_id: (data.analysis_id as string | null) ?? null,
+    },
+  };
+}
+
+export function subscribePracticeImport(params: {
+  userId: string;
+  codeId: string;
+  accessToken?: string;
+  onChange: () => void;
+}): () => void {
+  const client = activeClient(params.accessToken);
+  if (!client) return () => undefined;
+  const channels: RealtimeChannel[] = [];
+  const codeCh = client
+    .channel(`practice-import-code:${params.codeId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'practice_import_codes', filter: `id=eq.${params.codeId}` },
+      () => params.onChange()
+    )
+    .subscribe();
+  channels.push(codeCh);
+  const analysisCh = client
+    .channel(`practice-import-analysis:${params.userId}`)
+    .on(
+      'postgres_changes',
+      { event: '*', schema: 'public', table: 'practice_analyses', filter: `user_id=eq.${params.userId}` },
+      () => params.onChange()
+    )
+    .subscribe();
+  channels.push(analysisCh);
+  return () => {
+    for (const ch of channels) void client.removeChannel(ch);
+  };
 }
 
 export async function listPracticeAnalyses(params?: {
@@ -239,12 +268,14 @@ export async function listPracticeAnalyses(params?: {
   limit?: number;
 }): Promise<{ data: PracticeAnalysisListItem[]; error?: string }> {
   const limit = params?.limit ?? 40;
-  const client = params?.accessToken ? storageClientForAccessToken(params.accessToken) : supabase;
+  const client = activeClient(params?.accessToken);
   if (!client) return { data: [], error: 'Supabase is not configured' };
 
   const { data, error } = await client
     .from('practice_analyses')
-    .select('id, detected_system, session_notes, created_at, takeaways, tips')
+    .select(
+      'id, detected_system, platform, session_notes, session_played_at, status, created_at, takeaways, tips'
+    )
     .order('created_at', { ascending: false })
     .limit(limit);
 
@@ -252,7 +283,10 @@ export async function listPracticeAnalyses(params?: {
   const rows = (data ?? []).map((r) => ({
     id: r.id as string,
     detected_system: (r.detected_system as string | null) ?? null,
+    platform: (r.platform as string | null) ?? null,
     session_notes: (r.session_notes as string | null) ?? null,
+    session_played_at: (r.session_played_at as string | null) ?? null,
+    status: asStatus(r.status),
     created_at: r.created_at as string,
     takeaways: asStringArray(r.takeaways),
     tips: asStringArray(r.tips),
@@ -264,60 +298,40 @@ export async function fetchPracticeAnalysis(
   id: string,
   accessToken?: string
 ): Promise<{ data: PracticeAnalysisRow | null; error?: string }> {
-  const client = accessToken ? storageClientForAccessToken(accessToken) : supabase;
+  const client = activeClient(accessToken);
   if (!client) return { data: null, error: 'Supabase is not configured' };
 
   const { data, error } = await client.from('practice_analyses').select('*').eq('id', id).maybeSingle();
   if (error) return { data: null, error: error.message };
   if (!data) return { data: null, error: 'Analysis not found' };
-
-  return {
-    data: {
-      id: data.id as string,
-      user_id: data.user_id as string,
-      image_path: data.image_path as string,
-      detected_system: (data.detected_system as string | null) ?? null,
-      session_notes: (data.session_notes as string | null) ?? null,
-      extracted_stats: (data.extracted_stats as PracticeExtractedStats) ?? { summary: [], shots: [] },
-      takeaways: asStringArray(data.takeaways),
-      tips: asStringArray(data.tips),
-      created_at: data.created_at as string,
-    },
-  };
-}
-
-export async function createPracticeAnalysisSignedUrl(
-  imagePath: string,
-  accessToken?: string
-): Promise<{ url: string | null; error?: string }> {
-  const client = accessToken ? storageClientForAccessToken(accessToken) : supabase;
-  if (!client) return { url: null, error: 'Supabase is not configured' };
-  const { data, error } = await client.storage.from(BUCKET).createSignedUrl(imagePath, SIGNED_URL_SEC);
-  if (error || !data?.signedUrl) return { url: null, error: error?.message ?? 'Could not load image' };
-  return { url: data.signedUrl };
+  return { data: mapRow(data as Record<string, unknown>) };
 }
 
 export async function deletePracticeAnalysis(
   id: string,
   accessToken?: string
 ): Promise<{ error?: string }> {
-  const client = accessToken ? storageClientForAccessToken(accessToken) : supabase;
+  const client = activeClient(accessToken);
   if (!client) return { error: 'Supabase is not configured' };
 
   const { data: row, error: fetchErr } = await client
     .from('practice_analyses')
-    .select('id, image_path')
+    .select('id, image_path, csv_path')
     .eq('id', id)
     .maybeSingle();
   if (fetchErr) return { error: fetchErr.message };
   if (!row) return { error: 'Analysis not found' };
 
-  const path = row.image_path as string;
   const { error: delRowErr } = await client.from('practice_analyses').delete().eq('id', id);
   if (delRowErr) return { error: delRowErr.message };
 
-  if (path) {
-    await client.storage.from(BUCKET).remove([path]);
+  const csvPath = row.csv_path as string | null;
+  const imagePath = row.image_path as string | null;
+  if (csvPath) {
+    await client.storage.from(CSV_BUCKET).remove([csvPath]);
+  }
+  if (imagePath) {
+    await client.storage.from('practice-analysis-images').remove([imagePath]);
   }
   return {};
 }

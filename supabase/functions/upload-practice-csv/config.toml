@@ -1,0 +1,2 @@
+[functions.upload-practice-csv]
+verify_jwt = false

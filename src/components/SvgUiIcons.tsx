@@ -176,3 +176,14 @@ export function IconImageOutline({ size, color }: Props) {
     </Slot>
   );
 }
+
+/** Desktop / computer outline — Practice Analyzer CSV import */
+export function IconDesktopOutline({ size, color }: Props) {
+  return (
+    <Slot size={size}>
+      <Rect x="3.5" y="4.5" width="17" height="12" rx="2" fill="none" stroke={color} strokeWidth="1.6" />
+      <Path d="M8 20h8" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+      <Path d="M12 16.5V20" fill="none" stroke={color} strokeWidth="1.6" strokeLinecap="round" />
+    </Slot>
+  );
+}

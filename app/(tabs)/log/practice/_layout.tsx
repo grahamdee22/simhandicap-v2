@@ -37,6 +37,7 @@ export default function PracticeStackLayout() {
           header: (props) => <PracticeAnalyzerHeader {...props} />,
         }}
       />
+      <Stack.Screen name="import" options={{ title: 'Import from Computer' }} />
       <Stack.Screen name="[id]" options={{ title: 'Practice analysis' }} />
     </Stack>
   );

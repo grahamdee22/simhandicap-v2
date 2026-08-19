@@ -1,9 +1,8 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,25 +16,19 @@ import { colors } from '../../../../src/lib/constants';
 import { PRACTICE_ANALYZER_ENABLED } from '../../../../src/lib/featureFlags';
 import { googleOAuthAccessToken } from '../../../../src/lib/googleOAuthAccessToken';
 import {
-  createPracticeAnalysisSignedUrl,
   deletePracticeAnalysis,
   fetchPracticeAnalysis,
+  formatMetricValue,
   mapPracticeAnalysisRow,
+  metricLabel,
+  type MappedPracticeAnalysis,
 } from '../../../../src/lib/practiceAnalysis';
-import {
-  formatPracticeStatDisplay,
-  type NormalizedPracticeAnalysis,
-  type PracticeShotRow,
-  type PracticeStatValue,
-} from '../../../../src/lib/practiceAnalysisNormalize';
+import { MIN_SHOTS_FOR_TAKEAWAY, type ClubSummary } from '../../../../src/lib/practiceCsv';
 import { useResponsive } from '../../../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../../../src/lib/supabase';
 
-type DetailState = NormalizedPracticeAnalysis & {
-  id: string;
-  imagePath: string;
-  createdAt: string;
-};
+const PRIMARY_METRICS = ['carry', 'total_distance', 'offline', 'ball_speed', 'club_speed', 'smash_factor'] as const;
+const SECONDARY_METRICS = ['hla', 'vla', 'descent', 'peak_height', 'back_spin', 'side_spin', 'path', 'aoa', 'face_to_target', 'face_to_path'] as const;
 
 function formatWhen(iso: string): string {
   try {
@@ -51,31 +44,57 @@ function formatWhen(iso: string): string {
   }
 }
 
-function StatTile({ stat, wide }: { stat: PracticeStatValue; wide?: boolean }) {
+function StatTile({
+  label,
+  value,
+}: {
+  label: string;
+  value: string;
+}) {
   return (
-    <View style={[styles.statCard, wide && styles.statCardWide]}>
+    <View style={styles.statCard}>
       <Text style={styles.statLbl} numberOfLines={2}>
-        {stat.label}
+        {label}
       </Text>
       <Text style={styles.statVal} numberOfLines={2}>
-        {formatPracticeStatDisplay(stat)}
+        {value}
       </Text>
     </View>
   );
 }
 
-function ShotBlock({ shot, index }: { shot: PracticeShotRow; index: number }) {
-  const title =
-    [shot.shot, shot.club].filter(Boolean).join(' · ') || `Shot ${index + 1}`;
+function ClubCard({ club, tileFlex }: { club: ClubSummary; tileFlex: { flexBasis: `${number}%`; maxWidth: `${number}%` } }) {
+  const metricsToShow = [...PRIMARY_METRICS, ...SECONDARY_METRICS].filter((key) => club.metrics[key]);
   return (
-    <View style={styles.shotCard}>
-      <Text style={styles.shotTitle}>{title}</Text>
-      {shot.stats.map((s, i) => (
-        <View key={`${s.label}-${i}`} style={styles.shotRow}>
-          <Text style={styles.shotLbl}>{s.label}</Text>
-          <Text style={styles.shotVal}>{formatPracticeStatDisplay(s)}</Text>
-        </View>
-      ))}
+    <View style={styles.clubCard}>
+      <View style={styles.clubHead}>
+        <Text style={styles.clubTitle}>{club.club_label}</Text>
+        <Text style={styles.clubCount}>
+          {club.shot_count} shot{club.shot_count === 1 ? '' : 's'}
+        </Text>
+      </View>
+      <View style={styles.statsWrap}>
+        {metricsToShow.map((key) => {
+          const stats = club.metrics[key];
+          if (!stats) return null;
+          const withStdev = key === 'carry' || key === 'offline';
+          return (
+            <View key={key} style={[styles.statWrap, tileFlex]}>
+              <StatTile
+                label={withStdev ? `${metricLabel(key)} ±` : metricLabel(key)}
+                value={formatMetricValue(stats, { withStdev })}
+              />
+            </View>
+          );
+        })}
+      </View>
+      {club.qualifies_for_takeaway && club.takeaway ? (
+        <Text style={styles.clubTakeaway}>{club.takeaway}</Text>
+      ) : !club.qualifies_for_takeaway ? (
+        <Text style={styles.clubSkip}>
+          Stats only — {MIN_SHOTS_FOR_TAKEAWAY}+ shots of this club needed for a takeaway.
+        </Text>
+      ) : null}
     </View>
   );
 }
@@ -89,19 +108,18 @@ export default function PracticeAnalysisDetailScreen() {
   const supabaseOn = isSupabaseConfigured();
   const token = googleOAuthAccessToken ?? undefined;
 
-  const [detail, setDetail] = useState<DetailState | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [detail, setDetail] = useState<MappedPracticeAnalysis | null>(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (silent = false) => {
     if (!analysisId || !supabaseOn) {
       setLoading(false);
       setErr(!supabaseOn ? 'Supabase is not configured.' : 'Missing analysis.');
       return;
     }
-    setLoading(true);
+    if (!silent) setLoading(true);
     setErr(null);
     const res = await fetchPracticeAnalysis(analysisId, token);
     if (res.error || !res.data) {
@@ -110,10 +128,7 @@ export default function PracticeAnalysisDetailScreen() {
       setLoading(false);
       return;
     }
-    const mapped = mapPracticeAnalysisRow(res.data);
-    setDetail(mapped);
-    const signed = await createPracticeAnalysisSignedUrl(mapped.imagePath, token);
-    setImageUrl(signed.url);
+    setDetail(mapPracticeAnalysisRow(res.data));
     setLoading(false);
   }, [analysisId, supabaseOn, token]);
 
@@ -122,6 +137,14 @@ export default function PracticeAnalysisDetailScreen() {
       void load();
     }, [load])
   );
+
+  useEffect(() => {
+    if (detail?.status !== 'processing') return;
+    const t = setInterval(() => {
+      void load(true);
+    }, 2000);
+    return () => clearInterval(t);
+  }, [detail?.status, load]);
 
   const tileFlex = useMemo(() => {
     if (isVeryWide) return { flexBasis: '23%' as const, maxWidth: '24%' as const };
@@ -132,8 +155,8 @@ export default function PracticeAnalysisDetailScreen() {
   const onDelete = useCallback(async () => {
     if (!detail || deleting) return;
     const ok = await confirmDestructive(
-      'Delete analysis?',
-      'This removes the saved insights and the uploaded photo. It does not affect your SimCap index.',
+      'Delete session?',
+      'This removes the saved insights and the uploaded CSV. It does not affect your SimCap index.',
       'Delete'
     );
     if (!ok) return;
@@ -177,6 +200,19 @@ export default function PracticeAnalysisDetailScreen() {
     );
   }
 
+  if (detail.status === 'processing') {
+    return (
+      <ContentWidth bg={colors.bg}>
+        <View style={[styles.centered, { padding: gutter }]}>
+          <ActivityIndicator color={colors.header} />
+          <Text style={[styles.muted, { marginTop: 12 }]}>Analyzing this session…</Text>
+        </View>
+      </ContentWidth>
+    );
+  }
+
+  const when = formatWhen(detail.sessionPlayedAt ?? detail.createdAt);
+
   return (
     <ContentWidth bg={colors.bg}>
       <ScrollView
@@ -189,63 +225,53 @@ export default function PracticeAnalysisDetailScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.eyebrow}>Practice analysis</Text>
-        <Text style={styles.title}>{detail.detectedSystem?.trim() || 'Practice session'}</Text>
-        <Text style={styles.meta}>{formatWhen(detail.createdAt)}</Text>
-        {detail.sessionNotes ? <Text style={styles.sessionNotes}>{detail.sessionNotes}</Text> : null}
+        <Text style={styles.title}>{detail.platformLabel}</Text>
+        <Text style={styles.meta}>
+          {when}
+          {detail.shotCount > 0 ? ` · ${detail.shotCount} shots` : ''}
+        </Text>
 
-        {imageUrl ? (
-          <Image source={{ uri: imageUrl }} style={styles.heroImage} resizeMode="contain" />
+        {detail.status === 'failed' ? (
+          <Text style={styles.failed}>{detail.errorMessage ?? 'Analysis failed.'}</Text>
         ) : null}
 
-        {detail.extractedStats.summary.length > 0 ? (
+        {detail.sessionNotes ? (
           <>
-            <Text style={styles.sectionTitle}>Extracted stats</Text>
-            <View style={styles.statsWrap}>
-              {detail.extractedStats.summary.map((s, i) => (
-                <View key={`${s.label}-${i}`} style={[styles.statWrap, tileFlex]}>
-                  <StatTile stat={s} />
+            <Text style={styles.sectionTitle}>Session summary</Text>
+            <View style={styles.panel}>
+              <Text style={styles.summaryTxt}>{detail.sessionNotes}</Text>
+            </View>
+          </>
+        ) : null}
+
+        <Text style={styles.sectionTitle}>By club</Text>
+        {detail.clubs.length === 0 ? (
+          <Text style={styles.muted}>No club breakdown stored for this session.</Text>
+        ) : (
+          detail.clubs.map((club) => <ClubCard key={club.club} club={club} tileFlex={tileFlex} />)
+        )}
+
+        {detail.tips.length > 0 ? (
+          <>
+            <Text style={styles.sectionTitle}>Tips for next session</Text>
+            <View style={styles.panel}>
+              {detail.tips.map((t, i) => (
+                <View key={i} style={styles.tipRow}>
+                  <View style={styles.tipNum}>
+                    <Text style={styles.tipNumTxt}>{i + 1}</Text>
+                  </View>
+                  <Text style={styles.tipTxt}>{t}</Text>
                 </View>
               ))}
             </View>
           </>
         ) : null}
 
-        {detail.extractedStats.shots.length > 0 ? (
-          <>
-            <Text style={styles.sectionTitle}>Per-shot detail</Text>
-            {detail.extractedStats.shots.map((shot, i) => (
-              <ShotBlock key={i} shot={shot} index={i} />
-            ))}
-          </>
-        ) : null}
-
-        <Text style={styles.sectionTitle}>Takeaways</Text>
-        <View style={styles.panel}>
-          {detail.takeaways.map((t, i) => (
-            <View key={i} style={styles.bulletRow}>
-              <Text style={styles.bullet}>•</Text>
-              <Text style={styles.bulletTxt}>{t}</Text>
-            </View>
-          ))}
-        </View>
-
-        <Text style={styles.sectionTitle}>Tips for next session</Text>
-        <View style={styles.panel}>
-          {detail.tips.map((t, i) => (
-            <View key={i} style={styles.tipRow}>
-              <View style={styles.tipNum}>
-                <Text style={styles.tipNumTxt}>{i + 1}</Text>
-              </View>
-              <Text style={styles.tipTxt}>{t}</Text>
-            </View>
-          ))}
-        </View>
-
         <Pressable
           style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
           onPress={() => router.replace('/(tabs)/log/practice' as never)}
         >
-          <Text style={styles.primaryBtnTxt}>Analyze another</Text>
+          <Text style={styles.primaryBtnTxt}>Import another</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed, deleting && styles.disabled]}
@@ -255,7 +281,7 @@ export default function PracticeAnalysisDetailScreen() {
           {deleting ? (
             <ActivityIndicator color={colors.danger} />
           ) : (
-            <Text style={styles.dangerBtnTxt}>Delete analysis</Text>
+            <Text style={styles.dangerBtnTxt}>Delete session</Text>
           )}
         </Pressable>
       </ScrollView>
@@ -276,16 +302,7 @@ const styles = StyleSheet.create({
   },
   title: { fontSize: 22, fontWeight: '700', color: colors.ink, marginTop: 6 },
   meta: { fontSize: 12, color: colors.muted, marginTop: 4, marginBottom: 8 },
-  sessionNotes: { fontSize: 13, color: colors.subtle, lineHeight: 19, marginBottom: 12 },
-  heroImage: {
-    width: '100%',
-    height: 200,
-    borderRadius: 12,
-    backgroundColor: colors.accentSoft,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    marginBottom: 16,
-  },
+  failed: { fontSize: 13, color: colors.danger, lineHeight: 19, marginBottom: 12 },
   sectionTitle: {
     fontSize: 13,
     fontWeight: '700',
@@ -293,15 +310,32 @@ const styles = StyleSheet.create({
     marginTop: 8,
     marginBottom: 10,
   },
+  summaryTxt: { fontSize: 14, color: colors.ink, lineHeight: 21 },
+  clubCard: {
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    padding: 14,
+    marginBottom: 10,
+  },
+  clubHead: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: 12,
+    marginBottom: 10,
+  },
+  clubTitle: { fontSize: 16, fontWeight: '700', color: colors.ink },
+  clubCount: { fontSize: 12, fontWeight: '600', color: colors.muted },
   statsWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
-    marginBottom: 8,
   },
   statWrap: { flexGrow: 1 },
   statCard: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.accentSoft,
     borderRadius: 12,
     paddingVertical: 12,
     paddingHorizontal: 12,
@@ -309,7 +343,6 @@ const styles = StyleSheet.create({
     borderColor: colors.pillBorder,
     minHeight: 72,
   },
-  statCardWide: {},
   statLbl: {
     fontSize: 9,
     fontWeight: '700',
@@ -319,23 +352,18 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   statVal: { fontSize: 16, fontWeight: '700', color: colors.ink },
-  shotCard: {
-    borderRadius: 12,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: colors.border,
-    padding: 12,
-    marginBottom: 8,
-    backgroundColor: colors.surface,
+  clubTakeaway: {
+    marginTop: 12,
+    fontSize: 14,
+    color: colors.ink,
+    lineHeight: 20,
   },
-  shotTitle: { fontSize: 14, fontWeight: '700', color: colors.ink, marginBottom: 8 },
-  shotRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: 12,
-    paddingVertical: 4,
+  clubSkip: {
+    marginTop: 10,
+    fontSize: 12,
+    color: colors.subtle,
+    lineHeight: 17,
   },
-  shotLbl: { flex: 1, fontSize: 12, color: colors.muted },
-  shotVal: { fontSize: 12, fontWeight: '600', color: colors.ink },
   panel: {
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,
@@ -344,9 +372,6 @@ const styles = StyleSheet.create({
     padding: 14,
     marginBottom: 8,
   },
-  bulletRow: { flexDirection: 'row', gap: 8, marginBottom: 10 },
-  bullet: { fontSize: 14, color: colors.sage, fontWeight: '700', lineHeight: 20 },
-  bulletTxt: { flex: 1, fontSize: 14, color: colors.ink, lineHeight: 20 },
   tipRow: { flexDirection: 'row', gap: 10, marginBottom: 12, alignItems: 'flex-start' },
   tipNum: {
     width: 22,
