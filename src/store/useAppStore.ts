@@ -56,7 +56,11 @@ export type SimRound = {
   h2hOpponentDisplayName?: string;
   /** Team tournament rounds: stored in history but excluded from SimCap index math. */
   excludesFromSimcapIndex?: boolean;
+  /** Snapshot at save: verified (curated/confident) vs unverified (community estimate). */
+  handicapSource?: HandicapSource;
 };
+
+export type HandicapSource = 'verified' | 'unverified';
 
 function roundsForSimcapIndex(rounds: SimRound[]): SimRound[] {
   return rounds.filter((r) => !r.excludesFromSimcapIndex);
@@ -90,6 +94,8 @@ export type FriendGroup = {
   name: string;
   /** Supabase `social_groups.created_by`; empty for offline mock groups. */
   createdByUserId: string;
+  /** When true, members see bulk-imported community courses in standalone Log a Round. */
+  expandedCourseListEnabled?: boolean;
   members: GroupMember[];
   pendingInApp?: OutboundPendingInApp[];
   pendingEmail?: OutboundPendingEmail[];
@@ -362,15 +368,18 @@ export const useAppStore = create<AppState>()(
       },
 
       addRound: async (input) => {
-        const course = getCourseById(input.courseId);
-        if (!course) throw new Error('Unknown course');
+        const seed = getCourseById(input.courseId);
+        const courseName = input.courseName?.trim() || seed?.name;
+        if (!courseName) throw new Error('Unknown course');
         const holeScores = [...input.holeScores];
         while (holeScores.length < 18) holeScores.push(null);
         const grossForMath = grossFromHoles(holeScores) ?? input.grossScore;
         const excludeFromIndex = !!input.excludesFromSimcapIndex;
         const sorted = [...roundsForSimcapIndex(get().rounds)].sort(compareRoundsByPlayedAtAsc);
         const before = indexBeforeNewRound(sorted);
-        const baseline = ratingForCourse(course, input.platform);
+        const baseline = seed
+          ? ratingForCourse(seed, input.platform)
+          : { rating: input.courseRating, slope: input.slope };
         const cr =
           typeof input.courseRating === 'number' &&
           Number.isFinite(input.courseRating) &&
@@ -392,6 +401,8 @@ export const useAppStore = create<AppState>()(
           mulligans,
           CURRENT_DIFFERENTIAL_VERSION
         );
+        const handicapSource: HandicapSource =
+          input.handicapSource ?? (seed && seed.confident !== false ? 'verified' : 'unverified');
         const trialDiffs = excludeFromIndex
           ? sorted.map((r) => r.adjustedDiff)
           : [...sorted.map((r) => r.adjustedDiff), math.adjustedDiff];
@@ -401,8 +412,9 @@ export const useAppStore = create<AppState>()(
           mulligans,
           holeScores,
           grossScore: grossForMath,
-          courseName: course.name,
-          teeName: input.teeName ?? course.defaultTee,
+          courseName,
+          teeName: input.teeName ?? seed?.defaultTee,
+          handicapSource,
           ...math,
           indexAfter: after,
           indexDelta:

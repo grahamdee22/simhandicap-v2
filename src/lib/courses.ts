@@ -1,5 +1,8 @@
 import type { PlatformId } from './constants';
 import { PLATFORMS } from './constants';
+import { normalizeCourseName } from './courseNameNormalize';
+
+export { normalizeCourseName };
 
 /** One playable tee (WHS-style course rating + slope). */
 export type CourseTee = {
@@ -1828,19 +1831,11 @@ export function ratingForCourse(course: CourseSeed, platform: PlatformId) {
   return { rating: last.rating, slope: last.slope };
 }
 
-const normSearch = (s: string) =>
-  s
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, ' ')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '');
-
 /** Case-insensitive substring match on display name (course picker search). */
 export function courseMatchesSearch(course: CourseSeed, rawQuery: string): boolean {
-  const q = normSearch(rawQuery);
+  const q = normalizeCourseName(rawQuery);
   if (!q) return true;
-  if (normSearch(course.name).includes(q)) return true;
-  if (course.location && normSearch(course.location).includes(q)) return true;
+  if (normalizeCourseName(course.name).includes(q)) return true;
+  if (course.location && normalizeCourseName(course.location).includes(q)) return true;
   return false;
 }

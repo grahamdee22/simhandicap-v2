@@ -36,6 +36,17 @@ import {
   type ActiveTournamentOption,
 } from '../../../src/lib/leagues';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
+import { nearestTeeByYards } from '../../../src/lib/communityEnrichment';
+import {
+  curatedPickerCourses,
+  fetchCommunityCoursesForPicker,
+  isCommunityCourseId,
+  mergePickerCourses,
+  resolveLogCourse,
+  type CommunityCourseRow,
+  type ResolvedLogCourse,
+} from '../../../src/lib/communityCourses';
+import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
 import { yardageForCourseTee } from '../../../src/lib/courseTeeYardages';
 import { uploadLogScorecardForParse } from '../../../src/lib/logScorecardStorage';
 import { invokeParseScorecard } from '../../../src/lib/parseScorecard';
@@ -47,8 +58,6 @@ import {
 import { settingsScreenshotPickerOptions } from '../../../src/lib/settingsScreenshotPicker';
 import { supabase, isSupabaseConfigured } from '../../../src/lib/supabase';
 import {
-  COURSE_SEEDS,
-  courseMatchesSearch,
   CUSTOM_TEE_ID,
   getCourseById,
   getCourseTees,
@@ -125,6 +134,8 @@ export default function LogRoundScreen() {
   const [diffInfoOpen, setDiffInfoOpen] = useState<DiffInfoKind>(null);
   const [activeTournaments, setActiveTournaments] = useState<ActiveTournamentOption[]>([]);
   const [tournamentApply, setTournamentApply] = useState<Record<string, boolean>>({});
+  const [communityCourses, setCommunityCourses] = useState<CommunityCourseRow[]>([]);
+  const [yardsPlayed, setYardsPlayed] = useState('');
   /** False until the latest active-tournament fetch finishes — prevents stale prompt flash. */
   const [tournamentsReady, setTournamentsReady] = useState(false);
   const tournamentsFetchGen = useRef(0);
@@ -140,7 +151,8 @@ export default function LogRoundScreen() {
     pin: PinDay;
     wind: Wind;
     mulligans: Mulligans;
-    course: ReturnType<typeof getCourseById>;
+    course: ResolvedLogCourse | null;
+    yardsPlayed: string;
     existing: SimRound | undefined;
     teePickKey: string;
     customRating: string;
@@ -231,6 +243,45 @@ export default function LogRoundScreen() {
     }, [loadActiveTournaments])
   );
 
+  const hasExpandedCourseList = useMemo(() => {
+    if (!user?.id) return false;
+    return groups.some(
+      (g) => g.expandedCourseListEnabled && g.members.some((m) => m.userId === user.id)
+    );
+  }, [groups, user?.id]);
+
+  const optedInTournaments = useMemo(
+    () => activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false),
+    [activeTournaments, tournamentApply]
+  );
+
+  const loadCommunityCourses = useCallback(async () => {
+    const needsCommunity =
+      hasExpandedCourseList || (courseId.length > 0 && isCommunityCourseId(courseId));
+    if (!supabaseOn || !needsCommunity) {
+      if (!needsCommunity) setCommunityCourses([]);
+      return;
+    }
+    try {
+      const accessToken =
+        googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const rows = await fetchCommunityCoursesForPicker(accessToken);
+      setCommunityCourses(rows);
+    } catch {
+      setCommunityCourses([]);
+    }
+  }, [supabaseOn, hasExpandedCourseList, courseId]);
+
+  useEffect(() => {
+    void loadCommunityCourses();
+  }, [loadCommunityCourses]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadCommunityCourses();
+    }, [loadCommunityCourses])
+  );
+
   useEffect(() => {
     if (editId) return;
     if (pendingH2hMatchup) return;
@@ -298,7 +349,16 @@ export default function LogRoundScreen() {
   /** New round only: keep tee aligned with the selected course / platform. (Edit mode sets tee from the saved round.) */
   useEffect(() => {
     if (editId) return;
-    const c = getCourseById(courseId);
+    const resolved = resolveLogCourse(courseId, platform, communityCourses);
+    if (!resolved) return;
+    if (resolved.source === 'community') {
+      setYardsPlayed('');
+      if (resolved.tees.length > 0) {
+        setTeePickKey(resolved.tees[0].name);
+      }
+      return;
+    }
+    const c = resolved.seed;
     if (!c) return;
     const tees = getCourseTees(c, platform);
     if (c.confident === false && tees.length > 0) {
@@ -309,7 +369,7 @@ export default function LogRoundScreen() {
     }
     setCustomRating('');
     setCustomSlope('');
-  }, [courseId, platform, editId]);
+  }, [courseId, platform, editId, communityCourses]);
 
   const pinOpts = useMemo(() => pinOptionsForPlatform(platform), [platform]);
 
@@ -320,17 +380,25 @@ export default function LogRoundScreen() {
     }
   }, [platform, pinOpts, pin]);
 
-  const course = getCourseById(courseId);
-  const courseTees = useMemo(() => (course ? getCourseTees(course, platform) : []), [course, platform]);
+  const resolvedCourse = useMemo(
+    () => resolveLogCourse(courseId, platform, communityCourses),
+    [courseId, platform, communityCourses]
+  );
+  const courseTees = useMemo(() => resolvedCourse?.tees ?? [], [resolvedCourse]);
   const parseCourseTees = useMemo(
     () =>
-      course
+      resolvedCourse
         ? courseTees.map((t) => ({
             name: t.name,
-            yards: yardageForCourseTee(course.id, t.name) ?? null,
+            yards:
+              (typeof t.yards === 'number' && Number.isFinite(t.yards) ? t.yards : undefined) ??
+              (resolvedCourse.source === 'curated' && resolvedCourse.seed
+                ? yardageForCourseTee(resolvedCourse.seed.id, t.name)
+                : null) ??
+              null,
           }))
         : [],
-    [course, courseTees]
+    [resolvedCourse, courseTees]
   );
 
   const onScanScorecard = useCallback(async () => {
@@ -419,6 +487,18 @@ export default function LogRoundScreen() {
 
   const resolvedTeeRating = useMemo(() => {
     const resolved = ((): { rating: number; slope: number; teeLabel: string } => {
+      if (!resolvedCourse) return { rating: 72, slope: 130, teeLabel: '' as string };
+      if (resolvedCourse.source === 'community') {
+        const yards = parseInt(yardsPlayed.replace(/,/g, '').trim(), 10);
+        if (Number.isFinite(yards) && yards > 0) {
+          const near = nearestTeeByYards(resolvedCourse.tees, yards);
+          if (near) return { rating: near.rating, slope: near.slope, teeLabel: near.name };
+        }
+        const first = resolvedCourse.tees[0];
+        if (first) return { rating: first.rating, slope: first.slope, teeLabel: first.name };
+        return { rating: 72, slope: 113, teeLabel: 'Default' };
+      }
+      const course = resolvedCourse.seed;
       if (!course) return { rating: 72, slope: 130, teeLabel: '' as string };
       if (course.confident === false) {
         const mid = middleCourseTee(course, platform);
@@ -443,17 +523,20 @@ export default function LogRoundScreen() {
     // eslint-disable-next-line no-console -- debug: resolved tee for handicap preview
     console.log('[log] resolvedTeeRating', resolved.rating, resolved.slope);
     return resolved;
-  }, [course, platform, teePickKey, customRating, customSlope, courseTees]);
-  const showTeeSelector = course?.confident !== false;
+  }, [resolvedCourse, platform, teePickKey, customRating, customSlope, courseTees, yardsPlayed]);
+  const showTeeSelector =
+    resolvedCourse?.source === 'curated' && resolvedCourse.confident !== false;
+  const showYardageInput = resolvedCourse?.source === 'community';
 
-  const coursesForPicker = useMemo(
-    () =>
-      COURSE_SEEDS.filter((c) => c.confident !== false && courseMatchesSearch(c, courseSearchQuery)).sort((a, b) =>
-        a.name.localeCompare(b.name)
-      ),
-    [courseSearchQuery]
-  );
-  const { rating, slope } = course
+  const showCommunityInPicker = hasExpandedCourseList && optedInTournaments.length === 0;
+
+  const coursesForPicker = useMemo(() => {
+    const curated = curatedPickerCourses(courseSearchQuery);
+    if (!showCommunityInPicker) return curated;
+    return mergePickerCourses(curated, communityCourses, courseSearchQuery);
+  }, [courseSearchQuery, showCommunityInPicker, communityCourses]);
+
+  const { rating, slope } = resolvedCourse
     ? { rating: resolvedTeeRating.rating, slope: resolvedTeeRating.slope }
     : { rating: 72, slope: 130 };
 
@@ -485,10 +568,10 @@ export default function LogRoundScreen() {
     return Number.isFinite(e) ? round1(e) : null;
   }, [simIndexCurrent, modifier, rating, slope]);
   const targetGrossPre = useMemo(() => {
-    if (simIndexCurrent == null || !course) return null;
+    if (simIndexCurrent == null || !resolvedCourse) return null;
     const t = targetGrossToImprove(simIndexCurrent, rating, slope, modifier);
     return Number.isFinite(t) ? t : null;
-  }, [simIndexCurrent, course, rating, slope, modifier]);
+  }, [simIndexCurrent, resolvedCourse, rating, slope, modifier]);
 
   latestSaveRef.current = {
     grossScore,
@@ -499,7 +582,8 @@ export default function LogRoundScreen() {
     pin,
     wind,
     mulligans,
-    course,
+    course: resolvedCourse,
+    yardsPlayed,
     existing,
     teePickKey,
     customRating,
@@ -524,14 +608,38 @@ export default function LogRoundScreen() {
         return;
       }
 
+      const optedIn = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
+      if (optedIn.length > 0 && snap.course.source === 'community') {
+        showAppAlert(
+          'Tournament round',
+          'Community courses cannot be used for tournament rounds. Pick a verified course or set tournament apply to No.'
+        );
+        return;
+      }
+
       const playedAt = localYmdToIso(snap.playedDate);
       const grossToSave = Math.min(120, Math.max(55, snap.grossScore));
 
-      let teeNameSave = snap.course.defaultTee ?? 'Default';
+      let teeNameSave = snap.course.seed?.defaultTee ?? 'Default';
       let courseRatingSave: number;
       let slopeSave: number;
-      if (snap.course.confident === false) {
-        const mid = middleCourseTee(snap.course, snap.platform);
+
+      if (snap.course.source === 'community') {
+        const yards = parseInt(snap.yardsPlayed.replace(/,/g, '').trim(), 10);
+        if (!Number.isFinite(yards) || yards < 1000 || yards > 9000) {
+          showAppAlert('Yardage', 'Enter the total yardage you played (about 1,000–9,000).');
+          return;
+        }
+        const tee = nearestTeeByYards(snap.course.tees, yards);
+        if (!tee) {
+          showAppAlert('Tee', 'This course has no tee data.');
+          return;
+        }
+        courseRatingSave = tee.rating;
+        slopeSave = tee.slope;
+        teeNameSave = tee.name;
+      } else if (snap.course.confident === false && snap.course.seed) {
+        const mid = middleCourseTee(snap.course.seed, snap.platform);
         if (!mid) {
           showAppAlert('Tee', 'This course has no tee data.');
           return;
@@ -552,8 +660,8 @@ export default function LogRoundScreen() {
         courseRatingSave = round1(r);
         slopeSave = Math.round(s);
         teeNameSave = 'Custom';
-      } else {
-        const tees = getCourseTees(snap.course, snap.platform);
+      } else if (snap.course.seed) {
+        const tees = getCourseTees(snap.course.seed, snap.platform);
         const row = tees.find((t) => t.name === snap.teePickKey);
         if (!row) {
           showAppAlert('Tee', 'Pick a tee from the list, or choose Custom and enter rating and slope.');
@@ -562,6 +670,9 @@ export default function LogRoundScreen() {
         courseRatingSave = row.rating;
         slopeSave = row.slope;
         teeNameSave = row.name;
+      } else {
+        showAppAlert('Tee', 'Pick a tee from the list.');
+        return;
       }
 
       if (__DEV__ && DEBUG_LOG_GROSS_SAVE) {
@@ -586,6 +697,7 @@ export default function LogRoundScreen() {
         teeName: teeNameSave,
         courseRating: courseRatingSave,
         slope: slopeSave,
+        handicapSource: snap.course.handicapSource,
         ...(snap.existing?.h2hGroupId &&
         snap.existing.h2hOpponentMemberId &&
         snap.existing.h2hOpponentDisplayName
@@ -730,7 +842,12 @@ export default function LogRoundScreen() {
             <View style={isWide ? styles.pickCol : undefined}>
               <Text style={styles.sectionLabel}>Course</Text>
               <Pressable style={[styles.pill, courseOpen && styles.pillActive]} onPress={() => setCourseOpen(true)}>
-                <Text style={styles.pillVal}>{course?.name ?? 'Select'}</Text>
+                <View style={styles.pillValRow}>
+                  <Text style={styles.pillVal}>{resolvedCourse?.name ?? 'Select'}</Text>
+                  {resolvedCourse?.handicapSource === 'unverified' ? (
+                    <UnverifiedCourseBadge compact />
+                  ) : null}
+                </View>
                 <Text style={styles.chev}>▾</Text>
               </Pressable>
             </View>
@@ -781,7 +898,24 @@ export default function LogRoundScreen() {
 
           <DatePlayedField value={playedDate} onChange={setPlayedDate} />
 
-          {course && showTeeSelector ? (
+          {showYardageInput ? (
+            <>
+              <Text style={styles.sectionLabel}>Yardage played</Text>
+              <Text style={styles.teeTip}>
+                Enter the total yardage from your round. We match the nearest tee for slope and rating.
+              </Text>
+              <TextInput
+                style={styles.courseSearchInput}
+                value={yardsPlayed}
+                onChangeText={setYardsPlayed}
+                placeholder="e.g. 6,400"
+                placeholderTextColor={colors.subtle}
+                keyboardType="number-pad"
+              />
+            </>
+          ) : null}
+
+          {resolvedCourse && showTeeSelector ? (
             <>
               <Text style={styles.sectionLabel}>Tee</Text>
               <Text style={styles.teeTip}>
@@ -792,7 +926,9 @@ export default function LogRoundScreen() {
                 {courseTees.map((t) => {
                   const yards =
                     (typeof t.yards === 'number' && Number.isFinite(t.yards) ? t.yards : undefined) ??
-                    yardageForCourseTee(course.id, t.name);
+                    (resolvedCourse.source === 'curated' && resolvedCourse.seed
+                      ? yardageForCourseTee(resolvedCourse.seed.id, t.name)
+                      : undefined);
                   return (
                   <Pressable
                     key={t.name}
@@ -940,7 +1076,7 @@ export default function LogRoundScreen() {
           </View>
         </View>
 
-        {course ? (
+        {resolvedCourse ? (
           <View style={styles.predCard}>
             <View style={styles.predStatRow}>
               <Text style={styles.predStatLbl}>Adjusted differential:</Text>
@@ -1138,11 +1274,21 @@ export default function LogRoundScreen() {
                     style={styles.modalRow}
                     onPress={() => {
                       setCourseId(c.id);
-                      const teesPick = getCourseTees(c, platform);
-                      if (c.confident === false && teesPick.length > 0) {
+                      if (c.source === 'community') {
+                        setYardsPlayed('');
+                        setCourseOpen(false);
+                        return;
+                      }
+                      const seed = getCourseById(c.id);
+                      if (!seed) {
+                        setCourseOpen(false);
+                        return;
+                      }
+                      const teesPick = getCourseTees(seed, platform);
+                      if (seed.confident === false && teesPick.length > 0) {
                         setTeePickKey(teesPick[Math.floor(teesPick.length / 2)].name);
                       } else {
-                        const defPick = c.defaultTee?.trim();
+                        const defPick = seed.defaultTee?.trim();
                         setTeePickKey(
                           teesPick.find((t) => t.name === defPick)?.name ??
                             teesPick[teesPick.length - 1]?.name ??
@@ -1154,7 +1300,10 @@ export default function LogRoundScreen() {
                       setCourseOpen(false);
                     }}
                   >
-                    <Text style={styles.modalRowTxt}>{c.name}</Text>
+                    <View style={styles.modalRowCourse}>
+                      <Text style={styles.modalRowTxt}>{c.name}</Text>
+                      {c.source === 'community' ? <UnverifiedCourseBadge compact /> : null}
+                    </View>
                     {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
                   </Pressable>
                 ))
@@ -1265,6 +1414,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surface,
   },
   pillActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  pillValRow: { flexDirection: 'row', alignItems: 'center', flex: 1, flexWrap: 'wrap', gap: 4 },
   pillVal: { fontSize: 12, fontWeight: '600', color: colors.ink },
   chev: { fontSize: 9, color: colors.subtle },
   scoreBlock: { borderWidth: 0.5, borderColor: colors.pillBorder, borderRadius: 9, overflow: 'hidden' },
@@ -1471,5 +1621,6 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.border,
   },
   modalRowTxt: { fontSize: 15, color: colors.ink },
+  modalRowCourse: { flex: 1, flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 4 },
   modalRowSub: { fontSize: 12, color: colors.subtle, marginTop: 2 },
 });

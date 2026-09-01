@@ -82,6 +82,7 @@ export type DbRoundRow = {
   h2h_opponent_member_id: string | null;
   h2h_opponent_display_name: string | null;
   simcap_index_at_time: number | null;
+  handicap_source?: string | null;
 };
 
 export function dbRowToSimRound(row: DbRoundRow): SimRound {
@@ -117,6 +118,10 @@ export function dbRowToSimRound(row: DbRoundRow): SimRound {
       row.simcap_index_at_time != null && Number.isFinite(Number(row.simcap_index_at_time))
         ? Number(row.simcap_index_at_time)
         : null,
+    handicapSource:
+      row.handicap_source === 'unverified' || row.handicap_source === 'verified'
+        ? row.handicap_source
+        : 'verified',
   };
   if (row.h2h_group_id) {
     base.h2hGroupId = row.h2h_group_id;
@@ -167,6 +172,7 @@ function roundToDbInsert(userId: string, r: RoundDbFields) {
     h2h_opponent_member_id: r.h2hOpponentMemberId ?? null,
     h2h_opponent_display_name: r.h2hOpponentDisplayName ?? null,
     simcap_index_at_time: r.simcapIndexAtTime ?? null,
+    handicap_source: r.handicapSource ?? 'verified',
   };
 }
 
@@ -296,6 +302,7 @@ export async function updateRoundInSupabase(
     h2h_opponent_member_id: round.h2hOpponentMemberId ?? null,
     h2h_opponent_display_name: round.h2hOpponentDisplayName ?? null,
     simcap_index_at_time: round.simcapIndexAtTime ?? null,
+    handicap_source: round.handicapSource ?? 'verified',
   };
 
   if (accessToken) {

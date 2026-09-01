@@ -25,6 +25,7 @@ import {
   scoreToParStyle,
 } from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
+import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
 import { pinDetailLabel } from '../../../src/lib/pinPlacement';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
 
@@ -173,6 +174,7 @@ export default function RoundDetailScreen() {
             ]}
           >
             <Text style={[styles.course, isWide && styles.courseLg]}>{r.courseName}</Text>
+            {r.handicapSource === 'unverified' ? <UnverifiedCourseBadge /> : null}
             <Text style={[styles.meta, isWide && styles.metaLg]}>
               {r.platform} · {new Date(r.playedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
               {r.teeName ? ` · ${r.teeName}` : ''}

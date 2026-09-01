@@ -294,12 +294,18 @@ export function patchGroupCreatorInStore(groupId: string, createdByUserId: strin
 }
 
 const ROUNDS_SELECT_FOR_SOCIAL =
-  'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,differential_version,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time';
+  'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,differential_version,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time,handicap_source';
 
 function applyLoadedSocialGroupData(
   uid: string,
   myMemberships: { group_id: string }[] | null | undefined,
-  groupsRows: { id: string; name: string; created_by: string; created_at: string }[] | null | undefined,
+  groupsRows: {
+    id: string;
+    name: string;
+    created_by: string;
+    created_at: string;
+    expanded_course_list_enabled?: boolean | null;
+  }[] | null | undefined,
   allMembers:
     | { id: string; group_id: string; user_id: string; display_name_snapshot: string | null; joined_at?: string }[]
     | null
@@ -379,6 +385,7 @@ function applyLoadedSocialGroupData(
       id: gr.id,
       name: gr.name,
       createdByUserId: (gr.created_by ?? '').trim(),
+      expandedCourseListEnabled: gr.expanded_course_list_enabled === true,
       members,
       pendingInApp: pendingInAppByGroup.get(gr.id),
       pendingEmail: pendingEmailByGroup.get(gr.id),
@@ -404,8 +411,14 @@ async function fetchMySocialGroupsIntoStoreRest(uid: string, accessToken: string
   }
   const groupsRows = (await restSelectRows(
     accessToken,
-    `social_groups?id=${idInList(groupIds)}&is_active=eq.true&select=id,name,created_by,created_at`
-  )) as { id: string; name: string; created_by: string; created_at: string }[];
+    `social_groups?id=${idInList(groupIds)}&is_active=eq.true&select=id,name,created_by,created_at,expanded_course_list_enabled`
+  )) as {
+    id: string;
+    name: string;
+    created_by: string;
+    created_at: string;
+    expanded_course_list_enabled?: boolean | null;
+  }[];
   const allMembers = (await restSelectRows(
     accessToken,
     `group_members?group_id=${idInList(groupIds)}&select=id,group_id,user_id,display_name_snapshot,joined_at,is_admin`
@@ -561,7 +574,7 @@ export async function fetchMySocialGroupsIntoStore(
 
   const { data: groupsRows, error: gErr } = await supabase
     .from('social_groups')
-    .select('id, name, created_by, created_at')
+    .select('id, name, created_by, created_at, expanded_course_list_enabled')
     .in('id', groupIds)
     .eq('is_active', true);
 
