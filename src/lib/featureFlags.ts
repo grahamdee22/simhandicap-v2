@@ -3,4 +3,4 @@
  */
 
 /** Practice Analyzer CSV import (center-tab coaching flow). Off = no entry points; routes redirect away. */
-export const PRACTICE_ANALYZER_ENABLED = true;
+export const PRACTICE_ANALYZER_ENABLED = false;
