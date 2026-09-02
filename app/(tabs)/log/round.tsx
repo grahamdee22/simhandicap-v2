@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View, Alert, ActivityIndicator } from 'react-native';
+import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, View, Alert, ActivityIndicator, InputAccessoryView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as ImagePicker from 'expo-image-picker';
 import { ContentWidth } from '../../../src/components/ContentWidth';
@@ -83,6 +83,26 @@ const WIND_OPTS: { key: Wind; dn: string; ds: string }[] = [
 ];
 
 const MULL_OPTS = MULLIGAN_PICKER_OPTS;
+
+const LOG_ROUND_NUMERIC_ACCESSORY_ID = 'log-round-numeric-done';
+
+function NumericKeyboardDoneBar() {
+  if (Platform.OS !== 'ios') return null;
+  return (
+    <InputAccessoryView nativeID={LOG_ROUND_NUMERIC_ACCESSORY_ID}>
+      <View style={styles.keyboardAccessory}>
+        <Pressable
+          style={styles.keyboardDoneBtn}
+          onPress={() => Keyboard.dismiss()}
+          accessibilityRole="button"
+          accessibilityLabel="Done"
+        >
+          <Text style={styles.keyboardDoneTxt}>Done</Text>
+        </Pressable>
+      </View>
+    </InputAccessoryView>
+  );
+}
 
 /** Set true to log gross resolution in dev tools when saving a round. */
 const DEBUG_LOG_GROSS_SAVE = false;
@@ -819,6 +839,8 @@ export default function LogRoundScreen() {
     <ContentWidth bg={colors.surface}>
       <>
       <View style={styles.root}>
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
+          <View style={styles.scrollWrap}>
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={{
@@ -826,7 +848,8 @@ export default function LogRoundScreen() {
             paddingTop: Math.max(gutter, 14),
             paddingBottom: insets.bottom + 100,
           }}
-          keyboardShouldPersistTaps="always"
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={Keyboard.dismiss}
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
@@ -845,7 +868,11 @@ export default function LogRoundScreen() {
                 <View style={styles.pillValRow}>
                   <Text style={styles.pillVal}>{resolvedCourse?.name ?? 'Select'}</Text>
                   {resolvedCourse?.handicapSource === 'unverified' ? (
-                    <UnverifiedCourseBadge compact />
+                    <UnverifiedCourseBadge
+                      compact
+                      enrichmentTier={resolvedCourse.enrichmentTier}
+                      enrichmentSource={resolvedCourse.enrichmentSource}
+                    />
                   ) : null}
                 </View>
                 <Text style={styles.chev}>▾</Text>
@@ -902,7 +929,7 @@ export default function LogRoundScreen() {
             <>
               <Text style={styles.sectionLabel}>Yardage played</Text>
               <Text style={styles.teeTip}>
-                Enter the total yardage from your round. We match the nearest tee for slope and rating.
+                Enter the total yardage from your round. Helps us describe which tee you played.
               </Text>
               <TextInput
                 style={styles.courseSearchInput}
@@ -911,6 +938,7 @@ export default function LogRoundScreen() {
                 placeholder="e.g. 6,400"
                 placeholderTextColor={colors.subtle}
                 keyboardType="number-pad"
+                inputAccessoryViewID={Platform.OS === 'ios' ? LOG_ROUND_NUMERIC_ACCESSORY_ID : undefined}
               />
             </>
           ) : null}
@@ -969,6 +997,7 @@ export default function LogRoundScreen() {
                       placeholder="e.g. 72.1"
                       placeholderTextColor={colors.subtle}
                       keyboardType="decimal-pad"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? LOG_ROUND_NUMERIC_ACCESSORY_ID : undefined}
                     />
                   </View>
                   <View style={styles.teeCustomField}>
@@ -980,6 +1009,7 @@ export default function LogRoundScreen() {
                       placeholder="e.g. 128"
                       placeholderTextColor={colors.subtle}
                       keyboardType="number-pad"
+                      inputAccessoryViewID={Platform.OS === 'ios' ? LOG_ROUND_NUMERIC_ACCESSORY_ID : undefined}
                     />
                   </View>
                 </View>
@@ -1194,6 +1224,8 @@ export default function LogRoundScreen() {
           Saves to your SimCap account, opens Round analysis, and updates your sim index, home chart, and profile.
         </Text>
         </ScrollView>
+          </View>
+        </TouchableWithoutFeedback>
       </View>
 
       <Modal
@@ -1302,7 +1334,13 @@ export default function LogRoundScreen() {
                   >
                     <View style={styles.modalRowCourse}>
                       <Text style={styles.modalRowTxt}>{c.name}</Text>
-                      {c.source === 'community' ? <UnverifiedCourseBadge compact /> : null}
+                      {c.source === 'community' ? (
+                        <UnverifiedCourseBadge
+                          compact
+                          enrichmentTier={c.enrichmentTier}
+                          enrichmentSource={c.enrichmentSource}
+                        />
+                      ) : null}
                     </View>
                     {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
                   </Pressable>
@@ -1312,13 +1350,16 @@ export default function LogRoundScreen() {
           </View>
         </View>
       </Modal>
-    </>
+
+      <NumericKeyboardDoneBar />
+      </>
     </ContentWidth>
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0, backgroundColor: colors.surface, width: '100%' },
+  scrollWrap: { flex: 1, minHeight: 0 },
   scroll: { flex: 1, minHeight: 0, width: '100%' },
   pickRow: { flexDirection: 'row', gap: 12, width: '100%' },
   pickCol: { flex: 1, minWidth: 0 },
@@ -1612,6 +1653,18 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
+  keyboardAccessory: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  keyboardDoneBtn: { paddingHorizontal: 8, paddingVertical: 4 },
+  keyboardDoneTxt: { fontSize: 17, fontWeight: '600', color: colors.accent },
   modalRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',

@@ -1,10 +1,19 @@
 import { StyleSheet, Text, View } from 'react-native';
 import { colors } from '../lib/constants';
+import { communityCourseAttributionLabel } from '../lib/communityEnrichment';
 
-export function UnverifiedCourseBadge({ compact }: { compact?: boolean }) {
+type Props = {
+  compact?: boolean;
+  enrichmentTier?: number | null;
+  enrichmentSource?: string | null;
+};
+
+export function UnverifiedCourseBadge({ compact, enrichmentTier, enrichmentSource }: Props) {
+  const label = communityCourseAttributionLabel(enrichmentTier, enrichmentSource);
+
   return (
     <View style={[styles.badge, compact && styles.badgeCompact]}>
-      <Text style={[styles.badgeTxt, compact && styles.badgeTxtCompact]}>Unverified</Text>
+      <Text style={[styles.badgeTxt, compact && styles.badgeTxtCompact]}>{label}</Text>
     </View>
   );
 }

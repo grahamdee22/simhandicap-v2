@@ -10,9 +10,15 @@ import {
   type CourseTee,
 } from './courses';
 import { supabase } from './supabase';
+import { communityCourseAttributionLabel } from './communityEnrichment';
+import { isCommunityCourseId } from './communityCourseId';
+import {
+  fetchCommunityCourseEnrichment as fetchCommunityCourseEnrichmentCore,
+  type CourseEnrichment,
+} from './fetchCommunityCourseEnrichment';
 
-const UUID_RE =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+export { communityCourseAttributionLabel, isCommunityCourseId };
+export type { CourseEnrichment };
 
 export type HandicapSource = 'verified' | 'unverified';
 
@@ -41,6 +47,8 @@ export type PickerCourseItem = {
   location?: string;
   source: 'curated' | 'community';
   confident: boolean;
+  enrichmentTier?: number | null;
+  enrichmentSource?: string | null;
 };
 
 export type ResolvedLogCourse = {
@@ -50,14 +58,12 @@ export type ResolvedLogCourse = {
   source: 'curated' | 'community';
   confident: boolean;
   handicapSource: HandicapSource;
+  enrichmentTier?: number | null;
+  enrichmentSource?: string | null;
   /** Present for curated courses only. */
   seed?: CourseSeed;
   tees: CourseTee[];
 };
-
-export function isCommunityCourseId(id: string): boolean {
-  return UUID_RE.test(id.trim());
-}
 
 export function curatedPickerCourses(query: string): PickerCourseItem[] {
   return COURSE_SEEDS.filter((c) => c.confident !== false && courseMatchesSearch(c, query))
@@ -92,6 +98,8 @@ export function mergePickerCourses(
       location: c.location ?? undefined,
       source: 'community' as const,
       confident: false,
+      enrichmentTier: c.enrichment_tier,
+      enrichmentSource: c.enrichment_source,
     }));
   return [...curated, ...communityItems].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -133,6 +141,8 @@ export function resolveLogCourse(
     source: 'community',
     confident: false,
     handicapSource: 'unverified',
+    enrichmentTier: row.enrichment_tier,
+    enrichmentSource: row.enrichment_source,
     tees: communityTeesFromRow(row),
   };
 }
@@ -190,4 +200,28 @@ export async function fetchCommunityCoursesForPicker(
     return [];
   }
   return (data ?? []) as CommunityCourseRow[];
+}
+
+/** Live course enrichment for round detail (Option B: no snapshot columns on rounds). */
+export async function fetchCommunityCourseEnrichment(
+  courseId: string,
+  accessToken?: string
+): Promise<CourseEnrichment | null> {
+  return fetchCommunityCourseEnrichmentCore(courseId, accessToken, {
+    getRestConfig: getSupabaseRestConfig,
+    querySupabase: async (id) => {
+      if (!supabase) return null;
+      const { data, error } = await supabase
+        .from('courses')
+        .select('enrichment_tier,enrichment_source')
+        .eq('id', id)
+        .maybeSingle();
+      if (error || !data) return null;
+      const row = data as { enrichment_tier: number | null; enrichment_source: string | null };
+      return {
+        enrichmentTier: row.enrichment_tier ?? null,
+        enrichmentSource: row.enrichment_source ?? null,
+      };
+    },
+  });
 }

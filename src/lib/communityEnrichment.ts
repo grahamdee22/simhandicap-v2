@@ -41,6 +41,17 @@ export function tier4SyntheticTee(): SyntheticTee {
   };
 }
 
+/** Attribution-style badge label for community course enrichment tiers. */
+export function communityCourseAttributionLabel(
+  enrichmentTier: number | null | undefined,
+  enrichmentSource?: string | null
+): string {
+  if (enrichmentTier === 3 || enrichmentSource === 'gspro_difficulty') {
+    return 'Slope by GSPro';
+  }
+  return 'Estimated';
+}
+
 /** Pick the tee row whose yardage is closest to what the player played. */
 export function nearestTeeByYards(tees: CourseTee[], yardsPlayed: number): CourseTee | null {
   if (tees.length === 0) return null;

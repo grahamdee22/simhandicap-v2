@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
 import { Link, Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   BackHandler,
@@ -25,6 +25,16 @@ import {
   scoreToParStyle,
 } from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
+import {
+  fetchCommunityCourseEnrichment,
+} from '../../../src/lib/communityCourses';
+import {
+  roundDetailAttributionLabel,
+  shouldFetchCommunityCourseEnrichmentForRound,
+} from '../../../src/lib/roundDetailCommunityEnrichment';
+import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
+import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
+import { isSupabaseConfigured } from '../../../src/lib/supabase';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
 import { pinDetailLabel } from '../../../src/lib/pinPlacement';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
@@ -80,6 +90,33 @@ export default function RoundDetailScreen() {
   const rounds = useAppStore((s) => s.rounds);
   const deleteRound = useAppStore((s) => s.deleteRound);
   const r = rounds.find((x) => x.id === id);
+  const supabaseOn = isSupabaseConfigured();
+  const [courseEnrichment, setCourseEnrichment] = useState<{
+    enrichmentTier: number | null;
+    enrichmentSource: string | null;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!shouldFetchCommunityCourseEnrichmentForRound(r)) {
+      setCourseEnrichment(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const accessToken =
+          googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+        if (!supabaseOn && !accessToken) return;
+        const enrichment = await fetchCommunityCourseEnrichment(r!.courseId, accessToken);
+        if (!cancelled) setCourseEnrichment(enrichment);
+      } catch {
+        if (!cancelled) setCourseEnrichment(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [r, supabaseOn]);
 
   useFocusEffect(
     useCallback(() => {
@@ -174,7 +211,12 @@ export default function RoundDetailScreen() {
             ]}
           >
             <Text style={[styles.course, isWide && styles.courseLg]}>{r.courseName}</Text>
-            {r.handicapSource === 'unverified' ? <UnverifiedCourseBadge /> : null}
+            {roundDetailAttributionLabel(r.handicapSource, courseEnrichment) ? (
+              <UnverifiedCourseBadge
+                enrichmentTier={courseEnrichment?.enrichmentTier}
+                enrichmentSource={courseEnrichment?.enrichmentSource}
+              />
+            ) : null}
             <Text style={[styles.meta, isWide && styles.metaLg]}>
               {r.platform} · {new Date(r.playedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
               {r.teeName ? ` · ${r.teeName}` : ''}
