@@ -2,16 +2,19 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
+  Keyboard,
   Modal,
   Platform,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeyboardBottomInset } from '../../src/lib/useKeyboardBottomInset';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { GolferPickerModal } from '../../src/components/GolferPickerModal';
@@ -102,6 +105,13 @@ type PickerTarget = 1 | 2 | null;
 export default function CrewMatchCalculatorScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
+  const keyboardBottomInset = useKeyboardBottomInset();
+  const { height: windowHeight } = useWindowDimensions();
+  const courseListMaxHeight = useMemo(() => {
+    const sheetCap = keyboardBottomInset > 0 ? 0.92 : 0.7;
+    const available = windowHeight - keyboardBottomInset;
+    return Math.max(140, available * sheetCap - 120);
+  }, [windowHeight, keyboardBottomInset]);
   const { gutter, isWide } = useResponsive();
   const { session } = useAuth();
   const groups = useAppStore((s) => s.groups);
@@ -565,9 +575,29 @@ export default function CrewMatchCalculatorScreen() {
         transparent
         onRequestClose={() => setCourseOpen(false)}
       >
-        <View style={styles.modalRoot}>
-          <Pressable style={styles.modalBackdropPress} onPress={() => setCourseOpen(false)} />
-          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+        <View
+          style={[
+            styles.modalRoot,
+            { paddingBottom: keyboardBottomInset > 0 ? keyboardBottomInset : 0 },
+          ]}
+        >
+          <Pressable
+            style={styles.modalBackdropPress}
+            onPress={() => {
+              Keyboard.dismiss();
+              setCourseOpen(false);
+            }}
+          />
+          <View
+            style={[
+              styles.modalSheet,
+              keyboardBottomInset > 0 && styles.modalSheetKeyboard,
+              {
+                paddingBottom:
+                  keyboardBottomInset > 0 ? 12 : insets.bottom + 16,
+              },
+            ]}
+          >
             <Text style={styles.modalTitle}>Course</Text>
             <TextInput
               style={styles.courseSearchInput}
@@ -578,8 +608,15 @@ export default function CrewMatchCalculatorScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               clearButtonMode="while-editing"
+              returnKeyType="search"
+              blurOnSubmit={false}
             />
-            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+            <ScrollView
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              nestedScrollEnabled
+              style={[styles.courseSearchList, { maxHeight: courseListMaxHeight }]}
+            >
               {coursesForPicker.length === 0 ? (
                 <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
               ) : (
@@ -588,6 +625,7 @@ export default function CrewMatchCalculatorScreen() {
                     key={c.id}
                     style={styles.modalRow}
                     onPress={() => {
+                      Keyboard.dismiss();
                       setCourseId(c.id);
                       setCourseOpen(false);
                     }}
@@ -817,6 +855,7 @@ const styles = StyleSheet.create({
     paddingTop: 14,
     maxHeight: '70%',
   },
+  modalSheetKeyboard: { maxHeight: '92%' },
   modalTitle: { fontSize: 17, fontWeight: '700', color: colors.ink, marginBottom: 8 },
   courseSearchInput: {
     borderWidth: StyleSheet.hairlineWidth,
@@ -827,7 +866,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.ink,
     marginBottom: 8,
+    flexShrink: 0,
   },
+  courseSearchList: { flexGrow: 0 },
   courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
   modalRow: {
     flexDirection: 'row',

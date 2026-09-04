@@ -2,8 +2,9 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, View, Alert, ActivityIndicator, InputAccessoryView } from 'react-native';
+import { FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, useWindowDimensions, View, Alert, ActivityIndicator, InputAccessoryView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeyboardBottomInset } from '../../../src/lib/useKeyboardBottomInset';
 import * as ImagePicker from 'expo-image-picker';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../../src/components/PendingTournamentHolesBanner';
@@ -120,6 +121,14 @@ function ordinalPlace(n: number): string {
 export default function LogRoundScreen() {
   const { gutter, isWide } = useResponsive();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
+  const keyboardBottomInset = useKeyboardBottomInset();
+  const courseListMaxHeight = useMemo(() => {
+    const sheetCap = keyboardBottomInset > 0 ? 0.92 : 0.7;
+    const available = windowHeight - keyboardBottomInset;
+    // Title + search field + padding ≈ 120; keep a usable scroll region above the keyboard.
+    return Math.max(140, available * sheetCap - 120);
+  }, [windowHeight, keyboardBottomInset]);
   const router = useRouter();
   const params = useLocalSearchParams<{ editId?: string }>();
   const editId =
@@ -448,6 +457,19 @@ export default function LogRoundScreen() {
           : await ImagePicker.launchImageLibraryAsync(pickerOpts);
       if (result.canceled || !result.assets[0]) return;
 
+      const asset = result.assets[0];
+      // TEMP: Scan Scorecard HEIC diagnostic — remove after failure is diagnosed.
+      console.log('[scorecard-diag] picker asset', {
+        source,
+        uriTail: asset.uri?.slice(-80),
+        fileName: asset.fileName ?? null,
+        mimeType: asset.mimeType ?? null,
+        type: asset.type ?? null,
+        width: asset.width,
+        height: asset.height,
+        fileSize: asset.fileSize ?? null,
+      });
+
       setScanBusy(true);
       setScanBanner(null);
 
@@ -456,14 +478,25 @@ export default function LogRoundScreen() {
 
       const up = await uploadLogScorecardForParse({
         userId: user.id,
-        localUri: result.assets[0].uri,
+        localUri: asset.uri,
         accessToken: token,
       });
       if ('error' in up) {
         setScanBusy(false);
-        showAppAlert('Upload failed', up.error);
+        console.warn('[scorecard-diag] upload error', up.error, up.diag ?? null);
+        showAppAlert(
+          'Upload failed',
+          `${up.error}${
+            up.diag?.chosen
+              ? `\n\nDiag: ${up.diag.chosen.width}×${up.diag.chosen.height}, ${up.diag.chosen.bytes} bytes, jpegMagic=${up.diag.chosen.jpegMagicOk}`
+              : ''
+          }`
+        );
         return;
       }
+
+      console.log('[scorecard-diag] upload ok — open converted JPEG:', up.signedUrl);
+      console.log('[scorecard-diag] conversion summary', up.diag?.chosen ?? null);
 
       const parsed = await invokeParseScorecard({
         imageUrl: up.signedUrl,
@@ -472,10 +505,26 @@ export default function LogRoundScreen() {
       });
       setScanBusy(false);
 
+      console.log('[scorecard-diag] parse result', {
+        success: parsed.success,
+        confidence: parsed.confidence,
+        errors: parsed.errors,
+        error: parsed.error,
+        data: parsed.data,
+        raw_course_name: parsed.raw_course_name,
+      });
+
       const applied = applyParseScorecardToLogForm(parsed, courseTees.map((t) => t.name));
       setScanBanner(applied.banner);
 
-      if (applied.banner === 'failed') return;
+      if (applied.banner === 'failed') {
+        // Surface the converted image URL so Graham can open it and check legibility.
+        showAppAlert(
+          'Scan failed — check converted image',
+          `Open this URL on your phone/laptop to see what was uploaded after HEIC→JPEG:\n\n${up.signedUrl}\n\nAlso check Metro logs for [scorecard-diag] and Storage path log/${user.id}/scorecard.jpg (+ scorecard-diag.json).`
+        );
+        return;
+      }
 
       if (applied.grossScore != null) setGrossScore(applied.grossScore);
       if (applied.putting) setPutting(applied.putting);
@@ -895,6 +944,10 @@ export default function LogRoundScreen() {
                   <Text style={styles.scanBtnTxt}>Scan Scorecard 📷</Text>
                 )}
               </Pressable>
+              <Text style={styles.scanTip}>
+                Snap a photo of the scorecard on your simulator's screen at the end of the round — not a
+                screenshot from SGT or another website.
+              </Text>
               {scanBanner ? (
                 <View
                   style={[
@@ -1282,9 +1335,30 @@ export default function LogRoundScreen() {
         transparent
         onRequestClose={() => setCourseOpen(false)}
       >
-        <View style={styles.modalRoot}>
-          <Pressable style={styles.modalBackdropPress} onPress={() => setCourseOpen(false)} />
-          <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
+        <View
+          style={[
+            styles.modalRoot,
+            { paddingBottom: keyboardBottomInset > 0 ? keyboardBottomInset : 0 },
+          ]}
+        >
+          <Pressable
+            style={styles.modalBackdropPress}
+            onPress={() => {
+              Keyboard.dismiss();
+              setCourseOpen(false);
+            }}
+          />
+          <View
+            style={[
+              styles.modalSheet,
+              styles.modalSheetTall,
+              keyboardBottomInset > 0 && styles.modalSheetTallKeyboard,
+              {
+                paddingBottom:
+                  keyboardBottomInset > 0 ? 12 : insets.bottom + 16,
+              },
+            ]}
+          >
             <Text style={styles.modalTitle}>Course</Text>
             <TextInput
               style={styles.courseSearchInput}
@@ -1295,58 +1369,67 @@ export default function LogRoundScreen() {
               autoCapitalize="none"
               autoCorrect={false}
               clearButtonMode="while-editing"
+              returnKeyType="search"
+              blurOnSubmit={false}
             />
-            <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
-              {coursesForPicker.length === 0 ? (
+            <FlatList
+              data={coursesForPicker}
+              keyExtractor={(c) => c.id}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
+              style={[styles.courseSearchList, { maxHeight: courseListMaxHeight }]}
+              nestedScrollEnabled
+              initialNumToRender={24}
+              windowSize={10}
+              ListEmptyComponent={
                 <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
-              ) : (
-                coursesForPicker.map((c) => (
-                  <Pressable
-                    key={c.id}
-                    style={styles.modalRow}
-                    onPress={() => {
-                      setCourseId(c.id);
-                      if (c.source === 'community') {
-                        setYardsPlayed('');
-                        setCourseOpen(false);
-                        return;
-                      }
-                      const seed = getCourseById(c.id);
-                      if (!seed) {
-                        setCourseOpen(false);
-                        return;
-                      }
-                      const teesPick = getCourseTees(seed, platform);
-                      if (seed.confident === false && teesPick.length > 0) {
-                        setTeePickKey(teesPick[Math.floor(teesPick.length / 2)].name);
-                      } else {
-                        const defPick = seed.defaultTee?.trim();
-                        setTeePickKey(
-                          teesPick.find((t) => t.name === defPick)?.name ??
-                            teesPick[teesPick.length - 1]?.name ??
-                            teesPick[0].name
-                        );
-                      }
-                      setCustomRating('');
-                      setCustomSlope('');
+              }
+              renderItem={({ item: c }) => (
+                <Pressable
+                  style={styles.modalRow}
+                  onPress={() => {
+                    Keyboard.dismiss();
+                    setCourseId(c.id);
+                    if (c.source === 'community') {
+                      setYardsPlayed('');
                       setCourseOpen(false);
-                    }}
-                  >
-                    <View style={styles.modalRowCourse}>
-                      <Text style={styles.modalRowTxt}>{c.name}</Text>
-                      {c.source === 'community' ? (
-                        <UnverifiedCourseBadge
-                          compact
-                          enrichmentTier={c.enrichmentTier}
-                          enrichmentSource={c.enrichmentSource}
-                        />
-                      ) : null}
-                    </View>
-                    {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
-                  </Pressable>
-                ))
+                      return;
+                    }
+                    const seed = getCourseById(c.id);
+                    if (!seed) {
+                      setCourseOpen(false);
+                      return;
+                    }
+                    const teesPick = getCourseTees(seed, platform);
+                    if (seed.confident === false && teesPick.length > 0) {
+                      setTeePickKey(teesPick[Math.floor(teesPick.length / 2)].name);
+                    } else {
+                      const defPick = seed.defaultTee?.trim();
+                      setTeePickKey(
+                        teesPick.find((t) => t.name === defPick)?.name ??
+                          teesPick[teesPick.length - 1]?.name ??
+                          teesPick[0].name
+                      );
+                    }
+                    setCustomRating('');
+                    setCustomSlope('');
+                    setCourseOpen(false);
+                  }}
+                >
+                  <View style={styles.modalRowCourse}>
+                    <Text style={styles.modalRowTxt}>{c.name}</Text>
+                    {c.source === 'community' ? (
+                      <UnverifiedCourseBadge
+                        compact
+                        enrichmentTier={c.enrichmentTier}
+                        enrichmentSource={c.enrichmentSource}
+                      />
+                    ) : null}
+                  </View>
+                  {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
+                </Pressable>
               )}
-            </ScrollView>
+            />
           </View>
         </View>
       </Modal>
@@ -1409,6 +1492,13 @@ const styles = StyleSheet.create({
   scanBannerTxtGreen: { color: colors.forestMid },
   scanBannerTxtYellow: { color: colors.warn },
   scanBannerTxtRed: { color: colors.danger },
+  scanTip: {
+    fontSize: 12,
+    color: colors.muted,
+    lineHeight: 17,
+    marginTop: 8,
+    marginBottom: 4,
+  },
   teeTip: {
     fontSize: 12,
     color: colors.muted,
@@ -1641,6 +1731,8 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   modalSheetTall: { maxHeight: '70%' },
+  /** With keyboard open, use more of the remaining viewport so filtered results stay usable. */
+  modalSheetTallKeyboard: { maxHeight: '92%' },
   modalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
   courseSearchInput: {
     borderWidth: 0.5,
@@ -1651,7 +1743,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.ink,
     marginBottom: 8,
+    flexShrink: 0,
   },
+  courseSearchList: { flexGrow: 0 },
   courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
   keyboardAccessory: {
     flexDirection: 'row',

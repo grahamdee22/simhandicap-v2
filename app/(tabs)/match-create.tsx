@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   AppState,
   Image,
+  Keyboard,
   Linking,
   Modal,
   Platform,
@@ -15,9 +16,11 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useKeyboardBottomInset } from '../../src/lib/useKeyboardBottomInset';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
@@ -167,6 +170,13 @@ export default function MatchCreateScreen() {
   const freshParam = Array.isArray(freshRaw) ? freshRaw[0] : freshRaw;
   const rematchFromParam = Array.isArray(rematchFromRaw) ? rematchFromRaw[0] : rematchFromRaw;
   const insets = useSafeAreaInsets();
+  const keyboardBottomInset = useKeyboardBottomInset();
+  const { height: windowHeight } = useWindowDimensions();
+  const courseListMaxHeight = useMemo(() => {
+    const sheetCap = keyboardBottomInset > 0 ? 0.92 : 0.7;
+    const available = windowHeight - keyboardBottomInset;
+    return Math.max(140, available * sheetCap - 120);
+  }, [windowHeight, keyboardBottomInset]);
   const { gutter, isWide } = useResponsive();
   const { user } = useAuth();
   const groups = useAppStore((s) => s.groups);
@@ -1410,9 +1420,30 @@ export default function MatchCreateScreen() {
           transparent
           onRequestClose={() => setCourseOpen(false)}
         >
-          <View style={styles.modalRoot}>
-            <Pressable style={styles.modalBackdropPress} onPress={() => setCourseOpen(false)} />
-            <View style={[styles.modalSheet, styles.modalSheetTall, { paddingBottom: insets.bottom + 16 }]}>
+          <View
+            style={[
+              styles.modalRoot,
+              { paddingBottom: keyboardBottomInset > 0 ? keyboardBottomInset : 0 },
+            ]}
+          >
+            <Pressable
+              style={styles.modalBackdropPress}
+              onPress={() => {
+                Keyboard.dismiss();
+                setCourseOpen(false);
+              }}
+            />
+            <View
+              style={[
+                styles.modalSheet,
+                styles.modalSheetTall,
+                keyboardBottomInset > 0 && styles.modalSheetTallKeyboard,
+                {
+                  paddingBottom:
+                    keyboardBottomInset > 0 ? 12 : insets.bottom + 16,
+                },
+              ]}
+            >
               <Text style={styles.modalTitle}>Course</Text>
               <TextInput
                 style={styles.courseSearchInput}
@@ -1422,8 +1453,16 @@ export default function MatchCreateScreen() {
                 placeholderTextColor={colors.subtle}
                 autoCapitalize="none"
                 autoCorrect={false}
+                clearButtonMode="while-editing"
+                returnKeyType="search"
+                blurOnSubmit={false}
               />
-              <ScrollView keyboardShouldPersistTaps="handled" nestedScrollEnabled>
+              <ScrollView
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                nestedScrollEnabled
+                style={[styles.courseSearchList, { maxHeight: courseListMaxHeight }]}
+              >
                 {coursesForPicker.length === 0 ? (
                   <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
                 ) : (
@@ -1432,6 +1471,7 @@ export default function MatchCreateScreen() {
                       key={c.id}
                       style={styles.modalRow}
                       onPress={() => {
+                        Keyboard.dismiss();
                         setCourseId(c.id);
                         const teesPick = getCourseTees(c, platform);
                         if (c.confident === false && teesPick.length > 0) {
@@ -1742,6 +1782,7 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   modalSheetTall: { maxHeight: '70%' },
+  modalSheetTallKeyboard: { maxHeight: '92%' },
   modalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
   courseSearchInput: {
     borderWidth: 0.5,
@@ -1752,7 +1793,9 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.ink,
     marginBottom: 8,
+    flexShrink: 0,
   },
+  courseSearchList: { flexGrow: 0 },
   courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
   modalRow: {
     flexDirection: 'row',

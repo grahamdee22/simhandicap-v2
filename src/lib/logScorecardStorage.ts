@@ -1,15 +1,21 @@
 /**
  * Upload GS Pro scorecard screenshots for round-log parsing.
- * Path: `{userId}/log/scorecard.jpg` in bucket `match-scorecards`.
+ * Path: `log/{userId}/scorecard.jpg` in bucket `match-scorecards`.
  */
 
-import { uploadMatchScorecardScreenshot } from './matchScorecardStorage';
+import {
+  uploadMatchScorecardScreenshot,
+  type ScorecardUploadDiag,
+} from './matchScorecardStorage';
 
 export async function uploadLogScorecardForParse(params: {
   userId: string;
   localUri: string;
   accessToken?: string;
-}): Promise<{ signedUrl: string; path: string } | { error: string }> {
+}): Promise<
+  | { signedUrl: string; path: string; diag?: ScorecardUploadDiag }
+  | { error: string; diag?: ScorecardUploadDiag }
+> {
   return uploadMatchScorecardScreenshot({
     matchId: 'log',
     userId: params.userId,
