@@ -7,7 +7,7 @@ import {
   type ParsedPracticeSession,
 } from '../_shared/practiceCsv.ts';
 
-const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+const ANTHROPIC_MODEL = 'claude-sonnet-5';
 const BUCKET = 'practice-analysis-csvs';
 const MAX_CSV_BYTES = 4 * 1024 * 1024;
 const MAX_BODY_BYTES = MAX_CSV_BYTES + 256 * 1024;

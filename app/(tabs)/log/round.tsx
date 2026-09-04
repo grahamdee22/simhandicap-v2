@@ -457,19 +457,6 @@ export default function LogRoundScreen() {
           : await ImagePicker.launchImageLibraryAsync(pickerOpts);
       if (result.canceled || !result.assets[0]) return;
 
-      const asset = result.assets[0];
-      // TEMP: Scan Scorecard HEIC diagnostic — remove after failure is diagnosed.
-      console.log('[scorecard-diag] picker asset', {
-        source,
-        uriTail: asset.uri?.slice(-80),
-        fileName: asset.fileName ?? null,
-        mimeType: asset.mimeType ?? null,
-        type: asset.type ?? null,
-        width: asset.width,
-        height: asset.height,
-        fileSize: asset.fileSize ?? null,
-      });
-
       setScanBusy(true);
       setScanBanner(null);
 
@@ -478,25 +465,14 @@ export default function LogRoundScreen() {
 
       const up = await uploadLogScorecardForParse({
         userId: user.id,
-        localUri: asset.uri,
+        localUri: result.assets[0].uri,
         accessToken: token,
       });
       if ('error' in up) {
         setScanBusy(false);
-        console.warn('[scorecard-diag] upload error', up.error, up.diag ?? null);
-        showAppAlert(
-          'Upload failed',
-          `${up.error}${
-            up.diag?.chosen
-              ? `\n\nDiag: ${up.diag.chosen.width}×${up.diag.chosen.height}, ${up.diag.chosen.bytes} bytes, jpegMagic=${up.diag.chosen.jpegMagicOk}`
-              : ''
-          }`
-        );
+        showAppAlert('Upload failed', up.error);
         return;
       }
-
-      console.log('[scorecard-diag] upload ok — open converted JPEG:', up.signedUrl);
-      console.log('[scorecard-diag] conversion summary', up.diag?.chosen ?? null);
 
       const parsed = await invokeParseScorecard({
         imageUrl: up.signedUrl,
@@ -505,26 +481,10 @@ export default function LogRoundScreen() {
       });
       setScanBusy(false);
 
-      console.log('[scorecard-diag] parse result', {
-        success: parsed.success,
-        confidence: parsed.confidence,
-        errors: parsed.errors,
-        error: parsed.error,
-        data: parsed.data,
-        raw_course_name: parsed.raw_course_name,
-      });
-
       const applied = applyParseScorecardToLogForm(parsed, courseTees.map((t) => t.name));
       setScanBanner(applied.banner);
 
-      if (applied.banner === 'failed') {
-        // Surface the converted image URL so Graham can open it and check legibility.
-        showAppAlert(
-          'Scan failed — check converted image',
-          `Open this URL on your phone/laptop to see what was uploaded after HEIC→JPEG:\n\n${up.signedUrl}\n\nAlso check Metro logs for [scorecard-diag] and Storage path log/${user.id}/scorecard.jpg (+ scorecard-diag.json).`
-        );
-        return;
-      }
+      if (applied.banner === 'failed') return;
 
       if (applied.grossScore != null) setGrossScore(applied.grossScore);
       if (applied.putting) setPutting(applied.putting);

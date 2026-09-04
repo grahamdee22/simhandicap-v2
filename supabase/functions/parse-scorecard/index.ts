@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { corsHeaders, jsonResponse } from '../_shared/http.ts';
 
-const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+const ANTHROPIC_MODEL = 'claude-sonnet-5';
 
 const EXTRACT_PROMPT = `You are analyzing a GS Pro golf simulator scorecard screenshot.
 
@@ -262,7 +262,6 @@ Deno.serve(async (req) => {
 
     const imageRes = await fetch(imageUrl);
     if (!imageRes.ok) {
-      console.error('[parse-scorecard][diag] image fetch failed', imageRes.status, imageUrl.slice(0, 120));
       return jsonResponse({
         success: false,
         confidence: 'low',
@@ -279,23 +278,6 @@ Deno.serve(async (req) => {
       : contentType.includes('webp')
         ? 'image/webp'
         : 'image/jpeg';
-
-    const magicHex = [...imageBytes.slice(0, 4)]
-      .map((b) => b.toString(16).padStart(2, '0'))
-      .join(' ');
-    const jpegMagicOk =
-      imageBytes.length >= 3 &&
-      imageBytes[0] === 0xff &&
-      imageBytes[1] === 0xd8 &&
-      imageBytes[2] === 0xff;
-    // TEMP DIAG — remove after Scan Scorecard HEIC investigation.
-    console.log('[parse-scorecard][diag] image received', {
-      bytes: imageBytes.length,
-      contentType,
-      mediaType,
-      magicHex,
-      jpegMagicOk,
-    });
 
     let binary = '';
     for (let i = 0; i < imageBytes.length; i++) {
@@ -343,17 +325,9 @@ Deno.serve(async (req) => {
     const anthropicJson = await anthropicRes.json();
     const textBlock = anthropicJson?.content?.find((b: { type?: string }) => b.type === 'text');
     const rawText = typeof textBlock?.text === 'string' ? textBlock.text : '';
-    // TEMP DIAG — raw model output for hard-fail cases.
-    console.log('[parse-scorecard][diag] anthropic raw text', rawText.slice(0, 2000));
-    console.log('[parse-scorecard][diag] anthropic stop', {
-      stop_reason: anthropicJson?.stop_reason ?? null,
-      usage: anthropicJson?.usage ?? null,
-      model: anthropicJson?.model ?? ANTHROPIC_MODEL,
-    });
     const extracted = parseAiJson(rawText);
 
     if (!extracted) {
-      console.error('[parse-scorecard][diag] JSON parse failed from model text');
       return jsonResponse({
         success: false,
         confidence: 'low',
@@ -366,14 +340,6 @@ Deno.serve(async (req) => {
     const { data, errors, fieldFailures } = mapExtract(extracted, courseTees);
     const confidence = confidenceFromFailures(fieldFailures);
     const hasScore = data.total_score != null;
-    console.log('[parse-scorecard][diag] mapped', {
-      hasScore,
-      confidence,
-      fieldFailures,
-      data,
-      errors,
-      raw_course_name: extracted.raw_course_name ?? null,
-    });
 
     return jsonResponse({
       success: hasScore,

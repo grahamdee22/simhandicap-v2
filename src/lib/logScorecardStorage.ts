@@ -3,19 +3,13 @@
  * Path: `log/{userId}/scorecard.jpg` in bucket `match-scorecards`.
  */
 
-import {
-  uploadMatchScorecardScreenshot,
-  type ScorecardUploadDiag,
-} from './matchScorecardStorage';
+import { uploadMatchScorecardScreenshot } from './matchScorecardStorage';
 
 export async function uploadLogScorecardForParse(params: {
   userId: string;
   localUri: string;
   accessToken?: string;
-}): Promise<
-  | { signedUrl: string; path: string; diag?: ScorecardUploadDiag }
-  | { error: string; diag?: ScorecardUploadDiag }
-> {
+}): Promise<{ signedUrl: string; path: string } | { error: string }> {
   return uploadMatchScorecardScreenshot({
     matchId: 'log',
     userId: params.userId,

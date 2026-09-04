@@ -1,6 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
-const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+const ANTHROPIC_MODEL = 'claude-sonnet-5';
 const SCORECARD_PROMPT =
   'You are analyzing a golf simulator scorecard screenshot. Extract the following information and return ONLY a JSON object with no other text: total gross score, course name (if visible), and whether this appears to be a legitimate simulator scorecard. Format: { "verified": boolean, "extracted_score": number, "extracted_course": string, "confidence": "high" | "medium" | "low", "notes": string }';
 

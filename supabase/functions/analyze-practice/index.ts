@@ -5,7 +5,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { corsHeaders, jsonResponse } from '../_shared/http.ts';
 
-const ANTHROPIC_MODEL = 'claude-sonnet-4-20250514';
+const ANTHROPIC_MODEL = 'claude-sonnet-5';
 const BUCKET = 'practice-analysis-images';
 
 const EXTRACT_PROMPT = `You are analyzing a photo of a golf simulator practice / driving-range stats screen.
