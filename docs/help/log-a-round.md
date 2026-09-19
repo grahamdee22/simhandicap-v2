@@ -31,6 +31,8 @@ Tap **Sim platform** and choose one of:
 - GSPro
 - Garmin
 
+Platform itself is **not** a separate difficulty multiplier. It mainly changes pin labels/options and which tee rating/slope rows you see for the course. The difficulty product uses putting × pin × wind × mulligans × the sim baseline only (see [SimCap handicap index](./simcap-handicap-index.md)).
+
 ### 2. Course
 
 Tap **Course**, search by name if needed, and pick from the list.
@@ -53,6 +55,8 @@ If the platform is **GSPro**, you’ll see **Scan Scorecard 📷**.
 Use **Date played**.
 
 Hint text: *Used for your index timeline and recent rounds order.*
+
+The picker allows calendar years from **2018** through **current year + 1**. It does not strongly block unusual past or near-future dates beyond that year range and valid day-of-month clamping.
 
 ### 5. Tee
 
@@ -125,7 +129,7 @@ Changing platform can reset pin if the previous choice isn’t available.
 
 Before saving you’ll see:
 
-- **Difficulty modifier** — based on putting, pins, wind, and mulligans
+- **Difficulty modifier** — based on putting, pins, wind, and mulligans (not platform)
 - **Adjusted differential** — what feeds your SimCap index
 - **Expected differential** — after you already have at least one counting round
 - Optionally: **Shoot N or better to improve your index**
@@ -140,14 +144,10 @@ If you’re in an eligible active tournament, you’ll see **Active Tournaments*
 
 Extra notes may appear for Scramble or Best Ball.
 
+**Scramble-only and your index:** if you opt into Scramble and do **not** also opt into any format that counts for the index (Stroke Play / Best Ball / Match Play), the log path sets a local `excludesFromSimcapIndex` flag so the round should not change your SimCap index in that session. That flag is **not** written to the `rounds` table and is **not** restored when rounds are fetched from Supabase — after a sync/refetch, a scramble-only round is treated as a normal counting round. Prefer not relying on scramble-only exclusion across devices or after a full reload until that is fixed in the product.
+
 ### 13. Save
 
 Tap **Save round** (or **Save changes** if you’re editing).
 
 Hint under the button: saves to your SimCap account, opens Round analysis, and updates your sim index, home chart, and profile.
-
-## Notes / unclear behavior
-
-- Platform itself doesn’t add a separate multiplier. It mainly changes pin labels/options and can change which tee rating/slope data you see.
-- Date validation mainly checks that a date was picked in the expected format; unusual future/past dates aren’t strongly blocked beyond the picker.
-- If you apply a round only to Scramble, the app intends that round not to affect your SimCap index. That exclusion is not clearly guaranteed after every sync path, so if index math looks wrong after a scramble-only log, treat persistence as uncertain.

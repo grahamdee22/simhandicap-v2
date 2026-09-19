@@ -17,6 +17,7 @@ import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import {
   abandonMatch,
+  completeStrokeMatch,
   fetchMatchParticipantProfiles,
   fetchMatchPlayerDisplayNames,
   getMatchById,
@@ -26,7 +27,6 @@ import {
   reactionSentOnOpponentRow,
   resolveMatchAccessToken,
   setMatchHoleReaction,
-  updateMatchById,
   upsertMatchHoleScore,
   type DbMatchHoleRow,
   type DbMatchRow,
@@ -335,19 +335,16 @@ export default function MatchScoreScreen() {
         let winner_id: string | null = null;
         if (totalNet1 < totalNet2) winner_id = m.player_1_id;
         else if (totalNet2 < totalNet1) winner_id = m.player_2_id;
-        const res = await updateMatchById(
+        const res = await completeStrokeMatch(
           m.id,
           {
-            status: 'complete',
-            player_1_net_score: totalNet1,
-            player_2_net_score: totalNet2,
-            winner_id,
-            player_1_finished: true,
-            player_2_finished: true,
+            player1Net: totalNet1,
+            player2Net: totalNet2,
+            winnerId: winner_id,
           },
           (await resolveMatchAccessToken()) ?? undefined
         );
-        if (!res.error && res.data?.status === 'complete') {
+        if (res.ok) {
           router.replace(`/(tabs)/match-results/${m.id}` as never);
         }
       } finally {

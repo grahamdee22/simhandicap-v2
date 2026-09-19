@@ -468,13 +468,7 @@ export function netScoreForLeagueRound(gross: number, useHandicap: boolean, simI
 }
 
 /** Rounds that count in standings (opted in + hole scorecard complete). */
-export function leagueRoundsForStandings(rounds: DbLeagueRoundRow[]): DbLeagueRoundRow[] {
-  return rounds.filter(
-    (r) =>
-      r.player_opted_in === true &&
-      (r.hole_entry_status === 'complete' || r.hole_entry_status == null)
-  );
-}
+export { leagueRoundsForStandings } from './computeLeagueStandings';
 
 /** Active tournaments the user can apply a round to (by group membership + league entry). */
 export async function fetchActiveTournamentsForUser(params: {

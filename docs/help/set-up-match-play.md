@@ -4,7 +4,7 @@ This covers **Match Play** on the **Social** tab.
 
 Important: despite the name, these challenges are **two-player net stroke play**. Both players enter gross scores, SimCap applies handicap strokes, and the lower total net score wins. Equal nets are a tie. This is not traditional hole-by-hole match play.
 
-If you want a **group tournament Match Play bracket**, see [Create and run a tournament](./create-and-run-a-tournament.md). That is a separate feature.
+If you want a **group tournament Match Play bracket**, see [Create and run a tournament](./create-and-run-a-tournament.md). That feature is separate and currently decides holes with **gross** hole scores, not Social-style net stroke totals.
 
 ## Where to start
 
@@ -47,13 +47,15 @@ For open challenges, also choose:
 - **Now** — goes live after you post (with setup photo)
 - **Later** — schedule a go-live time (from now through **30 days**). When it goes live, you’ll upload your setup photo before it appears in the active feed.
 
+**Scheduled “Later” promotion:** due scheduled challenges are promoted by the `process_future_open_challenges` RPC, which runs when a signed-in user loads the Match Play hub on Social (and via a dev-only manual trigger). There is no separate always-on server cron in the app code — progress depends on someone hitting that path after `scheduled_for`.
+
 ### 2. Opponent (direct only)
 
 Pick someone from your groups. You’ll see their index and which group they share with you.
 
 If you don’t have group members yet, create or join a crew first.
 
-Even though Match Play is described as challenging any SimCap golfer, the direct-challenge picker currently only lists people you already share a group with.
+Even though Match Play copy mentions challenging any SimCap golfer, the **direct-challenge picker only lists people you already share a group with**. Open challenges are the path for non-crew opponents.
 
 Limits that can block sending:
 
@@ -104,6 +106,10 @@ Tap **Choose photo** (or **Change photo**).
 
 Future open challenges skip this until go-live time.
 
+Release builds require a settings photo for create/accept flows that need one. **Development builds** can skip the screenshot (`ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__`). Don’t rely on skipping in normal use.
+
+**Upload failure:** the match row is inserted **before** the photo upload. If upload fails after create/accept, the challenge can still exist without a photo URL; the UI alerts you and returns to Social. Recheck the challenge if something looks incomplete.
+
 ### 7. Review & send
 
 Review opponent/visibility, course, tee, holes, and conditions, then tap:
@@ -128,7 +134,7 @@ You keep the posted conditions and holes; you only choose your own tee/platform 
 ## Accept an open challenge
 
 1. Open **Open challenge feed**.
-2. Optionally use filters for handicap range, course, and simulator platform.
+2. Optionally use filters for handicap range, course, and simulator platform. Filters are client-side; an empty feed often means filters are hiding rows — clear them and try again.
 3. Under **Open now**, tap a challenge for details.
 4. Tap **Accept challenge**, then complete:
    - **Your tee**
@@ -139,7 +145,7 @@ You keep the posted conditions and holes; you only choose your own tee/platform 
 
 **Scheduled challenges** say **Coming soon — not yet open for acceptance**.
 
-Important side effect: when someone accepts one of your open challenges, your other unclaimed open challenges can be cancelled automatically. The create flow lets you post up to three, but accepting one may clear the others.
+**Side effect:** when someone successfully accepts one of your open challenges, `accept_open_challenge` deletes your other unclaimed open challenges in the same transaction. The create flow lets you post up to three, but accepting one clears the others.
 
 ## Play and finish the match
 
@@ -173,14 +179,8 @@ Results show winner or tie, gross and net totals, hole-by-hole scores, and **Rem
 
 You may also see **Save this round to your SimCap index?** with **Skip** or **Save to index**.
 
-## Notes / unclear behavior
+**Save to index** builds a normal logged round using **today’s date** and your **current preferred logging platform** from Profile — not the match’s played conditions date, and not necessarily the platform chosen for the match. Review before saving if that matters for your index.
 
-- Social Match Play is net stroke play. Tournament Match Play is a different bracket feature and currently compares **gross** hole scores.
-- Direct challenges currently require a shared group, even though the feature copy mentions any SimCap golfer.
-- Scheduled “Later” challenges move toward go-live when the Match Play section on Social is loaded by a signed-in user. There may not be a fully independent always-on timer.
-- If a required setup photo fails to upload after the challenge is created or accepted, the match can still exist. Recheck the challenge on Social if something looks incomplete.
-- Accepting one open challenge can cancel the poster’s other open challenges.
-- Profile **W–L–D** clearly updates for abandons/forfeits. Whether normal completed wins, losses, and draws always update that same record is not clearly reliable in the current implementation.
-- **Save to index** uses today’s date and your current preferred logging platform; it may not preserve the exact platform chosen during the match.
-- Release builds expect settings photos; some development builds can skip them. Don’t rely on skipping in normal use.
-- Open-feed filters can hide challenges. If the feed looks empty, clear filters and try again.
+### Profile W–L–D
+
+Profile **match_wins / match_losses / match_draws** are only updated by the **abandon** path today: abandon increments the abandoner’s `match_losses` and `match_forfeits`. No client or RPC path increments `match_wins` or `match_draws` when a match completes normally. Treat the Profile W–L–D line as reliable for forfeits/abandons, not as a full completed-match record.

@@ -1,6 +1,6 @@
 # How the SimCap handicap index is calculated
 
-Your **Sim handicap index** on Home is built from the rounds you log. It is inspired by World Handicap System ideas, but it is SimCap’s own formula with simulator-condition adjustments.
+Your **Sim handicap index** on Home is built from the rounds you log. It is inspired by World Handicap System ideas, but it is SimCap’s own formula with simulator-condition adjustments — **not** a full copy of every current WHS rule (for example, it always uses “best up to 8 of last 20 × 0.96” rather than the full staged WHS score-count tables).
 
 ## The short version
 
@@ -16,9 +16,9 @@ That result is your SimCap index.
 
 Most normal logged rounds count.
 
-A round applied **only** to a Scramble tournament is intended **not** to count toward your index. Stroke Play and Best Ball tournament rounds do count.
-
 Soft-deleted / inactive rounds don’t count.
+
+**Scramble-only rounds:** the log screen can set a local `excludesFromSimcapIndex` flag when a round is applied only to Scramble (and not to any index-counting tournament). Index math in the store respects that flag. The flag is **not** persisted on the `rounds` row and is dropped on fetch from Supabase, so after sync the same round counts like any other. Stroke Play and Best Ball tournament rounds are intended to count.
 
 ## Step 1: Raw differential
 
@@ -31,7 +31,9 @@ For each round:
 
 ## Step 2: Difficulty modifier
 
-SimCap multiplies several condition factors together, then applies a universal sim baseline:
+SimCap multiplies several condition factors together, then applies a universal sim baseline.
+
+**Platform is not a factor** in this product. Choosing Trackman vs GSPro etc. does not add a separate multiplier; it mainly changes pin labels and tee data.
 
 **Putting mode**
 
@@ -132,7 +134,4 @@ While logging:
 
 ## Notes / unclear behavior
 
-- The app describes this as WHS-style. It is **not** a full copy of every current World Handicap System rule (for example, it always uses “best up to 8 of last 20 × 0.96” rather than the full staged WHS score-count tables).
-- Platform choice itself is not a separate multiplier. It mainly affects pin labels and tee data.
-- If a round detail screen says a differential is outside the best 8 / 20, that label can disagree with index math in edge cases that involve excluded tournament rounds. Trust the overall Home index more than that helper label if they conflict.
-- Scramble-only exclusions are intended, but whether that exclusion always survives every sync path is not fully certain in the current implementation.
+- Round detail’s “outside the best 8 / 20” helper uses a local `top8Ids` that ranks **all** rounds in the store by adjusted differential. Home index math uses `roundsForSimcapIndex`, which filters out rounds with `excludesFromSimcapIndex`. Those two sets can disagree when scramble-exclusion flags are present in memory. Trust the Home index over that helper label when they conflict. (This is a code inconsistency, not just missing docs.)

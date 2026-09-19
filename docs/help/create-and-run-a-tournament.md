@@ -10,7 +10,7 @@ Tournaments belong to a group. Only the group **Creator** or an **Admin** can cr
 
 You can create a tournament only when the group doesn’t already show an active one. Members who aren’t managers see **No active tournament** until one exists.
 
-A group can have only one active tournament at a time.
+A group can have only one tournament with `status = active` at a time (create is blocked if any such row exists). The Social list only **shows** a tournament as active when today’s date falls between its start and end dates (`isLeagueActive`). Those two rules interact oddly with future start dates — see [Future start dates](#future-start-dates) below.
 
 ## Create a tournament
 
@@ -79,6 +79,7 @@ Review the summary, then tap **Launch Tournament**.
 
 - Success for most formats: members will see it in their group.
 - Match Play success: **Bracket is ready — lowest index is the #1 seed.**
+- If bracket generation fails, the create flow may say to retry from **Manage tournament**. Manage currently only lists pairings (plus name/end date/end/delete) — there is **no** regenerate-bracket control. Treat a failed bracket launch as needing a new tournament (or a code fix), not a Manage retry.
 
 ## How players enter scores
 
@@ -98,14 +99,24 @@ Review the summary, then tap **Launch Tournament**.
 
 - Pending hole cards show a banner: **Complete your tournament scorecard**. Pending cards don’t count in standings until finished.
 - You can **Finish later** and return from that banner.
-- Scramble note on the log screen: only the designated scorer can apply rounds; scramble won’t affect your SimCap index.
+- Scramble note on the log screen: only the designated scorer can apply rounds; scramble won’t affect your SimCap index (see [Log a round](./log-a-round.md) for the sync caveat on that exclusion).
 - Best Ball note: Best Ball rounds count toward your SimCap index.
+
+**Hole totals vs logged gross:** if the sum of hole scores doesn’t match the gross you first logged, the scorecard still allows submit. A banner explains that tournament scoring uses the hole totals while your SimCap differential keeps the logged gross. Submit does not require the totals to match.
+
+**Best Ball teammate matching:** team hole aggregation groups by the round’s **played date** (`played_at` date). Cards logged on the same calendar date are treated as the same team round.
+
+## How handicap settings actually apply
+
+- **Stroke Play:** **Use SimCap handicap** clearly drives net = gross − effective handicap (when on and an index exists).
+- **Tournament Match Play (bracket):** hole winners are compared with **gross** hole scores (`compareMatchPlayGrossHoles`). The handicap switch does not change that hole-by-hole comparison.
+- **Scramble / Best Ball:** the `calculate-team-hole-scores` edge function always writes `team_net_score` equal to the gross team hole score. Standings helpers accept a `use_handicap` argument but do not apply a separate net adjustment on top of those stored hole totals. Do not expect the handicap switch or Scramble override to change team hole totals in the current implementation.
 
 ## Standings
 
 On Social, the active tournament card shows format, days left, name, optional notes, a short preview, and **See full standings →**.
 
-- **Stroke / Scramble / Best Ball:** ranked by **Low Net** (average of each player’s or team’s best N nets, where N is “rounds that count”).
+- **Stroke / Scramble / Best Ball:** ranked by **Low Net** (average of each player’s or team’s best N nets, where N is “rounds that count”). For Scramble/Best Ball that “net” is currently the same as the stored team hole totals (see above).
 - **Match Play (bracket):** the bracket itself is the standings.
 
 When a tournament completes, non-bracket formats show champion / 2nd / 3rd cards. Past events appear under **Past tournaments**.
@@ -124,10 +135,12 @@ Team rosters can’t be edited after launch. To change teams, create a new tourn
 
 A tournament can also complete automatically when its end date passes, or when every player/team has finished the required counting rounds / bracket final.
 
-## Notes / unclear behavior
+## Future start dates
 
-- If you set a **future start date**, the Social list may hide that tournament until the start date, while the create button can reappear. Creating another may still be blocked because one already exists as active. The tournament detail screen can also label a future-dated event **Completed** before it has started. Treat future-dated tournaments carefully.
-- The **Use SimCap handicap** switch clearly affects Stroke Play net scores. For current Match Play, hole winners are compared using **gross** hole scores. For Scramble / Best Ball hole scoring, handicap / override settings do not clearly change the team hole totals today. If you rely on net team scoring, verify with a test tournament before relying on it for a real event.
-- Best Ball teammates are matched by **played date**. Cards logged on the same date are treated as the same team round.
-- If hole-by-hole totals don’t match the gross you first logged, you can still submit the scorecard. Tournament scoring uses the hole totals; your SimCap differential keeps the logged gross.
-- Match Play creation may say you can retry a failed bracket from Manage tournament, but Manage currently only lists pairings and has no regenerate button.
+If you set a **future start date** while leaving status active:
+
+1. Social’s tournament list uses `isLeagueActive` (today must be ≥ start and ≤ end), so the event may **not** appear as the active card, and **Create Tournament** can reappear for managers.
+2. Create is still blocked if any league row for the group has `status = 'active'`, including that future-dated one.
+3. On the tournament detail screen, `completed` is computed as `status === 'completed' || !isLeagueActive(league)`, so a future-dated active event can show a **Completed** pill before it has started.
+
+Prefer starting tournaments on or before today unless you intentionally want that behavior.

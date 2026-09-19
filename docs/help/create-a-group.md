@@ -10,9 +10,14 @@ Groups let you track handicaps and compete with your regular sim crew. Everythin
 4. In the **New group** window, enter a **Group name**.
 5. Tap **Create**.
 
-You need to be signed in for the group to save to your account.
+**Name rules:** the name only needs to be non-empty after trimming. There is no uniqueness check and no maximum length enforced in the create RPC or UI.
 
-After it creates, the new group appears as a tab under **My Groups**, and you’re added as the first member and **Creator**.
+**Account / sync:**
+
+- When Supabase is configured (normal builds), you must be signed in. Creation goes through the `create_social_group` RPC; unsigned-in attempts fail with a “Not signed in” (or auth) error. There is no local fallback in that path.
+- When Supabase is **not** configured (local/dev without backend), Create saves the group only on the device via the local store — it will not sync to a server.
+
+After a successful create, the new group appears as a tab under **My Groups**, and you’re added as the first member and **Creator**.
 
 ## Invite people
 
@@ -44,8 +49,6 @@ Each group shows:
 - **Admin** — can manage tournaments and use bulk invite tools
 - **Member** — can invite one person at a time, chat, and play in group tournaments/matches
 
-## Notes / things that may surprise you
+## Delete a group
 
-- Group names only need to be non-empty after trimming. There’s no clear uniqueness check or maximum length shown in the app.
-- Deleting a group asks for confirmation and says members, invites, and history will be removed. In the current app, deletion deactivates the group rather than permanently wiping everything. If you need a hard delete confirmed, treat this as unclear in today’s product.
-- Offline / unsigned-in creation may save only on the device and not sync to the server.
+Deleting a group asks for confirmation and warns that members, invites, and history will be removed. In the current product that action is a **soft delete**: the creator RPC sets `social_groups.is_active = false`. The crew disappears from the app; underlying rows are retained, not hard-wiped.

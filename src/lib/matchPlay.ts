@@ -1018,6 +1018,63 @@ export async function abandonMatch(matchId: string, accessToken?: string): Promi
   return { ok: true, error: null };
 }
 
+export type CompleteStrokeMatchResult = {
+  ok: boolean;
+  alreadyComplete?: boolean;
+  error: string | null;
+};
+
+/**
+ * Finalize an active/waiting stroke match (RPC): sets complete + nets + winner, and increments
+ * both players' match_wins / match_losses / match_draws once (profiles RLS cannot do this client-side).
+ */
+export async function completeStrokeMatch(
+  matchId: string,
+  params: {
+    player1Net: number;
+    player2Net: number;
+    winnerId: string | null;
+  },
+  accessToken?: string
+): Promise<CompleteStrokeMatchResult> {
+  const body = {
+    p_match_id: matchId,
+    p_player_1_net: params.player1Net,
+    p_player_2_net: params.player2Net,
+    p_winner_id: params.winnerId,
+  };
+
+  if (accessToken) {
+    const { json, error } = await restRpcPost(accessToken, 'complete_stroke_match', body);
+    if (error) {
+      console.warn('[matchPlay] completeStrokeMatch', error);
+      return { ok: false, error };
+    }
+    const payload = json as { ok?: boolean; already_complete?: boolean; error?: string } | null;
+    if (!payload?.ok) {
+      return { ok: false, error: payload?.error ?? 'Could not complete match' };
+    }
+    return { ok: true, alreadyComplete: !!payload.already_complete, error: null };
+  }
+
+  if (!supabase) return { ok: false, error: 'Supabase is not configured' };
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: 'Not signed in' };
+
+  const { data, error } = await supabase.rpc('complete_stroke_match', body);
+  if (error) {
+    console.warn('[matchPlay] completeStrokeMatch', error.message);
+    return { ok: false, error: error.message };
+  }
+  const payload = data as { ok?: boolean; already_complete?: boolean; error?: string } | null;
+  if (!payload?.ok) {
+    return { ok: false, error: payload?.error ?? 'Could not complete match' };
+  }
+  return { ok: true, alreadyComplete: !!payload.already_complete, error: null };
+}
+
 export type AcceptOpenChallengeResult = { ok: boolean; error: string | null };
 
 export type ProcessFutureOpenChallengesResult = {

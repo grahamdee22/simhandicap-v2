@@ -70,8 +70,10 @@ function windLabel(w: SimRound['wind']): string {
   return 'Strong';
 }
 
+/** Same counting set as Home index math (`roundsForSimcapIndex`). */
 function top8Ids(all: SimRound[]): Set<string> {
-  const chron = [...all].sort((a, b) => {
+  const counting = all.filter((r) => !r.excludesFromSimcapIndex);
+  const chron = [...counting].sort((a, b) => {
     const dt = new Date(a.playedAt).getTime() - new Date(b.playedAt).getTime();
     if (dt !== 0) return dt;
     return a.id.localeCompare(b.id);
@@ -158,7 +160,13 @@ export default function RoundDetailScreen() {
   const vsParTxt =
     vsPar === 0 ? 'Even par' : vsPar > 0 ? `${vsPar} over par` : `${Math.abs(vsPar)} under par`;
 
-  const inTop = top8Ids(rounds).has(r.id);
+  const excludedFromIndex = !!r.excludesFromSimcapIndex;
+  const inTop = !excludedFromIndex && top8Ids(rounds).has(r.id);
+  const indexBadgeSub = excludedFromIndex
+    ? 'Excluded from index'
+    : inTop
+      ? 'Counts toward index'
+      : 'Outside best 8 / 20';
   const filledCard = r.holeScores.length === 18 && r.holeScores.every((h) => h != null);
 
   const onDelete = () => {
@@ -230,7 +238,7 @@ export default function RoundDetailScreen() {
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
                 <Text style={styles.hstatLbl}>Differential</Text>
                 <Text style={styles.hstatVal}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
-                <Text style={styles.hstatSub}>{inTop ? 'Counts toward index' : 'Outside best 8 / 20'}</Text>
+                <Text style={styles.hstatSub}>{indexBadgeSub}</Text>
               </View>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
                 <Text style={styles.hstatLbl}>Index after</Text>
