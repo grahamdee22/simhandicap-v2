@@ -47,10 +47,41 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-async function syncProfileIntoStore(): Promise<void> {
-  const p = await fetchMyProfile();
+async function syncProfileIntoStore(userId?: string, accessToken?: string): Promise<void> {
+  const p = await fetchMyProfile(userId, accessToken);
   const { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged } = useAppStore.getState();
   applyProfileRowToStore(p, { setDisplayName, setPreferredLogPlatform, syncGhinFromProfileIfChanged });
+}
+
+/**
+ * Load rounds / profile / groups for a signed-in user.
+ * Always pass JWT when available so we never call `auth.getUser()` / `getSession()`
+ * under gotrue's navigator lock (that deadlocks web splash after lock-steal recovery).
+ */
+async function hydrateSignedInUserData(
+  userId: string,
+  accessToken: string | undefined,
+  isCancelled?: () => boolean
+): Promise<void> {
+  const token = googleOAuthAccessToken ?? accessToken;
+  const remoteRounds = await fetchMyRoundsForUser(userId, token);
+  if (isCancelled?.()) return;
+  if (remoteRounds !== null) {
+    useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
+  }
+  await syncProfileIntoStore(userId, token);
+  if (isCancelled?.()) return;
+  // Prefer the session JWT; only fall back to getSession outside the auth-lock callback.
+  const groupsToken =
+    token ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+  if (isCancelled?.()) return;
+  await fetchMySocialGroupsIntoStore(userId, groupsToken);
+  if (isCancelled?.()) return;
+  await backfillGroupCreatorsInStore(groupsToken);
+  if (isCancelled?.()) return;
+  await fetchInboundGroupInvitesIntoStore(userId, groupsToken);
+  if (isCancelled?.()) return;
+  useAppStore.getState().recomputeGroupsFromYou();
 }
 
 /** Expo Router may omit route groups from segments; pathname is usually `/sign-in`, `/sign-up`. */
@@ -138,53 +169,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     let cancelled = false;
+    const isCancelled = () => cancelled;
 
     (async () => {
       const { data } = await supabase!.auth.getSession();
       if (cancelled) return;
       await rebindPersistToUser(data.session?.user.id ?? null);
-      if (data.session?.user) {
-        const remoteRounds = await fetchMyRoundsForUser();
-        if (remoteRounds !== null) {
-          useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
-        }
-        await syncProfileIntoStore();
-        const accessToken =
-          googleOAuthAccessToken ?? data.session?.access_token ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
-        await fetchMySocialGroupsIntoStore(data.session?.user?.id, accessToken);
-        await backfillGroupCreatorsInStore(accessToken);
-        await fetchInboundGroupInvitesIntoStore(data.session?.user?.id, accessToken);
-        useAppStore.getState().recomputeGroupsFromYou();
-      }
+      if (cancelled) return;
+      // Unblock splash as soon as we know the session — do not wait on remote hydrate.
       setSession(data.session);
       setLoading(false);
+      if (data.session?.user) {
+        void hydrateSignedInUserData(
+          data.session.user.id,
+          data.session.access_token,
+          isCancelled
+        );
+      }
     })();
 
     const {
       data: { subscription },
-    } = supabase!.auth.onAuthStateChange(async (event, next) => {
-      await rebindPersistToUser(next?.user.id ?? null);
-      const syncProfile =
-        event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED';
-      if (syncProfile && next?.user) {
-        const remoteRounds = await fetchMyRoundsForUser();
-        if (remoteRounds !== null) {
-          useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
-        }
-        await syncProfileIntoStore();
-        const accessToken =
-          googleOAuthAccessToken ?? next?.access_token ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
-        await fetchMySocialGroupsIntoStore(next?.user?.id, accessToken);
-        await backfillGroupCreatorsInStore(accessToken);
-        await fetchInboundGroupInvitesIntoStore(next?.user?.id, accessToken);
-        useAppStore.getState().recomputeGroupsFromYou();
-      } else if (!next?.user) {
-        useAppStore.getState().setInboundGroupInvites([]);
-      }
+    } = supabase!.auth.onAuthStateChange((event, next) => {
+      // CRITICAL: do not await supabase.auth.* (or helpers that call getUser/getSession)
+      // inside this callback. gotrue holds the auth lock and awaits subscribers — nesting
+      // another lock-taking call deadlocks web init (splash forever after lock-steal warning).
+      // https://supabase.com/docs/guides/troubleshooting/why-is-my-supabase-api-call-not-returning-PGzXw0
       setSession((prev) => {
-        if (prev?.user?.id === next?.user?.id) return prev;
+        if (!next) return null;
+        if (
+          prev?.user?.id === next.user?.id &&
+          prev?.access_token === next.access_token &&
+          prev?.expires_at === next.expires_at
+        ) {
+          return prev;
+        }
         return next;
       });
+
+      const userId = next?.user?.id;
+      const accessToken = next?.access_token;
+      const syncProfile =
+        event === 'SIGNED_IN' || event === 'INITIAL_SESSION' || event === 'USER_UPDATED';
+
+      // Defer all awaits off the lock callback stack.
+      setTimeout(() => {
+        if (cancelled) return;
+        void (async () => {
+          await rebindPersistToUser(userId ?? null);
+          if (cancelled) return;
+          if (syncProfile && userId) {
+            await hydrateSignedInUserData(userId, accessToken, isCancelled);
+          } else if (!userId) {
+            useAppStore.getState().setInboundGroupInvites([]);
+          }
+        })();
+      }, 0);
     });
 
     return () => {
@@ -348,14 +388,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshProfile = useCallback(async () => {
     if (!configured || !session) return;
-    const remoteRounds = await fetchMyRoundsForUser();
-    if (remoteRounds !== null) {
-      useAppStore.getState().replaceRoundsFromRemote(remoteRounds);
-    }
-    await syncProfileIntoStore();
-    await fetchMySocialGroupsIntoStore(session.user.id, googleOAuthAccessToken ?? undefined);
-    await fetchInboundGroupInvitesIntoStore(session.user.id, googleOAuthAccessToken ?? undefined);
-    useAppStore.getState().recomputeGroupsFromYou();
+    await hydrateSignedInUserData(
+      session.user.id,
+      googleOAuthAccessToken ?? session.access_token
+    );
   }, [configured, session]);
 
   const value = useMemo<AuthContextValue>(
