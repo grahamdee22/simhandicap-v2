@@ -450,12 +450,27 @@ export default function MatchCreateScreen() {
     [groups, user?.id]
   );
 
+  /** Native 18-hole only — skip on web (no real camera sheet) and for Front/Back 9. */
+  const requiresSettingsPhoto = useMemo(
+    () => Platform.OS !== 'web' && holesChoice === '18',
+    [holesChoice]
+  );
+
   const stepSequence = useMemo(() => {
-    if (challengeKind === 'direct') return [0, 1, 2, 3, 4, 5, 6];
-    return openChallengeMode === 'future' ? [0, 2, 3, 4, 7, 6] : [0, 2, 3, 4, 5, 6];
-  }, [challengeKind, openChallengeMode]);
+    if (challengeKind === 'direct') {
+      return requiresSettingsPhoto ? [0, 1, 2, 3, 4, 5, 6] : [0, 1, 2, 3, 4, 6];
+    }
+    if (openChallengeMode === 'future') return [0, 2, 3, 4, 7, 6];
+    return requiresSettingsPhoto ? [0, 2, 3, 4, 5, 6] : [0, 2, 3, 4, 6];
+  }, [challengeKind, openChallengeMode, requiresSettingsPhoto]);
   const totalSteps = stepSequence.length;
   const screenStep = stepSequence[Math.min(stepIdx, Math.max(0, stepSequence.length - 1))] ?? 0;
+
+  useEffect(() => {
+    if (stepIdx >= stepSequence.length) {
+      setStepIdx(Math.max(0, stepSequence.length - 1));
+    }
+  }, [stepSequence.length, stepIdx]);
 
   const indexByUserId = useMemo(() => {
     const m = new Map<string, number | null>();
@@ -636,12 +651,22 @@ export default function MatchCreateScreen() {
     if (!user || !course) return false;
     if (challengeKind === 'direct' && !opponent) return false;
     if (challengeKind === 'open' && openChallengeMode === 'future') return true;
+    if (!requiresSettingsPhoto) return true;
     const photoUri = settingsImage?.uri;
     const skipPhotoDev =
       ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto && photoUri == null;
     if (photoUri == null && !skipPhotoDev) return false;
     return true;
-  }, [user, course, challengeKind, openChallengeMode, opponent, settingsImage, devSkipSettingsPhoto]);
+  }, [
+    user,
+    course,
+    challengeKind,
+    openChallengeMode,
+    opponent,
+    requiresSettingsPhoto,
+    settingsImage,
+    devSkipSettingsPhoto,
+  ]);
 
   const selectChallengeKind = useCallback(
     async (key: ChallengeKind) => {
@@ -710,7 +735,7 @@ export default function MatchCreateScreen() {
     const skipPhotoDev =
       ALLOW_SKIP_SETTINGS_SCREENSHOT && devSkipSettingsPhoto && photoUri == null;
     const isFutureOpen = challengeKind === 'open' && openChallengeMode === 'future';
-    if (!isFutureOpen && photoUri == null && !skipPhotoDev) return;
+    if (!isFutureOpen && photoUri == null && !skipPhotoDev && requiresSettingsPhoto) return;
     const tee = resolvePlayer1Tee({
       course,
       platform,
@@ -832,6 +857,7 @@ export default function MatchCreateScreen() {
     holesChoice,
     settingsImage,
     devSkipSettingsPhoto,
+    requiresSettingsPhoto,
     devFutureTwoMinuteMode,
     scheduledForDraft,
     rematchSourceMatchId,

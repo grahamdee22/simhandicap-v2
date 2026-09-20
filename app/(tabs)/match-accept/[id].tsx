@@ -597,24 +597,26 @@ export default function MatchAcceptScreen() {
                 </Text>
               </View>
 
-              <Text style={styles.challengerShotTitle}>Challenger&apos;s sim settings</Text>
-              <View style={styles.challengerShotPanel}>
-                {match.player_1_settings_photo_url && !p1SettingsImageError ? (
-                  <Image
-                    source={{ uri: match.player_1_settings_photo_url }}
-                    style={styles.challengerShotImage}
-                    resizeMode="contain"
-                    accessibilityLabel={`${challengerName}'s simulator settings screenshot`}
-                    onError={() => setP1SettingsImageError(true)}
-                  />
-                ) : (
-                  <Text style={styles.challengerShotPlaceholder}>
-                    {match.player_1_settings_photo_url && p1SettingsImageError
-                      ? 'Could not load this image. Ask the challenger to re-post or share their settings another way.'
-                      : 'No settings screenshot was uploaded for this challenge.'}
-                  </Text>
-                )}
-              </View>
+              {match.player_1_settings_photo_url?.trim() ? (
+                <>
+                  <Text style={styles.challengerShotTitle}>Challenger&apos;s sim settings</Text>
+                  <View style={styles.challengerShotPanel}>
+                    {!p1SettingsImageError ? (
+                      <Image
+                        source={{ uri: match.player_1_settings_photo_url }}
+                        style={styles.challengerShotImage}
+                        resizeMode="contain"
+                        accessibilityLabel={`${challengerName}'s simulator settings screenshot`}
+                        onError={() => setP1SettingsImageError(true)}
+                      />
+                    ) : (
+                      <Text style={styles.challengerShotPlaceholder}>
+                        Could not load this image. Ask the challenger to re-post or share their settings another way.
+                      </Text>
+                    )}
+                  </View>
+                </>
+              ) : null}
             </>
           ) : null}
 

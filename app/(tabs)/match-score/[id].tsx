@@ -690,6 +690,7 @@ export default function MatchScoreScreen() {
             {names.p1} vs {names.p2}
           </Text>
 
+          {mySettingsPhotoUrl?.trim() || oppSettingsPhotoUrl?.trim() ? (
           <View style={styles.settingsPhotosRow}>
             <View style={styles.colHole} />
             <Pressable
@@ -751,6 +752,7 @@ export default function MatchScoreScreen() {
               )}
             </Pressable>
           </View>
+          ) : null}
 
           <View style={styles.tableHead}>
             <Text style={[styles.th, styles.colHole]}>Hole</Text>

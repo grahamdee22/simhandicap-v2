@@ -1294,14 +1294,16 @@ export default function LogRoundScreen() {
                     </Pressable>
                   </View>
                 </View>
-                {targetGrossPre != null && targetGrossPre >= 55 && targetGrossPre <= 125 ? (
+                {targetGrossPre != null &&
+                targetGrossPre >= scoreBounds.min &&
+                targetGrossPre <= scoreBounds.max ? (
                   <Text style={styles.predTarget}>
                     Shoot {targetGrossPre} or better to improve your index
                   </Text>
                 ) : (
                   <Text style={styles.predTargetSoft}>
-                    For these conditions, your index benchmark sits outside the usual gross range (55–125). Every stroke
-                    still feeds your rolling differentials.
+                    For these conditions, your index benchmark sits outside the usual gross range (
+                    {scoreBounds.min}–{scoreBounds.max}). Every stroke still feeds your rolling differentials.
                   </Text>
                 )}
               </>
