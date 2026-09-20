@@ -25,6 +25,8 @@ import {
 import type { GhinSnapshot } from '../lib/realVsSim';
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
+import type { HolesPlayed, NineHoleSource } from '../lib/nineHoleRating';
+import { isNineHolePlayed } from '../lib/nineHoleRating';
 
 export type SimRound = {
   id: string;
@@ -41,6 +43,10 @@ export type SimRound = {
   courseRating: number;
   slope: number;
   teeName?: string;
+  /** 18 = full round; front/back = 9-hole counting differential. Defaults to 18 for legacy. */
+  holesPlayed?: HolesPlayed;
+  /** For 9-hole rounds: whether CR/slope was derived (18÷2) or real per-nine data. */
+  nineHoleSource?: NineHoleSource;
   rawDiff: number;
   adjustedDiff: number;
   difficultyModifier: number;
@@ -380,10 +386,11 @@ export const useAppStore = create<AppState>()(
         const baseline = seed
           ? ratingForCourse(seed, input.platform)
           : { rating: input.courseRating, slope: input.slope };
+        const nineHole = isNineHolePlayed(input.holesPlayed);
         const cr =
           typeof input.courseRating === 'number' &&
           Number.isFinite(input.courseRating) &&
-          input.courseRating > 50
+          input.courseRating > (nineHole ? 20 : 50)
             ? input.courseRating
             : baseline.rating;
         const sl =

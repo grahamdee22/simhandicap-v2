@@ -1,5 +1,6 @@
 import { pinDisplayLabel } from './pinPlacement';
 import type { HeadToHead, SimRound } from '../store/useAppStore';
+import { holesPlayedLabel } from './nineHoleRating';
 
 export function formatRoundMeta(r: SimRound): string {
   const wind =
@@ -11,7 +12,9 @@ export function formatRoundMeta(r: SimRound): string {
         ? 'Gimme <5ft'
         : 'Putt everything';
   const pin = pinDisplayLabel(r.pin, r.platform);
-  return `${r.platform} · ${put} · ${pin} · ${wind}`;
+  const holes = holesPlayedLabel(r.holesPlayed);
+  const holesBit = holes ? `${holes} · ` : '';
+  return `${holesBit}${r.platform} · ${put} · ${pin} · ${wind}`;
 }
 
 /** Build a Social “head-to-head” row from a round where only your score is logged. */

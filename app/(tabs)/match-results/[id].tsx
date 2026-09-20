@@ -11,6 +11,7 @@ import { colors } from '../../../src/lib/constants';
 import { localYmdToIso, todayLocalYmd } from '../../../src/lib/dates';
 import {
   buildNewRoundInputFromCompletedMatch,
+  isNineHoleSocialMatch,
   matchIndexRoundStorageKey,
 } from '../../../src/lib/matchPlayIndexRound';
 import {
@@ -451,6 +452,23 @@ export default function MatchResultsScreen() {
         ) : null}
 
         {indexRoundUi === 'prompt' || indexRoundUi === 'saving' ? (
+          isNineHoleSocialMatch(match) ? (
+            <View style={styles.indexPromptCard}>
+              <Text style={styles.indexPromptTitle}>Save to SimCap index</Text>
+              <Text style={styles.indexPromptBody}>
+                9-hole matches can&apos;t be saved to your index from here yet. Log the round on the Log
+                tab if you want it to count.
+              </Text>
+              <Pressable
+                style={[styles.secondaryBtn, styles.indexBtnFlex]}
+                onPress={() => void onSkipSaveToIndex()}
+                accessibilityRole="button"
+                accessibilityLabel="Dismiss"
+              >
+                <Text style={styles.secondaryBtnTxt}>Got it</Text>
+              </Pressable>
+            </View>
+          ) : (
           <View style={styles.indexPromptCard}>
             <Text style={styles.indexPromptTitle}>Save this round to your SimCap index?</Text>
             <Text style={styles.indexPromptBody}>
@@ -481,6 +499,7 @@ export default function MatchResultsScreen() {
               </Pressable>
             </View>
           </View>
+          )
         ) : indexRoundUi === 'saved' ? (
           <Text style={styles.indexSavedNote}>This match is saved to your SimCap index.</Text>
         ) : null}

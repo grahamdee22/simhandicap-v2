@@ -282,7 +282,13 @@ export default function HomeScreen() {
                         day: 'numeric',
                         year: 'numeric',
                       })}{' '}
-                      · Gross {latest.grossScore} · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
+                      · Gross {latest.grossScore}
+                      {latest.holesPlayed === 'front'
+                        ? ' · Front 9'
+                        : latest.holesPlayed === 'back'
+                          ? ' · Back 9'
+                          : ''}{' '}
+                      · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
                     </Text>
                   </View>
                   <View style={styles.latestChevron} pointerEvents="none">

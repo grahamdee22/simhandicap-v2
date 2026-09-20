@@ -228,12 +228,23 @@ export default function RoundDetailScreen() {
             <Text style={[styles.meta, isWide && styles.metaLg]}>
               {r.platform} · {new Date(r.playedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
               {r.teeName ? ` · ${r.teeName}` : ''}
+              {r.holesPlayed === 'front'
+                ? ' · Front 9'
+                : r.holesPlayed === 'back'
+                  ? ' · Back 9'
+                  : ''}
             </Text>
             <View style={[styles.heroStats, isWide && { gap: 12 }]}>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
                 <Text style={styles.hstatLbl}>Gross score</Text>
                 <Text style={styles.hstatVal}>{r.grossScore}</Text>
-                <Text style={styles.hstatSub}>{vsParTxt}</Text>
+                <Text style={styles.hstatSub}>
+                  {r.holesPlayed === 'front' || r.holesPlayed === 'back'
+                    ? r.holesPlayed === 'front'
+                      ? 'Front 9'
+                      : 'Back 9'
+                    : vsParTxt}
+                </Text>
               </View>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
                 <Text style={styles.hstatLbl}>Differential</Text>

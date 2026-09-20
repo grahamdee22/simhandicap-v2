@@ -337,7 +337,13 @@ export default function ProfileScreen() {
                       day: 'numeric',
                       year: 'numeric',
                     })}{' '}
-                    · {latest.grossScore} gross · diff {formatDifferentialDisplay(latest.adjustedDiff)}
+                    · {latest.grossScore} gross
+                    {latest.holesPlayed === 'front'
+                      ? ' · Front 9'
+                      : latest.holesPlayed === 'back'
+                        ? ' · Back 9'
+                        : ''}{' '}
+                    · diff {formatDifferentialDisplay(latest.adjustedDiff)}
                   </Text>
                   <Text style={styles.lastRoundSettings} numberOfLines={2}>
                     {formatRoundMeta(latest)}

@@ -11,6 +11,14 @@ export type CourseTee = {
   slope: number;
   /** Total yardage from the published scorecard when verified; omit if unknown. */
   yards?: number;
+  /**
+   * Optional real Front/Back 9 rating & slope when sourced later.
+   * Until then `getNineHoleRatingSlope` derives from the 18-hole values.
+   */
+  front9Rating?: number;
+  front9Slope?: number;
+  back9Rating?: number;
+  back9Slope?: number;
 };
 
 export type CourseSeed = {

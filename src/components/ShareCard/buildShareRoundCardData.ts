@@ -4,6 +4,7 @@ import {
   formatHandicapIndexDisplay,
   mulliganDisplayLabel,
 } from '../../lib/handicap';
+import { holesPlayedLabel, isNineHolePlayed } from '../../lib/nineHoleRating';
 import { pinDetailLabel } from '../../lib/pinPlacement';
 import type { SimRound } from '../../store/useAppStore';
 import type { ShareRoundCardData } from './types';
@@ -52,7 +53,15 @@ export function buildShareRoundCardData(
   playerName?: string
 ): ShareRoundCardData {
   const course = getCourseById(round.courseId);
-  const parTotal = (course?.pars ?? []).reduce((sum, p) => sum + p, 0) || 72;
+  const pars = course?.pars ?? [];
+  const holes = round.holesPlayed ?? '18';
+  const parSlice =
+    holes === 'front'
+      ? pars.slice(0, 9)
+      : holes === 'back'
+        ? pars.slice(9, 18)
+        : pars;
+  const parTotal = parSlice.reduce((sum, p) => sum + p, 0) || (isNineHolePlayed(holes) ? 36 : 72);
   const scoreToPar = round.grossScore - parTotal;
   const inTop8 = top8Ids(allRounds).has(round.id);
   const indexAfter = round.indexAfter;
@@ -61,6 +70,7 @@ export function buildShareRoundCardData(
     day: 'numeric',
     year: 'numeric',
   });
+  const holesLbl = holesPlayedLabel(holes);
 
   return {
     playerName: playerName?.trim() || undefined,
@@ -71,6 +81,7 @@ export function buildShareRoundCardData(
     simName: round.platform,
     dateLabel,
     teeLabel: round.teeName?.trim() || undefined,
+    holesLabel: holesLbl ?? undefined,
     differential: round.adjustedDiff,
     indexAfter: indexAfter ?? null,
     differentialSubtext: inTop8 ? 'Counts toward index' : 'Outside best 8 / 20',

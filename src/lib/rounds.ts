@@ -84,7 +84,19 @@ export type DbRoundRow = {
   simcap_index_at_time: number | null;
   handicap_source?: string | null;
   excludes_from_simcap_index?: boolean | null;
+  holes_played?: string | null;
+  nine_hole_source?: string | null;
 };
+
+function asHolesPlayed(v: string | null | undefined): '18' | 'front' | 'back' {
+  if (v === 'front' || v === 'back' || v === '18') return v;
+  return '18';
+}
+
+function asNineHoleSource(v: string | null | undefined): 'derived' | 'real' | undefined {
+  if (v === 'derived' || v === 'real') return v;
+  return undefined;
+}
 
 export function dbRowToSimRound(row: DbRoundRow): SimRound {
   const holeScores = normalizeHoleScores(row.hole_scores);
@@ -94,6 +106,7 @@ export function dbRowToSimRound(row: DbRoundRow): SimRound {
     Number(row.differential_version) > 0
       ? Number(row.differential_version)
       : CURRENT_DIFFERENTIAL_VERSION;
+  const holesPlayed = asHolesPlayed(row.holes_played);
   const base: SimRound = {
     id: row.id,
     courseId: row.course_id,
@@ -109,6 +122,8 @@ export function dbRowToSimRound(row: DbRoundRow): SimRound {
     courseRating: row.course_rating,
     slope: row.slope,
     teeName: row.tee_name ?? undefined,
+    holesPlayed,
+    nineHoleSource: asNineHoleSource(row.nine_hole_source),
     rawDiff: row.raw_differential ?? 0,
     adjustedDiff: row.differential,
     difficultyModifier: row.difficulty_modifier,
@@ -176,6 +191,8 @@ function roundToDbInsert(userId: string, r: RoundDbFields) {
     simcap_index_at_time: r.simcapIndexAtTime ?? null,
     handicap_source: r.handicapSource ?? 'verified',
     excludes_from_simcap_index: !!r.excludesFromSimcapIndex,
+    holes_played: r.holesPlayed ?? '18',
+    nine_hole_source: r.nineHoleSource ?? null,
   };
 }
 
@@ -307,6 +324,8 @@ export async function updateRoundInSupabase(
     simcap_index_at_time: round.simcapIndexAtTime ?? null,
     handicap_source: round.handicapSource ?? 'verified',
     excludes_from_simcap_index: !!round.excludesFromSimcapIndex,
+    holes_played: round.holesPlayed ?? '18',
+    nine_hole_source: round.nineHoleSource ?? null,
   };
 
   if (accessToken) {

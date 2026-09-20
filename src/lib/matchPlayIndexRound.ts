@@ -29,6 +29,13 @@ export function matchIndexRoundStorageKey(matchId: string, userId: string): stri
   return `@simcap/match_index_round/${matchId}/${userId}`;
 }
 
+/** True when Social Match Play was Front 9 / Back 9 (Save to index must not use 18-hole CR). */
+export function isNineHoleSocialMatch(
+  match: Pick<DbMatchRow, 'holes' | 'nine_selection'>
+): boolean {
+  return match.holes === 9 || match.nine_selection === 'front' || match.nine_selection === 'back';
+}
+
 export function buildNewRoundInputFromCompletedMatch(args: {
   match: DbMatchRow;
   holesRows: DbMatchHoleRow[];
@@ -41,6 +48,15 @@ export function buildNewRoundInputFromCompletedMatch(args: {
   if (!match.player_2_id) return { ok: false, error: 'Match has no opponent.' };
   if (playerId !== match.player_1_id && playerId !== match.player_2_id) {
     return { ok: false, error: 'You are not a player in this match.' };
+  }
+
+  // Decision 4: do not invent 9-hole differentials via this bridge yet — reject Front/Back 9.
+  if (isNineHoleSocialMatch(match)) {
+    return {
+      ok: false,
+      error:
+        '9-hole matches cannot be saved to your SimCap index yet. Log the round manually on the Log tab if needed.',
+    };
   }
 
   const isP1 = playerId === match.player_1_id;
@@ -80,6 +96,7 @@ export function buildNewRoundInputFromCompletedMatch(args: {
     courseRating: Number(rating),
     slope: Math.round(Number(slope)),
     teeName: teeName.trim(),
+    holesPlayed: '18',
   };
 
   return { ok: true, input };

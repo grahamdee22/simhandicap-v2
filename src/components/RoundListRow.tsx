@@ -53,6 +53,11 @@ export function RoundListRow({
         </View>
         <View style={styles.right}>
           <Text style={[styles.score, isWide && styles.scoreLg]}>{round.grossScore}</Text>
+          {round.holesPlayed === 'front' || round.holesPlayed === 'back' ? (
+            <Text style={styles.holesBadge}>
+              {round.holesPlayed === 'front' ? 'Front 9' : 'Back 9'}
+            </Text>
+          ) : null}
           <Text style={styles.diff}>diff {formatDifferentialDisplay(round.adjustedDiff)}</Text>
         </View>
       </Pressable>
@@ -109,6 +114,14 @@ const styles = StyleSheet.create({
   right: { alignItems: 'flex-end', flexShrink: 0 },
   score: { fontSize: 14, fontWeight: '700', color: colors.ink },
   scoreLg: { fontSize: 16 },
+  holesBadge: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: colors.sage,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginTop: 1,
+  },
   diff: { fontSize: 10, fontWeight: '600', color: colors.sage },
   shareBtn: {
     width: 34,

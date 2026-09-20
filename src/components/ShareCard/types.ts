@@ -7,6 +7,8 @@ export type ShareRoundCardData = {
   simName: string;
   dateLabel: string;
   teeLabel?: string;
+  /** "Front 9" / "Back 9" when applicable. */
+  holesLabel?: string;
   differential: number;
   indexAfter: number | null;
   differentialSubtext?: string;

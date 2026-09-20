@@ -294,7 +294,7 @@ export function patchGroupCreatorInStore(groupId: string, createdByUserId: strin
 }
 
 const ROUNDS_SELECT_FOR_SOCIAL =
-  'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,differential_version,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time,handicap_source,excludes_from_simcap_index';
+  'id,user_id,course_id,course_name,platform,gross_score,hole_scores,putting_mode,pin_placement,wind,mulligans,difficulty_modifier,differential,differential_version,raw_differential,course_rating,slope,tee_name,played_at,created_at,h2h_group_id,h2h_opponent_member_id,h2h_opponent_display_name,simcap_index_at_time,handicap_source,excludes_from_simcap_index,holes_played,nine_hole_source';
 
 function applyLoadedSocialGroupData(
   uid: string,
@@ -626,7 +626,7 @@ export async function fetchMySocialGroupsIntoStore(
     const { data: rr, error: rErr } = await supabase
       .from('rounds')
       .select(
-        'id, user_id, course_id, course_name, platform, gross_score, hole_scores, putting_mode, pin_placement, wind, mulligans, difficulty_modifier, differential, differential_version, raw_differential, course_rating, slope, tee_name, played_at, created_at, h2h_group_id, h2h_opponent_member_id, h2h_opponent_display_name, simcap_index_at_time, excludes_from_simcap_index'
+        'id, user_id, course_id, course_name, platform, gross_score, hole_scores, putting_mode, pin_placement, wind, mulligans, difficulty_modifier, differential, differential_version, raw_differential, course_rating, slope, tee_name, played_at, created_at, h2h_group_id, h2h_opponent_member_id, h2h_opponent_display_name, simcap_index_at_time, excludes_from_simcap_index, holes_played, nine_hole_source'
       )
       .in('user_id', userIds)
       .eq('is_active', true)

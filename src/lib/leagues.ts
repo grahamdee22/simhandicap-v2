@@ -14,6 +14,7 @@ import { fetchTeamHoleScoresForLeague } from './tournamentTeamScores';
 import { resolveTournamentAccessToken } from './tournamentApi';
 import { isHoleByHoleLeagueFormat } from './tournamentTypes';
 import type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
+import { shouldBlockTournamentApplyForHoles } from './nineHoleRating';
 
 export type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
 export { isHoleByHoleLeagueFormat, teamFormatRequires18Holes } from './tournamentTypes';
@@ -527,7 +528,10 @@ export type LeagueRoundRecordResult = {
   needsHoleByHoleEntry: boolean;
 };
 
-/** Record league_round rows only for tournaments the player opted into at log time. */
+/** Record league_round rows only for tournaments the player opted into at log time.
+ * Nine-hole rounds are rejected (Decision 3): Stroke Play nets distort standings vs 18-hole
+ * peers; Scramble/Best Ball hole cards are 18-only. DB trigger also enforces this.
+ */
 export async function recordOptedInLeagueRounds(params: {
   userId: string;
   roundId: string;
@@ -537,8 +541,15 @@ export async function recordOptedInLeagueRounds(params: {
   selections: { leagueId: string; apply: boolean }[];
   displayNames?: Record<string, string>;
   accessToken?: string;
+  /** When front/back, skip all tournament association. */
+  holesPlayed?: '18' | 'front' | 'back';
 }): Promise<LeagueRoundRecordResult[]> {
   const results: LeagueRoundRecordResult[] = [];
+  // Stroke Play nets distort standings vs 18-hole peers; Scramble/Best Ball hole cards
+  // are 18-only. Block all formats here; DB trigger on league_rounds also rejects.
+  if (shouldBlockTournamentApplyForHoles(params.holesPlayed)) {
+    return results;
+  }
   const applyIds = new Set(
     params.selections.filter((s) => s.apply).map((s) => s.leagueId)
   );

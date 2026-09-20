@@ -174,7 +174,9 @@ export function ShareRoundCard({ data }: Props) {
         <ShareBrandLockup />
       </View>
 
-      <Text style={styles.roundComplete}>ROUND COMPLETE</Text>
+      <Text style={styles.roundComplete}>
+        {data.holesLabel ? `${data.holesLabel.toUpperCase()} COMPLETE` : 'ROUND COMPLETE'}
+      </Text>
       <Text
         style={[
           styles.heroScore,

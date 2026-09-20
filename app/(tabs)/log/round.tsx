@@ -68,6 +68,15 @@ import {
 import { targetGrossToImprove } from '../../../src/lib/preRoundPrediction';
 import { latestGhinIndex } from '../../../src/lib/realVsSim';
 import { currentIndexFromRounds, useAppStore, type SimRound } from '../../../src/store/useAppStore';
+import {
+  clampGrossScore,
+  grossScoreBounds,
+  holesPlayedLabel,
+  isNineHolePlayed,
+  nineHoleLoggingUnlocked,
+  ratingSlopeForHolesPlayed,
+  type HolesPlayed,
+} from '../../../src/lib/nineHoleRating';
 
 type DiffInfoKind = 'adjusted' | 'expected' | null;
 
@@ -148,6 +157,7 @@ export default function LogRoundScreen() {
 
   const [platform, setPlatform] = useState<PlatformId>(preferredLogPlatform);
   const [courseId, setCourseId] = useState('pebble');
+  const [holesPlayed, setHolesPlayed] = useState<HolesPlayed>('18');
   const [grossScore, setGrossScore] = useState(72);
   const [putting, setPutting] = useState<PuttingMode>('auto_2putt');
   const [pin, setPin] = useState<PinDay>('thu');
@@ -186,6 +196,7 @@ export default function LogRoundScreen() {
     teePickKey: string;
     customRating: string;
     customSlope: string;
+    holesPlayed: HolesPlayed;
   } | null>(null);
 
   useFocusEffect(
@@ -201,6 +212,7 @@ export default function LogRoundScreen() {
   const resetLogForm = useCallback(() => {
     setPlatform(preferredLogPlatform);
     setCourseId('pebble');
+    setHolesPlayed('18');
     setGrossScore(72);
     setPutting('auto_2putt');
     setPin('thu');
@@ -334,12 +346,17 @@ export default function LogRoundScreen() {
     if (!existing) return;
     setPlatform(existing.platform);
     setCourseId(existing.courseId);
-    setGrossScore(existing.grossScore);
     setPutting(existing.putting);
     setPin(existing.pin);
     setWind(existing.wind);
     setMulligans(normalizeMulligans(existing.mulligans));
     setPlayedDate(isoToLocalYmd(existing.playedAt));
+    const hp =
+      existing.holesPlayed === 'front' || existing.holesPlayed === 'back'
+        ? existing.holesPlayed
+        : '18';
+    setHolesPlayed(hp);
+    setGrossScore(clampGrossScore(existing.grossScore, hp));
     const ec = getCourseById(existing.courseId);
     if (ec) {
       if (ec.confident === false) {
@@ -363,7 +380,6 @@ export default function LogRoundScreen() {
         }
       }
     }
-    setGrossScore(Math.min(120, Math.max(55, existing.grossScore)));
   }, [existing]);
 
   useEffect(() => {
@@ -515,7 +531,12 @@ export default function LogRoundScreen() {
   }, [platform]);
 
   const resolvedTeeRating = useMemo(() => {
-    const resolved = ((): { rating: number; slope: number; teeLabel: string } => {
+    const resolved = ((): {
+      rating: number;
+      slope: number;
+      teeLabel: string;
+      customNine?: boolean;
+    } => {
       if (!resolvedCourse) return { rating: 72, slope: 130, teeLabel: '' as string };
       if (resolvedCourse.source === 'community') {
         const yards = parseInt(yardsPlayed.replace(/,/g, '').trim(), 10);
@@ -539,7 +560,13 @@ export default function LogRoundScreen() {
         const r = parseFloat(customRating.replace(/,/g, '.').trim());
         const s = parseFloat(customSlope.replace(/,/g, '.').trim());
         if (Number.isFinite(r) && Number.isFinite(s) && s > 0) {
-          return { rating: round1(r), slope: Math.round(s), teeLabel: 'Custom' };
+          // Custom entry is the rating/slope for the holes selected (18 or that nine).
+          return {
+            rating: round1(r),
+            slope: Math.round(s),
+            teeLabel: 'Custom',
+            customNine: true,
+          };
         }
         const fb = ratingForCourse(course, platform);
         return { rating: fb.rating, slope: fb.slope, teeLabel: 'Custom' };
@@ -553,6 +580,22 @@ export default function LogRoundScreen() {
     console.log('[log] resolvedTeeRating', resolved.rating, resolved.slope);
     return resolved;
   }, [resolvedCourse, platform, teePickKey, customRating, customSlope, courseTees, yardsPlayed]);
+
+  const effectiveTeeForDiff = useMemo(() => {
+    const base = {
+      rating: resolvedTeeRating.rating,
+      slope: resolvedTeeRating.slope,
+    };
+    if (isNineHolePlayed(holesPlayed) && resolvedTeeRating.customNine) {
+      return {
+        rating: base.rating,
+        slope: base.slope,
+        nineHoleSource: 'real' as const,
+      };
+    }
+    return ratingSlopeForHolesPlayed(base, holesPlayed);
+  }, [resolvedTeeRating, holesPlayed]);
+
   const showTeeSelector =
     resolvedCourse?.source === 'curated' && resolvedCourse.confident !== false;
   const showYardageInput = resolvedCourse?.source === 'community';
@@ -566,7 +609,7 @@ export default function LogRoundScreen() {
   }, [courseSearchQuery, showCommunityInPicker, communityCourses]);
 
   const { rating, slope } = resolvedCourse
-    ? { rating: resolvedTeeRating.rating, slope: resolvedTeeRating.slope }
+    ? { rating: effectiveTeeForDiff.rating, slope: effectiveTeeForDiff.slope }
     : { rating: 72, slope: 130 };
 
   const effectiveGross = grossScore;
@@ -590,12 +633,19 @@ export default function LogRoundScreen() {
   const modPct = Math.min(100, Math.max(0, ((modifier - 0.5) / 0.5) * 100));
 
   const simIndexCurrent = useMemo(() => currentIndexFromRounds(rounds), [rounds]);
+  /** Decision 2: 9-hole logging unlocked once Home would show a non-null SimCap index. */
+  const canLogNineHole = nineHoleLoggingUnlocked(
+    simIndexCurrent,
+    existing != null && isNineHolePlayed(existing.holesPlayed)
+  );
+  const scoreBounds = grossScoreBounds(holesPlayed);
   const expectedDiffPre = useMemo(() => {
     if (simIndexCurrent == null || modifier <= 0 || slope <= 0) return null;
-    let e = (simIndexCurrent * slope) / 113 + (rating - 72);
+    const ratingAnchor = isNineHolePlayed(holesPlayed) ? 36 : 72;
+    let e = (simIndexCurrent * slope) / 113 + (rating - ratingAnchor);
     e *= modifier;
     return Number.isFinite(e) ? round1(e) : null;
-  }, [simIndexCurrent, modifier, rating, slope]);
+  }, [simIndexCurrent, modifier, rating, slope, holesPlayed]);
   const targetGrossPre = useMemo(() => {
     if (simIndexCurrent == null || !resolvedCourse) return null;
     const t = targetGrossToImprove(simIndexCurrent, rating, slope, modifier);
@@ -617,6 +667,7 @@ export default function LogRoundScreen() {
     teePickKey,
     customRating,
     customSlope,
+    holesPlayed,
   };
 
   const onSave = () => {
@@ -637,7 +688,9 @@ export default function LogRoundScreen() {
         return;
       }
 
-      const optedIn = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
+      const optedInRaw = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
+      // 9-hole rounds cannot apply to tournaments (Decision 3) — client guard; DB trigger also rejects.
+      const optedIn = isNineHolePlayed(snap.holesPlayed) ? [] : optedInRaw;
       if (optedIn.length > 0 && snap.course.source === 'community') {
         showAppAlert(
           'Tournament round',
@@ -646,17 +699,38 @@ export default function LogRoundScreen() {
         return;
       }
 
+      if (isNineHolePlayed(snap.holesPlayed)) {
+        const hasIndex =
+          currentIndexFromRounds(useAppStore.getState().rounds) != null ||
+          (snap.existing != null && isNineHolePlayed(snap.existing.holesPlayed));
+        if (!hasIndex) {
+          showAppAlert(
+            'Full 18 first',
+            'Log a full 18-hole round first to establish your SimCap index. You can log 9-hole rounds after that.'
+          );
+          return;
+        }
+      }
+
       const playedAt = localYmdToIso(snap.playedDate);
-      const grossToSave = Math.min(120, Math.max(55, snap.grossScore));
+      const grossToSave = clampGrossScore(snap.grossScore, snap.holesPlayed);
 
       let teeNameSave = snap.course.seed?.defaultTee ?? 'Default';
       let courseRatingSave: number;
       let slopeSave: number;
+      let nineHoleSourceSave: 'derived' | 'real' | undefined;
 
       if (snap.course.source === 'community') {
         const yards = parseInt(snap.yardsPlayed.replace(/,/g, '').trim(), 10);
-        if (!Number.isFinite(yards) || yards < 1000 || yards > 9000) {
-          showAppAlert('Yardage', 'Enter the total yardage you played (about 1,000–9,000).');
+        const yardsMin = isNineHolePlayed(snap.holesPlayed) ? 800 : 1000;
+        const yardsMax = isNineHolePlayed(snap.holesPlayed) ? 5000 : 9000;
+        if (!Number.isFinite(yards) || yards < yardsMin || yards > yardsMax) {
+          showAppAlert(
+            'Yardage',
+            isNineHolePlayed(snap.holesPlayed)
+              ? 'Enter the total yardage you played for that nine (about 800–5,000).'
+              : 'Enter the total yardage you played (about 1,000–9,000).'
+          );
           return;
         }
         const tee = nearestTeeByYards(snap.course.tees, yards);
@@ -664,8 +738,10 @@ export default function LogRoundScreen() {
           showAppAlert('Tee', 'This course has no tee data.');
           return;
         }
-        courseRatingSave = tee.rating;
-        slopeSave = tee.slope;
+        const rs = ratingSlopeForHolesPlayed(tee, snap.holesPlayed);
+        courseRatingSave = rs.rating;
+        slopeSave = rs.slope;
+        nineHoleSourceSave = rs.nineHoleSource ?? undefined;
         teeNameSave = tee.name;
       } else if (snap.course.confident === false && snap.course.seed) {
         const mid = middleCourseTee(snap.course.seed, snap.platform);
@@ -673,22 +749,30 @@ export default function LogRoundScreen() {
           showAppAlert('Tee', 'This course has no tee data.');
           return;
         }
-        courseRatingSave = mid.rating;
-        slopeSave = mid.slope;
+        const rs = ratingSlopeForHolesPlayed(mid, snap.holesPlayed);
+        courseRatingSave = rs.rating;
+        slopeSave = rs.slope;
+        nineHoleSourceSave = rs.nineHoleSource ?? undefined;
         teeNameSave = mid.name;
       } else if (snap.teePickKey === CUSTOM_TEE_ID) {
         const r = parseFloat(snap.customRating.replace(/,/g, '.').trim());
         const s = parseFloat(snap.customSlope.replace(/,/g, '.').trim());
-        if (!Number.isFinite(r) || !Number.isFinite(s) || s < 55 || s > 155 || r < 60 || r > 85) {
+        const nine = isNineHolePlayed(snap.holesPlayed);
+        const rMin = nine ? 28 : 60;
+        const rMax = nine ? 45 : 85;
+        if (!Number.isFinite(r) || !Number.isFinite(s) || s < 55 || s > 155 || r < rMin || r > rMax) {
           showAppAlert(
             'Custom tee',
-            'Enter a valid course rating and slope (rating about 60–85, slope 55–155).'
+            nine
+              ? `Enter the rating and slope for this nine (rating about ${rMin}–${rMax}, slope 55–155).`
+              : 'Enter a valid course rating and slope (rating about 60–85, slope 55–155).'
           );
           return;
         }
         courseRatingSave = round1(r);
         slopeSave = Math.round(s);
         teeNameSave = 'Custom';
+        nineHoleSourceSave = nine ? 'real' : undefined;
       } else if (snap.course.seed) {
         const tees = getCourseTees(snap.course.seed, snap.platform);
         const row = tees.find((t) => t.name === snap.teePickKey);
@@ -696,8 +780,10 @@ export default function LogRoundScreen() {
           showAppAlert('Tee', 'Pick a tee from the list, or choose Custom and enter rating and slope.');
           return;
         }
-        courseRatingSave = row.rating;
-        slopeSave = row.slope;
+        const rs = ratingSlopeForHolesPlayed(row, snap.holesPlayed);
+        courseRatingSave = rs.rating;
+        slopeSave = rs.slope;
+        nineHoleSourceSave = rs.nineHoleSource ?? undefined;
         teeNameSave = row.name;
       } else {
         showAppAlert('Tee', 'Pick a tee from the list.');
@@ -710,6 +796,7 @@ export default function LogRoundScreen() {
           platform: Platform.OS,
           stateGross: snap.grossScore,
           grossToSave,
+          holesPlayed: snap.holesPlayed,
         });
       }
       const base = {
@@ -726,6 +813,8 @@ export default function LogRoundScreen() {
         teeName: teeNameSave,
         courseRating: courseRatingSave,
         slope: slopeSave,
+        holesPlayed: snap.holesPlayed,
+        nineHoleSource: nineHoleSourceSave,
         handicapSource: snap.course.handicapSource,
         ...(snap.existing?.h2hGroupId &&
         snap.existing.h2hOpponentMemberId &&
@@ -783,6 +872,7 @@ export default function LogRoundScreen() {
               })),
               displayNames,
               accessToken: saveAccessToken,
+              holesPlayed: saved.holesPlayed ?? '18',
             });
             const pendingHoleResults = leagueResults.filter((r) => r.needsHoleByHoleEntry);
             const completedLeagueResults = leagueResults.filter((r) => !r.needsHoleByHoleEntry);
@@ -938,6 +1028,48 @@ export default function LogRoundScreen() {
 
           <DatePlayedField value={playedDate} onChange={setPlayedDate} />
 
+          <Text style={styles.sectionLabel}>Holes</Text>
+          <View style={styles.dayRow}>
+            {(
+              [
+                { key: '18' as const, title: '18 holes', sub: 'Full round' },
+                { key: 'front' as const, title: 'Front 9', sub: 'Holes 1–9' },
+                { key: 'back' as const, title: 'Back 9', sub: 'Holes 10–18' },
+              ] as const
+            ).map((h) => {
+              const locked = h.key !== '18' && !canLogNineHole;
+              const on = holesPlayed === h.key;
+              return (
+                <Pressable
+                  key={h.key}
+                  style={[
+                    styles.dayBtn,
+                    on && styles.dayBtnOn,
+                    locked && styles.dayBtnLocked,
+                  ]}
+                  disabled={locked}
+                  onPress={() => {
+                    setHolesPlayed(h.key);
+                    setGrossScore((g) => clampGrossScore(g, h.key));
+                  }}
+                  accessibilityState={{ disabled: locked, selected: on }}
+                >
+                  <Text style={[styles.dayDn, on && styles.dayDnOn, locked && styles.dayDnLocked]}>
+                    {h.title}
+                  </Text>
+                  <Text style={[styles.dayDs, on && styles.dayDsOn, locked && styles.dayDsLocked]}>
+                    {h.sub}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {!canLogNineHole ? (
+            <Text style={styles.teeTip}>
+              Log a full 18 first to unlock 9-hole rounds and establish your SimCap index.
+            </Text>
+          ) : null}
+
           {showYardageInput ? (
             <>
               <Text style={styles.sectionLabel}>Yardage played</Text>
@@ -965,11 +1097,16 @@ export default function LogRoundScreen() {
               </Text>
               <View style={styles.teeChipWrap}>
                 {courseTees.map((t) => {
-                  const yards =
+                  const yardsFull =
                     (typeof t.yards === 'number' && Number.isFinite(t.yards) ? t.yards : undefined) ??
                     (resolvedCourse.source === 'curated' && resolvedCourse.seed
                       ? yardageForCourseTee(resolvedCourse.seed.id, t.name)
                       : undefined);
+                  const chipRs = ratingSlopeForHolesPlayed(t, holesPlayed);
+                  const yards =
+                    yardsFull != null && isNineHolePlayed(holesPlayed)
+                      ? Math.round(yardsFull / 2)
+                      : yardsFull;
                   return (
                   <Pressable
                     key={t.name}
@@ -983,8 +1120,8 @@ export default function LogRoundScreen() {
                     <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
                     <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
                       {yards != null
-                        ? `${t.rating} / ${t.slope} · ${yards.toLocaleString('en-US')} yds`
-                        : `${t.rating} / ${t.slope}`}
+                        ? `${chipRs.rating} / ${chipRs.slope} · ${yards.toLocaleString('en-US')} yds`
+                        : `${chipRs.rating} / ${chipRs.slope}`}
                     </Text>
                   </Pressable>
                   );
@@ -995,19 +1132,25 @@ export default function LogRoundScreen() {
                 >
                   <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>Custom</Text>
                   <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
-                    Your rating / slope
+                    {isNineHolePlayed(holesPlayed)
+                      ? `${holesPlayedLabel(holesPlayed)} rating / slope`
+                      : 'Your rating / slope'}
                   </Text>
                 </Pressable>
               </View>
               {teePickKey === CUSTOM_TEE_ID ? (
                 <View style={styles.teeCustomRow}>
                   <View style={styles.teeCustomField}>
-                    <Text style={styles.teeCustomLbl}>Course rating</Text>
+                    <Text style={styles.teeCustomLbl}>
+                      {isNineHolePlayed(holesPlayed)
+                        ? `${holesPlayedLabel(holesPlayed)} rating`
+                        : 'Course rating'}
+                    </Text>
                     <TextInput
                       style={styles.teeNumInput}
                       value={customRating}
                       onChangeText={setCustomRating}
-                      placeholder="e.g. 72.1"
+                      placeholder={isNineHolePlayed(holesPlayed) ? 'e.g. 36.1' : 'e.g. 72.1'}
                       placeholderTextColor={colors.subtle}
                       keyboardType="decimal-pad"
                       inputAccessoryViewID={Platform.OS === 'ios' ? LOG_ROUND_NUMERIC_ACCESSORY_ID : undefined}
@@ -1036,7 +1179,7 @@ export default function LogRoundScreen() {
             <Pressable
               style={styles.scoreBtn}
               onPress={() => {
-                setGrossScore((g) => Math.max(55, g - 1));
+                setGrossScore((g) => Math.max(scoreBounds.min, g - 1));
               }}
             >
               <Text style={styles.scoreBtnTxt}>−</Text>
@@ -1047,7 +1190,7 @@ export default function LogRoundScreen() {
             <Pressable
               style={styles.scoreBtn}
               onPress={() => {
-                setGrossScore((g) => Math.min(120, g + 1));
+                setGrossScore((g) => Math.min(scoreBounds.max, g + 1));
               }}
             >
               <Text style={styles.scoreBtnTxt}>+</Text>
@@ -1170,7 +1313,10 @@ export default function LogRoundScreen() {
           </View>
         ) : null}
 
-        {!existing && tournamentsReady && activeTournaments.length > 0 ? (
+        {!existing &&
+        tournamentsReady &&
+        activeTournaments.length > 0 &&
+        !isNineHolePlayed(holesPlayed) ? (
           <View style={styles.tournamentSection}>
             <Text style={styles.tournamentSectionTitle}>Active Tournaments</Text>
             {activeTournaments.map((t) => {
@@ -1552,10 +1698,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   dayBtnOn: { backgroundColor: colors.accentSoft, borderColor: colors.accent },
+  dayBtnLocked: { opacity: 0.45 },
   dayDn: { fontSize: 11, fontWeight: '600', color: colors.muted },
   dayDnOn: { color: colors.accentDark },
+  dayDnLocked: { color: colors.subtle },
   dayDs: { fontSize: 9, color: colors.subtle, marginTop: 1 },
   dayDsOn: { color: colors.accent },
+  dayDsLocked: { color: colors.subtle },
   diffWrap: { backgroundColor: colors.bg, borderRadius: 9, padding: 10, marginTop: 12 },
   diffTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline' },
   diffLbl: { fontSize: 11, color: colors.muted },
