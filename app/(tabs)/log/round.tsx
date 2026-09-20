@@ -56,6 +56,10 @@ import {
   scanBannerMessage,
   type ScanBannerKind,
 } from '../../../src/lib/scorecardParseApply';
+import {
+  matchCourseFromScannedName,
+  teeNamesForScannedCourseMatch,
+} from '../../../src/lib/scorecardCourseMatch';
 import { settingsScreenshotPickerOptions } from '../../../src/lib/settingsScreenshotPicker';
 import { supabase, isSupabaseConfigured } from '../../../src/lib/supabase';
 import {
@@ -180,6 +184,13 @@ export default function LogRoundScreen() {
   const tournamentsFetchGen = useRef(0);
   const [scanBusy, setScanBusy] = useState(false);
   const [scanBanner, setScanBanner] = useState<ScanBannerKind>(null);
+  const [scanBannerDetail, setScanBannerDetail] = useState<{
+    detectedCourseName?: string | null;
+    matchedCourseName?: string | null;
+    courseMatchConfidence?: 'exact' | 'fuzzy' | null;
+  } | null>(null);
+  /** Honored once by the courseId→tee sync effect so a scan tee isn't overwritten by the default tee. */
+  const pendingScanTeeRef = useRef<string | null>(null);
   /** Latest form fields for save (deferred save must not read stale render closures). */
   const latestSaveRef = useRef<{
     grossScore: number;
@@ -396,6 +407,20 @@ export default function LogRoundScreen() {
     if (editId) return;
     const resolved = resolveLogCourse(courseId, platform, communityCourses);
     if (!resolved) return;
+
+    const pendingTee = pendingScanTeeRef.current;
+    if (pendingTee) {
+      pendingScanTeeRef.current = null;
+      const hit = resolved.tees.find((t) => t.name === pendingTee);
+      if (hit) {
+        setTeePickKey(hit.name);
+        setCustomRating('');
+        setCustomSlope('');
+        return;
+      }
+      // Scanned tee not on this course — fall through to default.
+    }
+
     if (resolved.source === 'community') {
       setYardsPlayed('');
       if (resolved.tees.length > 0) {
@@ -475,6 +500,7 @@ export default function LogRoundScreen() {
 
       setScanBusy(true);
       setScanBanner(null);
+      setScanBannerDetail(null);
 
       const { data: sessionData } = await supabase!.auth.getSession();
       const token = sessionData.session?.access_token;
@@ -497,21 +523,42 @@ export default function LogRoundScreen() {
       });
       setScanBusy(false);
 
-      const applied = applyParseScorecardToLogForm(parsed, courseTees.map((t) => t.name));
+      const courseMatch = matchCourseFromScannedName(parsed.raw_course_name, communityCourses);
+      const teeNames = courseMatch
+        ? teeNamesForScannedCourseMatch(courseMatch, platform, communityCourses)
+        : courseTees.map((t) => t.name);
+      const applied = applyParseScorecardToLogForm(parsed, teeNames, courseMatch);
       setScanBanner(applied.banner);
+      setScanBannerDetail({
+        detectedCourseName: applied.detectedCourseName,
+        matchedCourseName: applied.matchedCourseName,
+        courseMatchConfidence: applied.courseMatchConfidence,
+      });
 
       if (applied.banner === 'failed') return;
 
+      if (applied.courseId) {
+        if (applied.courseId !== courseId) {
+          if (applied.teePickKey) pendingScanTeeRef.current = applied.teePickKey;
+          setCourseId(applied.courseId);
+          setCustomRating('');
+          setCustomSlope('');
+          setYardsPlayed('');
+        } else if (applied.teePickKey) {
+          setTeePickKey(applied.teePickKey);
+          setCustomRating('');
+          setCustomSlope('');
+        }
+      } else if (applied.teePickKey) {
+        setTeePickKey(applied.teePickKey);
+        setCustomRating('');
+        setCustomSlope('');
+      }
       if (applied.grossScore != null) setGrossScore(applied.grossScore);
       if (applied.putting) setPutting(applied.putting);
       if (applied.pin) setPin(applied.pin);
       if (applied.wind) setWind(applied.wind);
       if (applied.mulligans) setMulligans(normalizeMulligans(applied.mulligans));
-      if (applied.teePickKey) {
-        setTeePickKey(applied.teePickKey);
-        setCustomRating('');
-        setCustomSlope('');
-      }
     };
 
     if (Platform.OS === 'web') {
@@ -524,10 +571,13 @@ export default function LogRoundScreen() {
       { text: 'Camera', onPress: () => void runPick('camera') },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  }, [scanBusy, user?.id, supabaseOn, parseCourseTees, courseTees]);
+  }, [scanBusy, user?.id, supabaseOn, parseCourseTees, courseTees, communityCourses, platform, courseId]);
 
   useEffect(() => {
-    if (!isGsProPlatform(platform)) setScanBanner(null);
+    if (!isGsProPlatform(platform)) {
+      setScanBanner(null);
+      setScanBannerDetail(null);
+    }
   }, [platform]);
 
   const resolvedTeeRating = useMemo(() => {
@@ -1019,7 +1069,7 @@ export default function LogRoundScreen() {
                           : styles.scanBannerTxtGreen,
                     ]}
                   >
-                    {scanBannerMessage(scanBanner)}
+                    {scanBannerMessage(scanBanner, scanBannerDetail ?? undefined)}
                   </Text>
                 </View>
               ) : null}
