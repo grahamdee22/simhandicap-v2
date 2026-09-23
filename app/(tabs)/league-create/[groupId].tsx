@@ -26,7 +26,12 @@ import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, syncLeagueStatuses, type LeagueFormat } from '../../../src/lib/leagues';
 import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
-import { getMatchPlayFormatDisabledMessage } from '../../../src/lib/matchPlayBracket';
+import {
+  getMatchPlayFormatDisabledMessage,
+  MATCH_PLAY_MAX_PLAYERS,
+  MATCH_PLAY_MIN_PLAYERS,
+  MATCH_PLAY_TOO_MANY_PLAYERS_ERROR,
+} from '../../../src/lib/matchPlayBracket';
 import { validateBestBallTeamSizes } from '../../../src/lib/bestBallTournament';
 import {
   computeScrambleTeamIndex,
@@ -53,6 +58,33 @@ import { clearTournamentSectionCache } from '../../../src/lib/tournamentSectionC
 import { useAppStore } from '../../../src/store/useAppStore';
 
 const MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS = 4;
+/** Show roster search once the group is facility-scale. */
+const PLAYER_ROSTER_SEARCH_MIN = 15;
+
+function isTeamFormat(key: LeagueFormat): boolean {
+  return key === 'scramble' || key === 'best_ball';
+}
+
+function playersStepValidationMessage(
+  format: LeagueFormat,
+  selectedCount: number
+): string | null {
+  if (selectedCount < 1) return 'Select at least one player.';
+  if (format === 'match_play') {
+    if (selectedCount > MATCH_PLAY_MAX_PLAYERS) return MATCH_PLAY_TOO_MANY_PLAYERS_ERROR;
+    if (selectedCount < MATCH_PLAY_MIN_PLAYERS) {
+      return `Match Play needs at least ${MATCH_PLAY_MIN_PLAYERS} players (currently ${selectedCount}).`;
+    }
+    if (selectedCount % 2 !== 0) {
+      return `Match Play needs an even number of players (currently ${selectedCount}).`;
+    }
+    return null;
+  }
+  if (isTeamFormat(format) && selectedCount < MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS) {
+    return `Requires at least ${MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS} players (currently ${selectedCount}).`;
+  }
+  return null;
+}
 
 function formatYmdDisplay(ymd: string): string {
   return dateFromYmdLocal(ymd).toLocaleDateString(undefined, {
@@ -62,7 +94,7 @@ function formatYmdDisplay(ymd: string): string {
   });
 }
 
-type WizardStep = 'basic' | 'teamCount' | 'settings' | 'teams' | 'review';
+type WizardStep = 'basic' | 'players' | 'teamCount' | 'settings' | 'teams' | 'review';
 
 function defaultEndDateYmd(): string {
   const d = new Date();
@@ -72,10 +104,6 @@ function defaultEndDateYmd(): string {
 
 const DEFAULT_USE_HANDICAP = true;
 const DEFAULT_PLAYERS_PER_TEAM = 2;
-
-function isTeamFormat(key: LeagueFormat): boolean {
-  return key === 'scramble' || key === 'best_ball';
-}
 
 export default function LeagueCreateScreen() {
   const { groupId: rawGroupId } = useLocalSearchParams<{ groupId: string | string[] }>();
@@ -87,11 +115,16 @@ export default function LeagueCreateScreen() {
   const groups = useAppStore((s) => s.groups);
 
   const group = useMemo(() => groups.find((g) => g.id === groupId), [groups, groupId]);
-  const members = group?.members.filter((m) => m.userId) ?? [];
+  const groupMembers = useMemo(
+    () => group?.members.filter((m) => m.userId) ?? [],
+    [group?.members]
+  );
 
   const [step, setStep] = useState<WizardStep>('basic');
   const [name, setName] = useState('');
   const [format, setFormat] = useState<LeagueFormat>('stroke');
+  const [selectedPlayerIds, setSelectedPlayerIds] = useState<Record<string, boolean>>({});
+  const [playerSearch, setPlayerSearch] = useState('');
   const [startDateYmd, setStartDateYmd] = useState(todayLocalYmd);
   const [endDateYmd, setEndDateYmd] = useState(defaultEndDateYmd);
   const [roundsThatCount, setRoundsThatCount] = useState(4);
@@ -114,11 +147,18 @@ export default function LeagueCreateScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const notesSectionYRef = useRef(0);
 
+  const selectAllGroupMembers = useCallback(() => {
+    const next: Record<string, boolean> = {};
+    for (const m of groupMembers) next[m.userId] = true;
+    setSelectedPlayerIds(next);
+  }, [groupMembers]);
+
   const resetWizard = useCallback(() => {
     handicapTouchedRef.current = false;
     setStep('basic');
     setName('');
     setFormat('stroke');
+    setPlayerSearch('');
     setStartDateYmd(todayLocalYmd());
     setEndDateYmd(defaultEndDateYmd());
     setRoundsThatCount(4);
@@ -133,7 +173,13 @@ export default function LeagueCreateScreen() {
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
     setBusy(false);
-  }, []);
+    const roster = groups.find((g) => g.id === groupId)?.members ?? [];
+    const next: Record<string, boolean> = {};
+    for (const m of roster) {
+      if (m.userId) next[m.userId] = true;
+    }
+    setSelectedPlayerIds(next);
+  }, [groupId, groups]);
 
   useLayoutEffect(() => {
     resetWizard();
@@ -151,13 +197,49 @@ export default function LeagueCreateScreen() {
     }
   }, [step]);
 
-  const teamFormatsDisabled = members.length < MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS;
+  /** Keep selection keys aligned with the group roster (new joins default on). */
+  useEffect(() => {
+    setSelectedPlayerIds((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      const ids = new Set(groupMembers.map((m) => m.userId));
+      for (const m of groupMembers) {
+        if (!(m.userId in next)) {
+          next[m.userId] = true;
+          changed = true;
+        }
+      }
+      for (const id of Object.keys(next)) {
+        if (!ids.has(id)) {
+          delete next[id];
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }, [groupMembers]);
+
+  const playingMembers = useMemo(
+    () => groupMembers.filter((m) => selectedPlayerIds[m.userId] !== false),
+    [groupMembers, selectedPlayerIds]
+  );
+  const playerCount = playingMembers.length;
+
+  /** Format cards on Basic: only block if the group cannot possibly satisfy the format. */
+  const teamFormatsDisabled = groupMembers.length < MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS;
+  const matchPlayFormatCardDisabled = groupMembers.length < MATCH_PLAY_MIN_PLAYERS;
 
   useEffect(() => {
     if (teamFormatsDisabled && isTeamFormat(format)) {
       setFormat('stroke');
     }
   }, [format, teamFormatsDisabled]);
+
+  useEffect(() => {
+    if (matchPlayFormatCardDisabled && format === 'match_play') {
+      setFormat('stroke');
+    }
+  }, [format, matchPlayFormatCardDisabled]);
 
   const isMatchPlay = format === 'match_play';
   const isScramble = format === 'scramble';
@@ -166,17 +248,17 @@ export default function LeagueCreateScreen() {
   const needsTeams = isTeamFormat(format);
   const teamFormat = needsTeams ? (format as TeamFormat) : null;
   const teamSizeSuggestion = useMemo(
-    () => (teamFormat ? suggestPlayersPerTeam(members.length, teamFormat) : null),
-    [teamFormat, members.length]
+    () => (teamFormat ? suggestPlayersPerTeam(playerCount, teamFormat) : null),
+    [teamFormat, playerCount]
   );
   const customPlayersPerTeamError = useMemo(() => {
     if (!teamFormat || playersPerTeamMode !== 'custom') return null;
     return validateCustomPlayersPerTeamInput(
       customPlayersPerTeamInput,
-      members.length,
+      playerCount,
       teamFormat
     );
-  }, [teamFormat, playersPerTeamMode, customPlayersPerTeamInput, members.length]);
+  }, [teamFormat, playersPerTeamMode, customPlayersPerTeamInput, playerCount]);
 
   const teamSizeValid = useMemo(() => {
     if (!teamFormat || !teamSizeSuggestion) return false;
@@ -194,25 +276,26 @@ export default function LeagueCreateScreen() {
     customPlayersPerTeamInput,
     playersPerTeam,
   ]);
-  const matchPlayDisabledMessage = getMatchPlayFormatDisabledMessage(members.length);
+  const matchPlayDisabledMessage = getMatchPlayFormatDisabledMessage(playerCount);
+  const playersStepError = playersStepValidationMessage(format, playerCount);
 
   const seededUserIds = useMemo(
     () =>
-      [...members]
+      [...playingMembers]
         .sort((a, b) => (a.index ?? 99) - (b.index ?? 99))
         .map((m) => m.userId),
-    [members]
+    [playingMembers]
   );
 
   const assignedMemberIds = useMemo(() => new Set(teams.flatMap((t) => t.memberIds)), [teams]);
 
   const unassignedMembers = useMemo(
-    () => members.filter((m) => !assignedMemberIds.has(m.userId)),
-    [members, assignedMemberIds]
+    () => playingMembers.filter((m) => !assignedMemberIds.has(m.userId)),
+    [playingMembers, assignedMemberIds]
   );
   const stepSequence = useMemo((): WizardStep[] => {
-    if (needsTeams) return ['basic', 'teamCount', 'settings', 'teams', 'review'];
-    return ['basic', 'settings', 'review'];
+    if (needsTeams) return ['basic', 'players', 'teamCount', 'settings', 'teams', 'review'];
+    return ['basic', 'players', 'settings', 'review'];
   }, [needsTeams]);
 
   const applyPlayersPerTeam = useCallback(
@@ -231,9 +314,9 @@ export default function LeagueCreateScreen() {
     (pp: number) => {
       setPlayersPerTeamMode('preset');
       setCustomPlayersPerTeamExpanded(false);
-      applyPlayersPerTeam(pp, members.length);
+      applyPlayersPerTeam(pp, playerCount);
     },
-    [applyPlayersPerTeam, members.length]
+    [applyPlayersPerTeam, playerCount]
   );
 
   const openCustomPlayersPerTeam = useCallback(
@@ -241,9 +324,9 @@ export default function LeagueCreateScreen() {
       setPlayersPerTeamMode('custom');
       setCustomPlayersPerTeamExpanded(true);
       setCustomPlayersPerTeamInput(String(defaultPp));
-      applyPlayersPerTeam(defaultPp, members.length);
+      applyPlayersPerTeam(defaultPp, playerCount);
     },
-    [applyPlayersPerTeam, members.length]
+    [applyPlayersPerTeam, playerCount]
   );
 
   useEffect(() => {
@@ -252,19 +335,19 @@ export default function LeagueCreateScreen() {
     if (!hasAnyValid) return;
     if (
       validPreset.length === 0 &&
-      isValidPlayersPerTeam(members.length, teamSizeSuggestion.suggestedCustomDefault, teamFormat)
+      isValidPlayersPerTeam(playerCount, teamSizeSuggestion.suggestedCustomDefault, teamFormat)
     ) {
       setPlayersPerTeamMode('custom');
       setCustomPlayersPerTeamExpanded(true);
       const pp = teamSizeSuggestion.suggestedCustomDefault;
       setCustomPlayersPerTeamInput(String(pp));
-      applyPlayersPerTeam(pp, members.length);
+      applyPlayersPerTeam(pp, playerCount);
       return;
     }
     if (validPreset.length === 0) return;
     const preset = playersPerTeam as (typeof PRESET_PLAYERS_PER_TEAM_OPTIONS)[number];
     if (!validPreset.includes(preset)) {
-      applyPlayersPerTeam(suggestedPlayersPerTeam, members.length);
+      applyPlayersPerTeam(suggestedPlayersPerTeam, playerCount);
     }
   }, [
     teamFormat,
@@ -272,7 +355,7 @@ export default function LeagueCreateScreen() {
     playersPerTeam,
     playersPerTeamMode,
     applyPlayersPerTeam,
-    members.length,
+    playerCount,
   ]);
 
   const stepNumber = Math.max(1, stepSequence.indexOf(step) + 1);
@@ -292,9 +375,9 @@ export default function LeagueCreateScreen() {
   }, [step, stepSequence]);
 
   const allAssigned = useMemo(() => {
-    if (needsTeams) return members.every((m) => assignedMemberIds.has(m.userId));
+    if (needsTeams) return playingMembers.every((m) => assignedMemberIds.has(m.userId));
     return true;
-  }, [needsTeams, members, assignedMemberIds]);
+  }, [needsTeams, playingMembers, assignedMemberIds]);
 
   const emptyTeams = useMemo(() => teams.filter((t) => t.memberIds.length === 0), [teams]);
 
@@ -314,8 +397,74 @@ export default function LeagueCreateScreen() {
     return memberIds[0] ?? null;
   };
 
+  /** Drop deselected players from team drafts. */
+  useEffect(() => {
+    const allowed = new Set(playingMembers.map((m) => m.userId));
+    setTeams((prev) => {
+      let changed = false;
+      const next = prev.map((t) => {
+        const memberIds = t.memberIds.filter((id) => allowed.has(id));
+        if (memberIds.length !== t.memberIds.length) changed = true;
+        return {
+          ...t,
+          memberIds,
+          designatedScorerUserId: syncTeamScorer(t, memberIds),
+        };
+      });
+      return changed ? next : prev;
+    });
+    setSelectedMemberId((id) => (id && allowed.has(id) ? id : null));
+    setAssignedMemberAction((a) => (a && allowed.has(a.userId) ? a : null));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when roster selection changes
+  }, [playingMembers]);
+
+  const filteredGroupMembers = useMemo(() => {
+    const q = playerSearch.trim().toLowerCase();
+    if (!q) return groupMembers;
+    return groupMembers.filter((m) =>
+      m.displayName.replace(' (you)', '').toLowerCase().includes(q)
+    );
+  }, [groupMembers, playerSearch]);
+
+  const allPlayersSelected =
+    groupMembers.length > 0 && groupMembers.every((m) => selectedPlayerIds[m.userId] !== false);
+
+  const togglePlayerSelected = (userId: string) => {
+    setSelectedPlayerIds((prev) => ({
+      ...prev,
+      [userId]: prev[userId] === false,
+    }));
+  };
+
+  const selectAllPlayers = () => selectAllGroupMembers();
+  const deselectAllPlayers = () => {
+    const next: Record<string, boolean> = {};
+    for (const m of groupMembers) next[m.userId] = false;
+    setSelectedPlayerIds(next);
+  };
+
+  const prepareTeamCountFromSelection = () => {
+    if (!needsTeams || !teamFormat) return;
+    const suggestion = suggestPlayersPerTeam(playerCount, teamFormat);
+    setPlayersPerTeamMode('preset');
+    setCustomPlayersPerTeamExpanded(false);
+    setCustomPlayersPerTeamInput('');
+    if (
+      suggestion.validPreset.length === 0 &&
+      isValidPlayersPerTeam(playerCount, suggestion.suggestedCustomDefault, teamFormat)
+    ) {
+      setPlayersPerTeamMode('custom');
+      setCustomPlayersPerTeamExpanded(true);
+      const pp = suggestion.suggestedCustomDefault;
+      setCustomPlayersPerTeamInput(String(pp));
+      applyPlayersPerTeam(pp, playerCount);
+    } else {
+      applyPlayersPerTeam(suggestion.suggestedPlayersPerTeam, playerCount);
+    }
+  };
+
   const runAutoAssignTeams = (randomizeMissingHandicap: boolean) => {
-    const assignMembers = members.map((m) => ({
+    const assignMembers = playingMembers.map((m) => ({
       userId: m.userId,
       handicap: m.index,
     }));
@@ -333,7 +482,7 @@ export default function LeagueCreateScreen() {
   };
 
   const onAutoAssignTeams = () => {
-    const missing = countMembersMissingHandicap(members);
+    const missing = countMembersMissingHandicap(playingMembers);
     if (missing > 0) {
       void confirmAppChoice(
         'Missing handicap',
@@ -435,7 +584,7 @@ export default function LeagueCreateScreen() {
         useHandicap,
         notes: notes.trim() || null,
         createdBy: user.id,
-        members,
+        members: playingMembers,
         matchPlayPairingMethod: isMatchPlay ? 'bracket' : null,
         matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
         scrambleHandicapOverride: isScramble
@@ -526,8 +675,8 @@ export default function LeagueCreateScreen() {
             {TOURNAMENT_FORMAT_COPY.map((f) => {
               const on = format === f.key;
               const needsFour = isTeamFormat(f.key) && teamFormatsDisabled;
-              const needsBracketCount = f.key === 'match_play' && !!matchPlayDisabledMessage;
-              const disabled = needsFour || needsBracketCount;
+              const needsMatchPlayMin = f.key === 'match_play' && matchPlayFormatCardDisabled;
+              const disabled = needsFour || needsMatchPlayMin;
               return (
                 <Pressable
                   key={f.key}
@@ -537,32 +686,7 @@ export default function LeagueCreateScreen() {
                     disabled && styles.formatCardDisabled,
                   ]}
                   disabled={disabled}
-                  onPress={() => {
-                    setFormat(f.key);
-                    if (isTeamFormat(f.key)) {
-                      const fmt = f.key as TeamFormat;
-                      const suggestion = suggestPlayersPerTeam(members.length, fmt);
-                      setPlayersPerTeamMode('preset');
-                      setCustomPlayersPerTeamExpanded(false);
-                      setCustomPlayersPerTeamInput('');
-                      if (
-                        suggestion.validPreset.length === 0 &&
-                        isValidPlayersPerTeam(
-                          members.length,
-                          suggestion.suggestedCustomDefault,
-                          fmt
-                        )
-                      ) {
-                        setPlayersPerTeamMode('custom');
-                        setCustomPlayersPerTeamExpanded(true);
-                        const pp = suggestion.suggestedCustomDefault;
-                        setCustomPlayersPerTeamInput(String(pp));
-                        applyPlayersPerTeam(pp, members.length);
-                      } else {
-                        applyPlayersPerTeam(suggestion.suggestedPlayersPerTeam, members.length);
-                      }
-                    }
-                  }}
+                  onPress={() => setFormat(f.key)}
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.formatTitle, disabled && styles.formatTitleDisabled]}>
@@ -574,8 +698,10 @@ export default function LeagueCreateScreen() {
                         Requires at least {MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS} group members.
                       </Text>
                     ) : null}
-                    {needsBracketCount && matchPlayDisabledMessage ? (
-                      <Text style={styles.formatDisabledNote}>{matchPlayDisabledMessage}</Text>
+                    {needsMatchPlayMin ? (
+                      <Text style={styles.formatDisabledNote}>
+                        Requires at least {MATCH_PLAY_MIN_PLAYERS} group members.
+                      </Text>
                     ) : null}
                   </View>
                   {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
@@ -585,30 +711,85 @@ export default function LeagueCreateScreen() {
             <Pressable
               style={[styles.primaryBtn, !name.trim() && styles.btnDisabled]}
               disabled={!name.trim()}
+              onPress={() => goToStep('players')}
+            >
+              <Text style={styles.primaryBtnTxt}>Continue</Text>
+            </Pressable>
+          </>
+        ) : null}
+
+        {step === 'players' ? (
+          <>
+            <Text style={styles.head}>Who's playing?</Text>
+            <Text style={styles.helper}>
+              Everyone in the group is included by default. Uncheck anyone who's sitting this one
+              out.
+            </Text>
+            <View style={styles.selectAllRow}>
+              <Pressable
+                onPress={() => (allPlayersSelected ? deselectAllPlayers() : selectAllPlayers())}
+                accessibilityRole="button"
+                accessibilityLabel={allPlayersSelected ? 'Deselect all' : 'Select all'}
+              >
+                <Text style={styles.selectAllTxt}>
+                  {allPlayersSelected ? 'Deselect all' : 'Select all'}
+                </Text>
+              </Pressable>
+            </View>
+            {groupMembers.length >= PLAYER_ROSTER_SEARCH_MIN ? (
+              <>
+                <Text style={styles.lbl}>Search</Text>
+                <TextInput
+                  style={[styles.input, { marginBottom: 10 }]}
+                  value={playerSearch}
+                  onChangeText={setPlayerSearch}
+                  placeholder="Filter by name"
+                  placeholderTextColor={colors.subtle}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  clearButtonMode="while-editing"
+                />
+              </>
+            ) : null}
+            {filteredGroupMembers.map((m) => {
+              const checked = selectedPlayerIds[m.userId] !== false;
+              return (
+                <Pressable
+                  key={m.userId}
+                  style={[styles.memberRow, checked && styles.memberRowOn]}
+                  onPress={() => togglePlayerSelected(m.userId)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked }}
+                >
+                  <View style={[styles.checkBox, checked && styles.checkBoxOn]}>
+                    {checked ? <IconCheckmark size={14} color="#fff" /> : null}
+                  </View>
+                  <View style={styles.memberAv}>
+                    <Text style={styles.memberAvTxt}>{m.initials}</Text>
+                  </View>
+                  <Text style={styles.memberName} numberOfLines={1}>
+                    {m.displayName.replace(' (you)', '')}
+                  </Text>
+                  {m.index != null ? (
+                    <Text style={styles.memberIdx}>{m.index.toFixed(1)}</Text>
+                  ) : (
+                    <Text style={styles.memberIdx}>—</Text>
+                  )}
+                </Pressable>
+              );
+            })}
+            <Text style={styles.selectedCount}>
+              {playerCount} selected.
+            </Text>
+            {playersStepError ? (
+              <Text style={styles.formatDisabledNote}>{playersStepError}</Text>
+            ) : null}
+            <Pressable
+              style={[styles.primaryBtn, !!playersStepError && styles.btnDisabled]}
+              disabled={!!playersStepError}
               onPress={() => {
-                if (needsTeams && teamSizeSuggestion) {
-                  setPlayersPerTeamMode('preset');
-                  setCustomPlayersPerTeamExpanded(false);
-                  setCustomPlayersPerTeamInput('');
-                  if (
-                    teamSizeSuggestion.validPreset.length === 0 &&
-                    isValidPlayersPerTeam(
-                      members.length,
-                      teamSizeSuggestion.suggestedCustomDefault,
-                      teamFormat!
-                    )
-                  ) {
-                    setPlayersPerTeamMode('custom');
-                    setCustomPlayersPerTeamExpanded(true);
-                    const pp = teamSizeSuggestion.suggestedCustomDefault;
-                    setCustomPlayersPerTeamInput(String(pp));
-                    applyPlayersPerTeam(pp, members.length);
-                  } else {
-                    applyPlayersPerTeam(
-                      teamSizeSuggestion.suggestedPlayersPerTeam,
-                      members.length
-                    );
-                  }
+                if (needsTeams) {
+                  prepareTeamCountFromSelection();
                   goToStep('teamCount');
                 } else {
                   goToStep('settings');
@@ -624,13 +805,13 @@ export default function LeagueCreateScreen() {
           <>
             <Text style={styles.head}>Players per team</Text>
             <Text style={styles.helper}>
-              {members.length} players in this group. Choose how many players are on each team —
-              SimCap will create the teams. You can assign players on the next step.
+              {playerCount} players selected. Choose how many players are on each team — SimCap will
+              create the teams. You can assign players on the next step.
             </Text>
             {PRESET_PLAYERS_PER_TEAM_OPTIONS.map((pp) => {
               const on = playersPerTeamMode === 'preset' && playersPerTeam === pp;
               const { title, sub, disabled } = describePlayersPerTeamOption(
-                members.length,
+                playingMembers.length,
                 pp,
                 teamFormat
               );
@@ -678,7 +859,7 @@ export default function LeagueCreateScreen() {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.formatTitle}>Custom</Text>
                     <Text style={styles.formatSub}>
-                      {CUSTOM_PLAYERS_PER_TEAM_MIN}–{maxPlayersPerTeam(members.length)} players per
+                      {CUSTOM_PLAYERS_PER_TEAM_MIN}–{maxPlayersPerTeam(playingMembers.length)} players per
                       team
                     </Text>
                     {teamSizeSuggestion.suggestedPlayersPerTeam >= CUSTOM_PLAYERS_PER_TEAM_MIN &&
@@ -703,13 +884,13 @@ export default function LeagueCreateScreen() {
                         setCustomPlayersPerTeamInput(v);
                         const err = validateCustomPlayersPerTeamInput(
                           v,
-                          members.length,
+                          playingMembers.length,
                           teamFormat
                         );
                         const n = err ? null : Number(v.trim());
-                        if (n != null) applyPlayersPerTeam(n, members.length);
+                        if (n != null) applyPlayersPerTeam(n, playingMembers.length);
                       }}
-                      placeholder={`${CUSTOM_PLAYERS_PER_TEAM_MIN}–${maxPlayersPerTeam(members.length)}`}
+                      placeholder={`${CUSTOM_PLAYERS_PER_TEAM_MIN}–${maxPlayersPerTeam(playingMembers.length)}`}
                       placeholderTextColor={colors.subtle}
                       keyboardType="number-pad"
                       maxLength={2}
@@ -718,7 +899,7 @@ export default function LeagueCreateScreen() {
                       <Text style={styles.helper}>{customPlayersPerTeamError}</Text>
                     ) : customPlayersPerTeamInput.trim() ? (
                       <Text style={styles.helper}>
-                        {formatTeamCountResult(members.length, playersPerTeam)}
+                        {formatTeamCountResult(playingMembers.length, playersPerTeam)}
                       </Text>
                     ) : (
                       <Text style={styles.helper}>
@@ -731,13 +912,13 @@ export default function LeagueCreateScreen() {
             ) : null}
             {teamSizeValid ? (
               <Text style={[styles.helper, { marginTop: 8, fontWeight: '600' }]}>
-                {formatTeamCountResult(members.length, playersPerTeam)}
+                {formatTeamCountResult(playingMembers.length, playersPerTeam)}
               </Text>
             ) : null}
             {!teamSizeSuggestion.hasAnyValid ? (
               <Text style={styles.helper}>
-                This group size cannot be split evenly into teams with at least 2 players each. Try
-                adding or removing a player to enable team options.
+                This player count cannot be split evenly into teams with at least 2 players each. Try
+                selecting a different number of players to enable team options.
               </Text>
             ) : null}
             <Pressable
@@ -777,7 +958,7 @@ export default function LeagueCreateScreen() {
                 </Text>
                 <Text style={styles.sectionLbl}>Players</Text>
                 {seededUserIds.map((uid, i) => {
-                  const m = members.find((x) => x.userId === uid);
+                  const m = playingMembers.find((x) => x.userId === uid);
                   return (
                     <View key={uid} style={styles.memberRow}>
                       <Text style={styles.memberSeed}>#{i + 1}</Text>
@@ -839,7 +1020,7 @@ export default function LeagueCreateScreen() {
             {!isMatchPlay && !needsTeams ? (
               <>
                 <Text style={[styles.sectionLbl, { marginTop: 12 }]}>Players</Text>
-                {members.map((m) => (
+                {playingMembers.map((m) => (
                   <View key={m.userId} style={styles.memberRow}>
                     <View style={styles.memberAv}>
                       <Text style={styles.memberAvTxt}>{m.initials}</Text>
@@ -966,7 +1147,7 @@ export default function LeagueCreateScreen() {
                     <Text style={styles.teamEmptyTxt}>No players yet</Text>
                   ) : (
                     t.memberIds.map((uid) => {
-                      const m = members.find((x) => x.userId === uid);
+                      const m = playingMembers.find((x) => x.userId === uid);
                       const showActions =
                         assignedMemberAction?.userId === uid &&
                         assignedMemberAction.fromTeamId === t.id;
@@ -1021,7 +1202,7 @@ export default function LeagueCreateScreen() {
                     <Text style={styles.scorerLbl}>Designated scorer</Text>
                     <View style={styles.scorerRow}>
                       {t.memberIds.map((uid) => {
-                        const m = members.find((x) => x.userId === uid);
+                        const m = playingMembers.find((x) => x.userId === uid);
                         const on = t.designatedScorerUserId === uid;
                         return (
                           <Pressable
@@ -1044,7 +1225,7 @@ export default function LeagueCreateScreen() {
                     </View>
                     {(() => {
                       const idxs = t.memberIds
-                        .map((uid) => members.find((m) => m.userId === uid)?.index)
+                        .map((uid) => playingMembers.find((m) => m.userId === uid)?.index)
                         .filter((v): v is number => v != null);
                       const teamIdx = computeScrambleTeamIndex(idxs);
                       return teamIdx != null ? (
@@ -1078,7 +1259,7 @@ export default function LeagueCreateScreen() {
               </Text>
               <Text style={styles.summaryMeta}>
                 {isMatchPlay
-                  ? `Bracket · ${members.length} players · Handicap ${useHandicap ? 'on' : 'off'}`
+                  ? `Bracket · ${playingMembers.length} players · Handicap ${useHandicap ? 'on' : 'off'}`
                   : `Best ${roundsThatCount} rounds · Handicap ${useHandicap ? 'on' : 'off'}`}
               </Text>
               {notes.trim() ? (
@@ -1086,13 +1267,13 @@ export default function LeagueCreateScreen() {
               ) : null}
               {needsTeams ? (
                 <Text style={styles.summaryMeta}>
-                  {formatTeamCountResult(members.length, playersPerTeam)} · {members.length}{' '}
+                  {formatTeamCountResult(playingMembers.length, playersPerTeam)} · {playingMembers.length}{' '}
                   players
                 </Text>
               ) : null}
               {needsTeams
                 ? teams.map((t) => {
-                    const scorer = members.find((m) => m.userId === t.designatedScorerUserId);
+                    const scorer = playingMembers.find((m) => m.userId === t.designatedScorerUserId);
                     return (
                       <Text key={t.id} style={styles.summaryMeta}>
                         {t.name}: {t.memberIds.length} players
@@ -1105,7 +1286,7 @@ export default function LeagueCreateScreen() {
                 : null}
               {isMatchPlay
                 ? seededUserIds.map((uid, i) => {
-                    const m = members.find((x) => x.userId === uid);
+                    const m = playingMembers.find((x) => x.userId === uid);
                     const src =
                       m?.handicapSource === 'simcap'
                         ? 'SimCap'
@@ -1244,6 +1425,37 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   outlineBtnTxt: { color: colors.accentDark, fontWeight: '700' },
+  selectAllRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 8,
+  },
+  selectAllTxt: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: colors.accentDark,
+  },
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.pillBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  checkBoxOn: {
+    backgroundColor: colors.sage,
+    borderColor: colors.sage,
+  },
+  selectedCount: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    marginTop: 8,
+    marginBottom: 4,
+  },
   memberRow: {
     flexDirection: 'row',
     alignItems: 'center',
