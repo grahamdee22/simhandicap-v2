@@ -73,7 +73,16 @@ export type DbLeagueEntryRow = {
   mp_losses?: number;
   mp_halved?: number;
   bracket_seed?: number | null;
+  /** Soft-remove: off active roster but prior rounds still count in standings. */
+  removed_at?: string | null;
 };
+
+/** True when the entry can still apply new rounds to the tournament. */
+export function isActiveLeagueEntry(entry: {
+  removed_at?: string | null;
+}): boolean {
+  return entry.removed_at == null;
+}
 
 export type DbLeagueRoundRow = {
   id: string;
@@ -299,6 +308,148 @@ export async function deleteLeague(leagueId: string, accessToken?: string): Prom
   return { error: error?.message ?? null };
 }
 
+/** Soft-remove a Stroke Play participant. Keeps league_rounds / standings history. */
+export async function softRemoveLeagueEntry(
+  entryId: string,
+  accessToken?: string
+): Promise<{ error: string | null }> {
+  // Resolve league to enforce Stroke Play-only roster edits.
+  let leagueId: string | null = null;
+  if (accessToken) {
+    const { data, error } = await restSelect<{ id: string; league_id: string }>(
+      `league_entries?id=eq.${encodeURIComponent(entryId)}&select=id,league_id`,
+      accessToken
+    );
+    if (error) return { error };
+    leagueId = data?.[0]?.league_id ?? null;
+  } else if (supabase) {
+    const { data, error } = await supabase
+      .from('league_entries')
+      .select('league_id')
+      .eq('id', entryId)
+      .maybeSingle();
+    if (error) return { error: error.message };
+    leagueId = (data as { league_id?: string } | null)?.league_id ?? null;
+  }
+  if (!leagueId) return { error: 'Entry not found' };
+  const bundle = await fetchLeagueBundle(leagueId, accessToken);
+  if (!bundle.data) return { error: bundle.error ?? 'Tournament not found' };
+  if (bundle.data.league.format !== 'stroke') {
+    return { error: 'Roster editing is only available for Stroke Play' };
+  }
+
+  const body = { removed_at: new Date().toISOString() };
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/league_entries?id=eq.${encodeURIComponent(entryId)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(body),
+      }
+    );
+    if (!res.ok) return { error: await res.text().catch(() => res.statusText) };
+    return { error: null };
+  }
+  if (!supabase) return { error: 'Supabase is not configured' };
+  const { error } = await supabase.from('league_entries').update(body).eq('id', entryId);
+  return { error: error?.message ?? null };
+}
+
+/**
+ * Add (or re-activate) Stroke Play participants.
+ * Re-adding someone previously soft-removed clears `removed_at`.
+ */
+export async function addLeagueEntries(params: {
+  leagueId: string;
+  userIds: string[];
+  accessToken?: string;
+}): Promise<{ error: string | null }> {
+  const { leagueId, userIds, accessToken } = params;
+  const unique = [...new Set(userIds.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return { error: null };
+
+  const bundle = await fetchLeagueBundle(leagueId, accessToken);
+  if (!bundle.data) return { error: bundle.error ?? 'Tournament not found' };
+  if (bundle.data.league.format !== 'stroke') {
+    return { error: 'Roster editing is only available for Stroke Play' };
+  }
+
+  const byUser = new Map(bundle.data.entries.map((e) => [e.user_id, e]));
+  const toReactivate: string[] = [];
+  const toInsert: string[] = [];
+  for (const uid of unique) {
+    const existing = byUser.get(uid);
+    if (!existing) toInsert.push(uid);
+    else if (!isActiveLeagueEntry(existing)) toReactivate.push(existing.id);
+  }
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    for (const entryId of toReactivate) {
+      const res = await fetch(
+        `${supabaseUrl}/rest/v1/league_entries?id=eq.${encodeURIComponent(entryId)}`,
+        {
+          method: 'PATCH',
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+            Prefer: 'return=minimal',
+          },
+          body: JSON.stringify({ removed_at: null }),
+        }
+      );
+      if (!res.ok) return { error: await res.text().catch(() => res.statusText) };
+    }
+    if (toInsert.length > 0) {
+      const rows = toInsert.map((user_id) => ({
+        league_id: leagueId,
+        user_id,
+        league_team_id: null,
+      }));
+      const res = await fetch(`${supabaseUrl}/rest/v1/league_entries`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify(rows),
+      });
+      if (!res.ok) return { error: await res.text().catch(() => res.statusText) };
+    }
+    return { error: null };
+  }
+
+  if (!supabase) return { error: 'Supabase is not configured' };
+  for (const entryId of toReactivate) {
+    const { error } = await supabase
+      .from('league_entries')
+      .update({ removed_at: null })
+      .eq('id', entryId);
+    if (error) return { error: error.message };
+  }
+  if (toInsert.length > 0) {
+    const { error } = await supabase.from('league_entries').insert(
+      toInsert.map((user_id) => ({
+        league_id: leagueId,
+        user_id,
+        league_team_id: null,
+      }))
+    );
+    if (error) return { error: error.message };
+  }
+  return { error: null };
+}
+
 export type CreateLeagueInput = {
   groupId: string;
   name: string;
@@ -492,10 +643,18 @@ export async function fetchActiveTournamentsForUser(params: {
       if (seen.has(league.id)) continue;
       const bundleRes = await fetchLeagueBundle(league.id, params.accessToken);
       if (!bundleRes.data) continue;
-      if (!bundleRes.data.entries.some((e) => e.user_id === params.userId)) continue;
+      if (
+        !bundleRes.data.entries.some(
+          (e) => e.user_id === params.userId && isActiveLeagueEntry(e)
+        )
+      ) {
+        continue;
+      }
 
       if (league.format === 'scramble') {
-        const entry = bundleRes.data.entries.find((e) => e.user_id === params.userId);
+        const entry = bundleRes.data.entries.find(
+          (e) => e.user_id === params.userId && isActiveLeagueEntry(e)
+        );
         const team = entry?.league_team_id
           ? bundleRes.data.teams.find((t) => t.id === entry.league_team_id)
           : null;
@@ -560,7 +719,9 @@ export async function recordOptedInLeagueRounds(params: {
     if (!bundleRes.data) continue;
     const { league } = bundleRes.data;
 
-    const entry = bundleRes.data.entries.find((e) => e.user_id === params.userId);
+    const entry = bundleRes.data.entries.find(
+      (e) => e.user_id === params.userId && isActiveLeagueEntry(e)
+    );
     if (!entry) continue;
 
     if (league.format === 'scramble') {

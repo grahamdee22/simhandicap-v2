@@ -3,6 +3,7 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -15,12 +16,16 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { IconCheckmark, IconTrashOutline } from '../../../src/components/SvgUiIcons';
 import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import {
+  addLeagueEntries,
   deleteLeague,
   fetchLeagueBundle,
+  isActiveLeagueEntry,
+  softRemoveLeagueEntry,
   syncLeagueStatuses,
   updateLeague,
   type LeagueBundle,
@@ -36,6 +41,7 @@ import {
   isTeamLeagueFormat,
 } from '../../../src/lib/leagueStandings';
 import { useResponsive } from '../../../src/lib/responsive';
+import { clearTournamentSectionCache } from '../../../src/lib/tournamentSectionCache';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 /** True once any pairing has left the initial scheduled state (play started or finished). */
@@ -68,6 +74,10 @@ export default function LeagueManageScreen() {
     kind: 'ok' | 'err';
     text: string;
   } | null>(null);
+  const [addPlayersOpen, setAddPlayersOpen] = useState(false);
+  const [addPickIds, setAddPickIds] = useState<Record<string, boolean>>({});
+  const [rosterNote, setRosterNote] = useState<string | null>(null);
+  const [rosterBusy, setRosterBusy] = useState(false);
 
   const group = useMemo(
     () => groups.find((g) => g.id === bundle?.league.group_id),
@@ -185,6 +195,87 @@ export default function LeagueManageScreen() {
     return m;
   }, [group?.members]);
 
+  const activeStrokeEntries = useMemo(() => {
+    if (!bundle || bundle.league.format !== 'stroke') return [];
+    return bundle.entries.filter(isActiveLeagueEntry);
+  }, [bundle]);
+
+  const addableGroupMembers = useMemo(() => {
+    if (!group) return [];
+    const activeIds = new Set(activeStrokeEntries.map((e) => e.user_id));
+    return group.members
+      .filter((m) => m.userId && !activeIds.has(m.userId))
+      .slice()
+      .sort((a, b) =>
+        a.displayName.replace(' (you)', '').localeCompare(b.displayName.replace(' (you)', ''))
+      );
+  }, [group, activeStrokeEntries]);
+
+  const openAddPlayers = () => {
+    setAddPickIds({});
+    setAddPlayersOpen(true);
+  };
+
+  const toggleAddPick = (userId: string) => {
+    setAddPickIds((prev) => ({ ...prev, [userId]: !prev[userId] }));
+  };
+
+  const selectedAddCount = useMemo(
+    () => Object.values(addPickIds).filter(Boolean).length,
+    [addPickIds]
+  );
+
+  const onConfirmAddPlayers = async () => {
+    const userIds = Object.entries(addPickIds)
+      .filter(([, on]) => on)
+      .map(([id]) => id);
+    if (userIds.length === 0) {
+      setAddPlayersOpen(false);
+      return;
+    }
+    setRosterBusy(true);
+    const res = await addLeagueEntries({
+      leagueId,
+      userIds,
+      accessToken: googleOAuthAccessToken ?? undefined,
+    });
+    setRosterBusy(false);
+    if (res.error) {
+      showAppAlert('Could not add players', res.error);
+      return;
+    }
+    setAddPlayersOpen(false);
+    setRosterNote(
+      `Added ${userIds.length} player${userIds.length === 1 ? '' : 's'}. They can start applying rounds now — rounds logged before today won't be backfilled.`
+    );
+    if (bundle?.league.group_id) clearTournamentSectionCache(bundle.league.group_id);
+    await load();
+  };
+
+  const onRemovePlayer = async (entryId: string, userId: string) => {
+    if (activeStrokeEntries.length <= 1) {
+      showAppAlert('Cannot remove', 'A tournament needs at least one player.');
+      return;
+    }
+    const name = displayNames[userId] ?? 'Player';
+    const ok = await confirmDestructive(
+      `Remove ${name} from this tournament?`,
+      "Their rounds logged so far will still count toward final standings. They won't be able to apply new rounds going forward.",
+      'Remove'
+    );
+    if (!ok) return;
+    setRosterBusy(true);
+    const res = await softRemoveLeagueEntry(entryId, googleOAuthAccessToken ?? undefined);
+    setRosterBusy(false);
+    if (res.error) {
+      showAppAlert('Could not remove', res.error);
+      return;
+    }
+    setRosterNote(null);
+    if (bundle?.league.group_id) clearTournamentSectionCache(bundle.league.group_id);
+    await load();
+  };
+
   const teamRoster = useMemo(() => {
     if (!bundle || !isTeamLeagueFormat(bundle.league.format)) return [];
     return [...bundle.teams]
@@ -282,6 +373,54 @@ export default function LeagueManageScreen() {
           </View>
         ) : null}
 
+        {bundle.league.format === 'stroke' ? (
+          <View style={styles.rosterSection}>
+            <Text style={styles.lbl}>Players ({activeStrokeEntries.length})</Text>
+            <Text style={styles.helper}>
+              Standings only include rounds logged while a player was on the roster.
+            </Text>
+            {rosterNote ? (
+              <View style={[styles.bracketBanner, styles.bracketBannerOk]}>
+                <Text style={[styles.bracketBannerTxt, styles.bracketBannerTxtOk]}>{rosterNote}</Text>
+              </View>
+            ) : null}
+            <Pressable
+              style={[styles.outlineBtn, { marginTop: 0, marginBottom: 10 }]}
+              disabled={rosterBusy || busy || addableGroupMembers.length === 0}
+              onPress={openAddPlayers}
+            >
+              <Text style={styles.outlineBtnTxt}>
+                {addableGroupMembers.length === 0 ? 'No group members left to add' : 'Add player'}
+              </Text>
+            </Pressable>
+            <View style={styles.teamRosterCard}>
+              {activeStrokeEntries.map((e, i) => {
+                const name = displayNames[e.user_id] ?? 'Player';
+                return (
+                  <View
+                    key={e.id}
+                    style={[styles.rosterPlayerRow, i === 0 && styles.teamRosterRowFirst]}
+                  >
+                    <Text style={styles.teamRosterName} numberOfLines={1}>
+                      {name}
+                    </Text>
+                    <Pressable
+                      style={styles.removePlayerBtn}
+                      disabled={rosterBusy || busy}
+                      onPress={() => void onRemovePlayer(e.id, e.user_id)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${name}`}
+                      hitSlop={8}
+                    >
+                      <IconTrashOutline size={18} color={colors.danger} />
+                    </Pressable>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
+
         {bundle.league.format === 'match_play' ? (
           <View style={{ marginTop: 24 }}>
             <Text style={styles.lbl}>Match pairings</Text>
@@ -368,6 +507,62 @@ export default function LeagueManageScreen() {
           <Text style={styles.dangerBtnTxt}>Delete tournament</Text>
         </Pressable>
       </ScrollView>
+
+      <Modal
+        visible={addPlayersOpen}
+        animationType="slide"
+        presentationStyle="pageSheet"
+        onRequestClose={() => setAddPlayersOpen(false)}
+      >
+        <View style={[styles.addModal, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}>
+          <Text style={styles.head}>Add players</Text>
+          <Text style={styles.helper}>
+            Select group members who aren't in this tournament yet.
+          </Text>
+          <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
+            {addableGroupMembers.map((m) => {
+              const checked = !!addPickIds[m.userId];
+              return (
+                <Pressable
+                  key={m.userId}
+                  style={[styles.addMemberRow, checked && styles.addMemberRowOn]}
+                  onPress={() => toggleAddPick(m.userId)}
+                  accessibilityRole="checkbox"
+                  accessibilityState={{ checked }}
+                >
+                  <View style={[styles.checkBox, checked && styles.checkBoxOn]}>
+                    {checked ? <IconCheckmark size={14} color="#fff" /> : null}
+                  </View>
+                  <Text style={styles.addMemberName} numberOfLines={1}>
+                    {m.displayName.replace(' (you)', '')}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </ScrollView>
+          <Pressable
+            style={[styles.primaryBtn, (selectedAddCount === 0 || rosterBusy) && styles.btnDisabled]}
+            disabled={selectedAddCount === 0 || rosterBusy}
+            onPress={() => void onConfirmAddPlayers()}
+          >
+            {rosterBusy ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.primaryBtnTxt}>
+                Add {selectedAddCount > 0 ? `${selectedAddCount} ` : ''}player
+                {selectedAddCount === 1 ? '' : 's'}
+              </Text>
+            )}
+          </Pressable>
+          <Pressable
+            style={[styles.outlineBtn, { marginTop: 10 }]}
+            disabled={rosterBusy}
+            onPress={() => setAddPlayersOpen(false)}
+          >
+            <Text style={styles.outlineBtnTxt}>Cancel</Text>
+          </Pressable>
+        </View>
+      </Modal>
     </ContentWidth>
   );
 }
@@ -403,6 +598,51 @@ const styles = StyleSheet.create({
   primaryBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
   btnDisabled: { opacity: 0.55 },
   helper: { fontSize: 13, color: colors.muted, marginBottom: 8, lineHeight: 18 },
+  rosterSection: { marginTop: 24 },
+  rosterPlayerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: 10,
+  },
+  removePlayerBtn: {
+    padding: 4,
+  },
+  addModal: {
+    flex: 1,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 20,
+  },
+  addMemberRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    borderRadius: 10,
+    marginBottom: 6,
+    backgroundColor: colors.bg,
+  },
+  addMemberRowOn: { backgroundColor: colors.accentSoft },
+  addMemberName: { flex: 1, fontSize: 15, fontWeight: '600', color: colors.ink },
+  checkBox: {
+    width: 22,
+    height: 22,
+    borderRadius: 6,
+    borderWidth: 1.5,
+    borderColor: colors.pillBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  checkBoxOn: {
+    backgroundColor: colors.sage,
+    borderColor: colors.sage,
+  },
   teamSection: { marginTop: 24 },
   teamRosterCard: {
     backgroundColor: '#f0f7f3',
