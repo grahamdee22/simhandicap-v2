@@ -28,6 +28,7 @@ import {
 import {
   fetchLeagueMatchPairings,
   formatPairingStatusLabel,
+  generateMatchPlayBracket,
   type DbLeagueMatchPairingRow,
 } from '../../../src/lib/matchPlayTournamentPairings';
 import {
@@ -36,6 +37,17 @@ import {
 } from '../../../src/lib/leagueStandings';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
+
+/** True once any pairing has left the initial scheduled state (play started or finished). */
+function pairingsHaveRecordedResults(pairings: DbLeagueMatchPairingRow[]): boolean {
+  return pairings.some(
+    (p) =>
+      p.status !== 'scheduled' ||
+      p.winner_entry_id != null ||
+      p.holes_won_p1 > 0 ||
+      p.holes_won_p2 > 0
+  );
+}
 
 export default function LeagueManageScreen() {
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
@@ -51,6 +63,11 @@ export default function LeagueManageScreen() {
   const [name, setName] = useState('');
   const [endDate, setEndDate] = useState(new Date());
   const [busy, setBusy] = useState(false);
+  const [bracketBusy, setBracketBusy] = useState(false);
+  const [bracketBanner, setBracketBanner] = useState<{
+    kind: 'ok' | 'err';
+    text: string;
+  } | null>(null);
 
   const group = useMemo(
     () => groups.find((g) => g.id === bundle?.league.group_id),
@@ -80,6 +97,54 @@ export default function LeagueManageScreen() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  /** Same seed order as create: lowest SimCap index = #1 seed. */
+  const seededUserIds = useMemo(() => {
+    if (!bundle) return [];
+    return [...bundle.entries]
+      .map((e) => {
+        const mem = group?.members.find((m) => m.userId === e.user_id);
+        return { userId: e.user_id, index: mem?.index ?? 99 };
+      })
+      .sort((a, b) => a.index - b.index)
+      .map((x) => x.userId);
+  }, [bundle, group?.members]);
+
+  const canRegenerateBracket =
+    pairings.length > 0 && !pairingsHaveRecordedResults(pairings);
+
+  const runGenerateBracket = async () => {
+    if (bracketBusy || !bundle) return;
+    setBracketBusy(true);
+    setBracketBanner(null);
+    const res = await generateMatchPlayBracket(
+      leagueId,
+      seededUserIds,
+      googleOAuthAccessToken ?? undefined
+    );
+    if (res.error) {
+      setBracketBusy(false);
+      setBracketBanner({ kind: 'err', text: res.error });
+      return;
+    }
+    const pr = await fetchLeagueMatchPairings(leagueId, googleOAuthAccessToken ?? undefined);
+    setPairings(pr.data ?? []);
+    setBracketBusy(false);
+    setBracketBanner({
+      kind: 'ok',
+      text: 'Bracket generated — lowest index is the #1 seed',
+    });
+  };
+
+  const onRegenerateBracket = async () => {
+    const ok = await confirmDestructive(
+      'Regenerate bracket?',
+      'This will discard the current pairings and reseed from scratch.',
+      'Regenerate'
+    );
+    if (!ok) return;
+    await runGenerateBracket();
+  };
 
   const saveName = async () => {
     setBusy(true);
@@ -220,20 +285,75 @@ export default function LeagueManageScreen() {
         {bundle.league.format === 'match_play' ? (
           <View style={{ marginTop: 24 }}>
             <Text style={styles.lbl}>Match pairings</Text>
+
+            {bracketBanner ? (
+              <View
+                style={[
+                  styles.bracketBanner,
+                  bracketBanner.kind === 'ok' ? styles.bracketBannerOk : styles.bracketBannerErr,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.bracketBannerTxt,
+                    bracketBanner.kind === 'ok'
+                      ? styles.bracketBannerTxtOk
+                      : styles.bracketBannerTxtErr,
+                  ]}
+                >
+                  {bracketBanner.text}
+                </Text>
+              </View>
+            ) : null}
+
             {pairings.length === 0 ? (
-              <Text style={styles.helper}>No pairings yet.</Text>
+              <>
+                <Text style={styles.helper}>
+                  Bracket wasn't generated when this tournament launched.
+                </Text>
+                <Pressable
+                  style={[styles.primaryBtn, bracketBusy && styles.btnDisabled]}
+                  disabled={bracketBusy || busy}
+                  onPress={() => void runGenerateBracket()}
+                  accessibilityRole="button"
+                  accessibilityLabel="Generate bracket"
+                >
+                  {bracketBusy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnTxt}>Generate bracket</Text>
+                  )}
+                </Pressable>
+              </>
             ) : (
-              pairings.map((p) => {
-                const e1 = bundle.entries.find((e) => e.id === p.player_1_entry_id);
-                const e2 = bundle.entries.find((e) => e.id === p.player_2_entry_id);
-                const n1 = e1 ? displayNames[e1.user_id] ?? 'Player' : 'Player';
-                const n2 = e2 ? displayNames[e2.user_id] ?? 'Player' : 'Player';
-                return (
-                  <Text key={p.id} style={styles.pairingLine}>
-                    {n1} vs {n2} · {formatPairingStatusLabel(p.status)}
-                  </Text>
-                );
-              })
+              <>
+                {pairings.map((p) => {
+                  const e1 = bundle.entries.find((e) => e.id === p.player_1_entry_id);
+                  const e2 = bundle.entries.find((e) => e.id === p.player_2_entry_id);
+                  const n1 = e1 ? displayNames[e1.user_id] ?? 'Player' : 'Player';
+                  const n2 = e2 ? displayNames[e2.user_id] ?? 'Player' : 'Player';
+                  return (
+                    <Text key={p.id} style={styles.pairingLine}>
+                      {n1} vs {n2} · {formatPairingStatusLabel(p.status)}
+                    </Text>
+                  );
+                })}
+                {canRegenerateBracket ? (
+                  <Pressable
+                    style={styles.regenLink}
+                    disabled={bracketBusy || busy}
+                    onPress={() => void onRegenerateBracket()}
+                    accessibilityRole="button"
+                    accessibilityLabel="Regenerate bracket"
+                  >
+                    {bracketBusy ? (
+                      <ActivityIndicator color={colors.muted} />
+                    ) : (
+                      <Text style={styles.regenLinkTxt}>Regenerate bracket</Text>
+                    )}
+                  </Pressable>
+                ) : null}
+              </>
             )}
           </View>
         ) : null}
@@ -273,6 +393,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   outlineBtnTxt: { color: colors.accentDark, fontWeight: '700' },
+  primaryBtn: {
+    marginTop: 8,
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: colors.sage,
+    alignItems: 'center',
+  },
+  primaryBtnTxt: { color: '#fff', fontWeight: '700', fontSize: 16 },
+  btnDisabled: { opacity: 0.55 },
   helper: { fontSize: 13, color: colors.muted, marginBottom: 8, lineHeight: 18 },
   teamSection: { marginTop: 24 },
   teamRosterCard: {
@@ -292,6 +421,35 @@ const styles = StyleSheet.create({
   teamRosterName: { fontSize: 14, fontWeight: '700', color: colors.ink },
   teamRosterMembers: { fontSize: 12, color: colors.muted, marginTop: 4, lineHeight: 17 },
   pairingLine: { fontSize: 14, color: colors.ink, marginBottom: 6 },
+  regenLink: {
+    marginTop: 10,
+    alignSelf: 'flex-start',
+    paddingVertical: 4,
+  },
+  regenLinkTxt: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: colors.muted,
+    textDecorationLine: 'underline',
+  },
+  bracketBanner: {
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+  },
+  bracketBannerOk: {
+    backgroundColor: '#ecf6f1',
+    borderColor: colors.sage,
+  },
+  bracketBannerErr: {
+    backgroundColor: '#fef2f2',
+    borderColor: colors.danger,
+  },
+  bracketBannerTxt: { fontSize: 13, lineHeight: 18, fontWeight: '600' },
+  bracketBannerTxtOk: { color: colors.forestMid },
+  bracketBannerTxtErr: { color: colors.danger },
   dangerBtn: {
     marginTop: 32,
     paddingVertical: 14,
