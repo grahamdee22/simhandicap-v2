@@ -15,7 +15,6 @@ import {
   isNineHolePlayed,
   nineHoleLoggingUnlocked,
   ratingSlopeForHolesPlayed,
-  shouldBlockTournamentApplyForHoles,
 } from '../nineHoleRating';
 import { isNineHoleSocialMatch, buildNewRoundInputFromCompletedMatch } from '../matchPlayIndexRound';
 import type { DbMatchRow } from '../matchPlay';
@@ -117,17 +116,6 @@ describe('null-index / score bounds helpers', () => {
     assert.equal(isNineHolePlayed('18'), false);
     assert.equal(isNineHolePlayed('front'), true);
     assert.equal(isNineHolePlayed(undefined), false);
-  });
-});
-
-describe('tournament-apply suppression (Decision 3)', () => {
-  it('still flags any non-18 logged round (deprecated blanket gate)', () => {
-    // Eligibility is now per league via leagueAcceptsLoggedHoles. This helper remains
-    // true for Front/Back so older callers don't silently treat a 9-hole round as 18.
-    assert.equal(shouldBlockTournamentApplyForHoles('front'), true);
-    assert.equal(shouldBlockTournamentApplyForHoles('back'), true);
-    assert.equal(shouldBlockTournamentApplyForHoles('18'), false);
-    assert.equal(shouldBlockTournamentApplyForHoles(undefined), false);
   });
 });
 

@@ -739,9 +739,10 @@ export default function LogRoundScreen() {
         return;
       }
 
-      const optedInRaw = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
-      // 9-hole rounds cannot apply to tournaments (Decision 3) — client guard; DB trigger also rejects.
-      const optedIn = isNineHolePlayed(snap.holesPlayed) ? [] : optedInRaw;
+      // Eligibility (holes_per_round / match_play_nine) is already enforced upstream in
+      // fetchActiveTournamentsForUser via leagueAcceptsLoggedHoles, so activeTournaments only
+      // contains tournaments valid for the currently selected holesPlayed value.
+      const optedIn = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
       if (optedIn.length > 0 && snap.course.source === 'community') {
         showAppAlert(
           'Tournament round',
@@ -1366,10 +1367,7 @@ export default function LogRoundScreen() {
           </View>
         ) : null}
 
-        {!existing &&
-        tournamentsReady &&
-        activeTournaments.length > 0 &&
-        !isNineHolePlayed(holesPlayed) ? (
+        {!existing && tournamentsReady && activeTournaments.length > 0 ? (
           <View style={styles.tournamentSection}>
             <Text style={styles.tournamentSectionTitle}>Active Tournaments</Text>
             {activeTournaments.map((t) => {

@@ -55,18 +55,6 @@ export function nineHoleLoggingUnlocked(
   return simIndex != null || editingExistingNineHole;
 }
 
-/**
- * @deprecated Blanket block. Tournament eligibility is per league now — see
- * `leagueAcceptsLoggedHoles` in `tournamentTypes.ts`, used by
- * `fetchActiveTournamentsForUser` and `recordOptedInLeagueRounds`.
- * Still true whenever the logged round is not 18 holes.
- */
-export function shouldBlockTournamentApplyForHoles(
-  holesPlayed: HolesPlayed | null | undefined
-): boolean {
-  return isNineHolePlayed(holesPlayed);
-}
-
 export function holesPlayedLabel(holes: HolesPlayed | null | undefined): string | null {
   if (holes === 'front') return 'Front 9';
   if (holes === 'back') return 'Back 9';
