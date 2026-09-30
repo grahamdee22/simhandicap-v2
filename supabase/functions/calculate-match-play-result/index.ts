@@ -22,6 +22,7 @@ type LeagueRoundRow = {
 type LeagueRow = {
   id: string;
   format: string;
+  holes_per_round: string;
 };
 
 type ApplyRpcResult = {
@@ -88,7 +89,7 @@ Deno.serve(async (req) => {
 
     const { data: league, error: leagueErr } = await userClient
       .from('leagues')
-      .select('id, format')
+      .select('id, format, holes_per_round')
       .eq('id', leagueRound.league_id)
       .maybeSingle();
 
@@ -115,9 +116,10 @@ Deno.serve(async (req) => {
     }
 
     const rows = (holes ?? []) as HoleGrossRow[];
+    const expectedHoles = leagueRow.holes_per_round === '9' ? 9 : 18;
     const grossCount = rows.filter((h) => h.gross_score != null).length;
     const readyForStandings =
-      grossCount >= 18 && leagueRound.hole_entry_status === 'complete';
+      grossCount >= expectedHoles && leagueRound.hole_entry_status === 'complete';
 
     let pairingApply: ApplyRpcResult | null = null;
     let pairingError: string | null = null;

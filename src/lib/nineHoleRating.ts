@@ -56,8 +56,10 @@ export function nineHoleLoggingUnlocked(
 }
 
 /**
- * Decision 3: 9-hole rounds must not be associated with any tournament format
- * (Stroke / Scramble / Best Ball all insert `league_rounds`).
+ * @deprecated Blanket block. Tournament eligibility is per league now — see
+ * `leagueAcceptsLoggedHoles` in `tournamentTypes.ts`, used by
+ * `fetchActiveTournamentsForUser` and `recordOptedInLeagueRounds`.
+ * Still true whenever the logged round is not 18 holes.
  */
 export function shouldBlockTournamentApplyForHoles(
   holesPlayed: HolesPlayed | null | undefined

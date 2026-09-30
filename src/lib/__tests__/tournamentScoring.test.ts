@@ -124,6 +124,69 @@ describe('match play gross comparison', () => {
     assert.ok(summary.wins > 0);
     assert.ok(summary.net_holes > 0);
   });
+
+  it('compares only the requested hole count for 9-hole match play', async () => {
+    const { compareMatchPlayGrossHoles } = await import('../matchPlayGrossCompare');
+    const mine = Array.from({ length: 9 }, (_, i) => ({
+      hole_number: i + 1,
+      gross_score: 3,
+    }));
+    const theirs = Array.from({ length: 9 }, (_, i) => ({
+      hole_number: i + 1,
+      gross_score: 4,
+    }));
+    const { summary } = compareMatchPlayGrossHoles(mine, theirs, 9);
+    assert.equal(summary.wins, 9);
+    assert.equal(summary.losses, 0);
+    assert.equal(summary.halved, 0);
+  });
+});
+
+describe('9-hole tournament eligibility', () => {
+  it('keeps scramble and best ball on 18 holes', async () => {
+    const { expectedTournamentHoleCount, leagueAcceptsLoggedHoles } = await import(
+      '../tournamentTypes'
+    );
+    assert.equal(expectedTournamentHoleCount({ format: 'scramble', holes_per_round: '9' }), 18);
+    assert.equal(expectedTournamentHoleCount({ format: 'best_ball', holes_per_round: '9' }), 18);
+    assert.equal(expectedTournamentHoleCount({ format: 'stroke', holes_per_round: '9' }), 9);
+    assert.equal(expectedTournamentHoleCount({ format: 'match_play', holes_per_round: '18' }), 18);
+
+    assert.equal(
+      leagueAcceptsLoggedHoles({ format: 'stroke', holes_per_round: '9' }, 'front'),
+      true
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles({ format: 'stroke', holes_per_round: '9' }, 'back'),
+      true
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles({ format: 'stroke', holes_per_round: '9' }, '18'),
+      false
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles({ format: 'stroke', holes_per_round: '18' }, 'front'),
+      false
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles(
+        { format: 'match_play', holes_per_round: '9', match_play_nine: 'back' },
+        'back'
+      ),
+      true
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles(
+        { format: 'match_play', holes_per_round: '9', match_play_nine: 'back' },
+        'front'
+      ),
+      false
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles({ format: 'scramble', holes_per_round: '18' }, 'front'),
+      false
+    );
+  });
 });
 
 describe('league auto-completion', () => {

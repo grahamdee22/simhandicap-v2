@@ -28,6 +28,10 @@ import {
 } from '../../../src/lib/matchPlayTournamentPairings';
 import { invokeCalculateTeamHoleScores } from '../../../src/lib/tournamentTeamScores';
 import {
+  expectedTournamentHoleCount,
+  type HolesPerRound,
+} from '../../../src/lib/tournamentTypes';
+import {
   emptyTournamentHoleDraft,
   fetchTournamentHoleScores,
   isScorecardComplete,
@@ -94,12 +98,24 @@ export default function TournamentHolesScreen() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [format, setFormat] = useState<LeagueFormat>(formatParam ?? 'stroke');
+  const [holesPerRound, setHolesPerRound] = useState<HolesPerRound>('18');
+  const [matchPlayNine, setMatchPlayNine] = useState<'front' | 'back' | null>(null);
   const [holes, setHoles] = useState<TournamentHoleInput[]>(() => emptyTournamentHoleDraft());
   const [opponentHoles, setOpponentHoles] = useState<TournamentHoleInput[] | null>(null);
   const [scrambleBlocked, setScrambleBlocked] = useState<string | null>(null);
 
   const course = useMemo(() => getCourseById(courseId), [courseId]);
-  const pars = course?.pars ?? Array.from({ length: 18 }, () => 4);
+  const holeCount = useMemo(
+    () => expectedTournamentHoleCount({ format, holes_per_round: holesPerRound }),
+    [format, holesPerRound]
+  );
+  const pars = useMemo(() => {
+    const full = course?.pars ?? Array.from({ length: 18 }, () => 4);
+    if (holeCount === 9) {
+      return matchPlayNine === 'back' ? full.slice(9, 18) : full.slice(0, 9);
+    }
+    return full;
+  }, [course, holeCount, matchPlayNine]);
 
   const reconciliation = useMemo(
     () => reconcileGrossWithHoles(holes, grossScore),
@@ -116,6 +132,8 @@ export default function TournamentHolesScreen() {
       bundle = bundleRes.data ?? null;
       if (bundle) {
         setFormat(bundle.league.format);
+        setHolesPerRound(bundle.league.holes_per_round === '9' ? '9' : '18');
+        setMatchPlayNine(bundle.league.match_play_nine ?? null);
         if (bundle.league.format === 'scramble' && user?.id) {
           const entry = bundle.entries.find((e) => e.user_id === user.id);
           const team = bundle.teams.find((t) => t.id === entry?.league_team_id);
@@ -128,11 +146,13 @@ export default function TournamentHolesScreen() {
       }
     }
 
+    const cardHoles = bundle?.league ? expectedTournamentHoleCount(bundle.league) : 18;
+
     const existing = await fetchTournamentHoleScores(leagueRoundId, token);
     if (existing.data?.length) {
-      setHoles(rowsToHoleDraft(existing.data));
+      setHoles(rowsToHoleDraft(existing.data, cardHoles));
     } else {
-      setHoles(emptyTournamentHoleDraft());
+      setHoles(emptyTournamentHoleDraft(cardHoles));
     }
 
     setOpponentHoles(null);
@@ -153,7 +173,7 @@ export default function TournamentHolesScreen() {
         if (oppRound) {
           const oppScores = await fetchTournamentHoleScores(oppRound.id, token);
           if (oppScores.data?.length) {
-            setOpponentHoles(rowsToHoleDraft(oppScores.data));
+            setOpponentHoles(rowsToHoleDraft(oppScores.data, cardHoles));
           }
         }
       }
@@ -217,8 +237,8 @@ export default function TournamentHolesScreen() {
       showAppAlert('Cannot submit', scrambleBlocked);
       return;
     }
-    if (!isScorecardComplete(holes, format)) {
-      showAppAlert('Incomplete scorecard', 'Enter all 18 holes before submitting.');
+    if (!isScorecardComplete(holes, format, holeCount)) {
+      showAppAlert('Incomplete scorecard', `Enter all ${holeCount} holes before submitting.`);
       return;
     }
 
@@ -314,6 +334,8 @@ export default function TournamentHolesScreen() {
           pars={pars}
           holes={holes}
           onChangeHole={onChangeHole}
+          holeCount={holeCount}
+          nine={matchPlayNine}
           opponentHoles={format === 'match_play' ? opponentHoles : undefined}
           teamScoreLabel={
             format === 'scramble'

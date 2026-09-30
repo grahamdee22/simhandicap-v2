@@ -121,9 +121,9 @@ describe('null-index / score bounds helpers', () => {
 });
 
 describe('tournament-apply suppression (Decision 3)', () => {
-  it('blocks Front/Back 9 for every tournament format path (shared gate)', () => {
-    // Stroke, Scramble, and Best Ball all insert league_rounds via recordOptedInLeagueRounds;
-    // this gate runs before any format branch. DB trigger is a second line of defense.
+  it('still flags any non-18 logged round (deprecated blanket gate)', () => {
+    // Eligibility is now per league via leagueAcceptsLoggedHoles. This helper remains
+    // true for Front/Back so older callers don't silently treat a 9-hole round as 18.
     assert.equal(shouldBlockTournamentApplyForHoles('front'), true);
     assert.equal(shouldBlockTournamentApplyForHoles('back'), true);
     assert.equal(shouldBlockTournamentApplyForHoles('18'), false);

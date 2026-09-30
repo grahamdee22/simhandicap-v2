@@ -271,6 +271,7 @@ export default function LogRoundScreen() {
         userId: user.id,
         groups: memberGroups,
         playedAt: localYmdToIso(playedDate),
+        holesPlayed,
         accessToken,
       });
       if (fetchGen !== tournamentsFetchGen.current) return;
@@ -283,7 +284,7 @@ export default function LogRoundScreen() {
         setTournamentsReady(true);
       }
     }
-  }, [supabaseOn, user?.id, existing, groups, playedDate]);
+  }, [supabaseOn, user?.id, existing, groups, playedDate, holesPlayed]);
 
   useEffect(() => {
     void loadActiveTournaments();

@@ -29,9 +29,11 @@ export type UpsertTournamentHolesResult = {
 export type { GrossReconciliation } from './tournamentReconciliation';
 export { reconcileGrossWithHoles, sumGrossFromHoles } from './tournamentReconciliation';
 
-/** Empty 18-hole draft for scorecard UI. */
-export function emptyTournamentHoleDraft(): TournamentHoleInput[] {
-  return Array.from({ length: TOURNAMENT_HOLE_COUNT }, (_, i) => ({
+/** Empty scorecard draft. Defaults to 18 so Scramble/Best Ball stay unchanged. */
+export function emptyTournamentHoleDraft(
+  holeCount: number = TOURNAMENT_HOLE_COUNT
+): TournamentHoleInput[] {
+  return Array.from({ length: holeCount }, (_, i) => ({
     hole_number: i + 1,
     gross_score: null,
     result: null,
@@ -39,11 +41,14 @@ export function emptyTournamentHoleDraft(): TournamentHoleInput[] {
   }));
 }
 
-export function rowsToHoleDraft(rows: DbTournamentHoleScoreRow[]): TournamentHoleInput[] {
-  const draft = emptyTournamentHoleDraft();
+export function rowsToHoleDraft(
+  rows: DbTournamentHoleScoreRow[],
+  holeCount: number = TOURNAMENT_HOLE_COUNT
+): TournamentHoleInput[] {
+  const draft = emptyTournamentHoleDraft(holeCount);
   for (const r of rows) {
     const idx = r.hole_number - 1;
-    if (idx < 0 || idx >= TOURNAMENT_HOLE_COUNT) continue;
+    if (idx < 0 || idx >= holeCount) continue;
     draft[idx] = {
       hole_number: r.hole_number,
       gross_score: r.gross_score,
@@ -83,8 +88,12 @@ export function notifyPendingTournamentHolesUpdated(): void {
   }
 }
 
-export function isScorecardComplete(holes: TournamentHoleInput[], format: LeagueFormat): boolean {
-  return countFilledHoles(holes, format) >= TOURNAMENT_HOLE_COUNT;
+export function isScorecardComplete(
+  holes: TournamentHoleInput[],
+  format: LeagueFormat,
+  holeCount: number = TOURNAMENT_HOLE_COUNT
+): boolean {
+  return countFilledHoles(holes, format) >= holeCount;
 }
 
 export async function fetchTournamentHoleScores(

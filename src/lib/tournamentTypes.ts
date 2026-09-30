@@ -6,6 +6,44 @@ import type { LeagueFormat } from './leagues';
 
 export const TOURNAMENT_HOLE_COUNT = 18 as const;
 
+export type HolesPerRound = '18' | '9';
+
+/** Expected tournament-scorecard hole count for a league. Scramble/Best Ball are
+ * always 18 in this phase regardless of `holes_per_round` — only Stroke Play and
+ * Match Play can actually be 9-hole. */
+export function expectedTournamentHoleCount(league: {
+  format: LeagueFormat;
+  holes_per_round?: HolesPerRound | string | null;
+}): number {
+  if (league.format === 'scramble' || league.format === 'best_ball') {
+    return TOURNAMENT_HOLE_COUNT;
+  }
+  return league.holes_per_round === '9' ? 9 : TOURNAMENT_HOLE_COUNT;
+}
+
+/** Whether a logged round's length can be applied to this tournament. */
+export function leagueAcceptsLoggedHoles(
+  league: {
+    format: LeagueFormat;
+    holes_per_round?: HolesPerRound | string | null;
+    match_play_nine?: 'front' | 'back' | null;
+  },
+  holesPlayed: '18' | 'front' | 'back'
+): boolean {
+  const leagueHolesPerRound = league.holes_per_round === '9' ? '9' : '18';
+  if (leagueHolesPerRound === '18' && holesPlayed !== '18') return false;
+  if (leagueHolesPerRound === '9' && holesPlayed === '18') return false;
+  if (
+    leagueHolesPerRound === '9' &&
+    league.format === 'match_play' &&
+    league.match_play_nine &&
+    holesPlayed !== league.match_play_nine
+  ) {
+    return false;
+  }
+  return true;
+}
+
 export type HoleEntryStatus = 'complete' | 'pending_holes';
 
 export type MatchPlayPairingMethod = 'random' | 'admin' | 'bracket';

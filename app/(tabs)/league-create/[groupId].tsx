@@ -123,6 +123,8 @@ export default function LeagueCreateScreen() {
   const [step, setStep] = useState<WizardStep>('basic');
   const [name, setName] = useState('');
   const [format, setFormat] = useState<LeagueFormat>('stroke');
+  const [holesPerRound, setHolesPerRound] = useState<'18' | '9'>('18');
+  const [matchPlayNine, setMatchPlayNine] = useState<'front' | 'back' | null>(null);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Record<string, boolean>>({});
   const [playerSearch, setPlayerSearch] = useState('');
   const [startDateYmd, setStartDateYmd] = useState(todayLocalYmd);
@@ -158,6 +160,8 @@ export default function LeagueCreateScreen() {
     setStep('basic');
     setName('');
     setFormat('stroke');
+    setHolesPerRound('18');
+    setMatchPlayNine(null);
     setPlayerSearch('');
     setStartDateYmd(todayLocalYmd());
     setEndDateYmd(defaultEndDateYmd());
@@ -196,6 +200,16 @@ export default function LeagueCreateScreen() {
       setUseHandicap(DEFAULT_USE_HANDICAP);
     }
   }, [step]);
+
+  useEffect(() => {
+    if (format !== 'stroke' && format !== 'match_play') {
+      setHolesPerRound('18');
+      setMatchPlayNine(null);
+    }
+  }, [format]);
+
+  const nineSelectionIncomplete =
+    format === 'match_play' && holesPerRound === '9' && matchPlayNine == null;
 
   /** Keep selection keys aligned with the group roster (new joins default on). */
   useEffect(() => {
@@ -544,6 +558,10 @@ export default function LeagueCreateScreen() {
       showAppAlert('Invalid field', matchPlayDisabledMessage);
       return;
     }
+    if (isMatchPlay && holesPerRound === '9' && !matchPlayNine) {
+      showAppAlert('Which nine?', 'Choose Front 9 or Back 9 for this Match Play tournament.');
+      return;
+    }
     if (isScramble) {
       const sizeErr = validateScrambleTeamSizes(teams);
       if (sizeErr) {
@@ -586,6 +604,8 @@ export default function LeagueCreateScreen() {
         createdBy: user.id,
         members: playingMembers,
         matchPlayPairingMethod: isMatchPlay ? 'bracket' : null,
+        holesPerRound: format === 'stroke' || format === 'match_play' ? holesPerRound : '18',
+        matchPlayNine: isMatchPlay && holesPerRound === '9' ? matchPlayNine : null,
         matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
         scrambleHandicapOverride: isScramble
           ? scrambleHandicapOverride.trim()
@@ -934,6 +954,65 @@ export default function LeagueCreateScreen() {
         {step === 'settings' ? (
           <>
             <Text style={styles.head}>Settings</Text>
+            {format === 'stroke' || format === 'match_play' ? (
+              <>
+                <Text style={styles.lbl}>Holes per round</Text>
+                <View style={styles.dayRow}>
+                  {(
+                    [
+                      { key: '18' as const, title: '18 holes', sub: 'Full round' },
+                      { key: '9' as const, title: '9 holes', sub: 'Front or Back' },
+                    ] as const
+                  ).map((opt) => {
+                    const on = holesPerRound === opt.key;
+                    return (
+                      <Pressable
+                        key={opt.key}
+                        style={[styles.dayBtn, on && styles.dayBtnOn]}
+                        onPress={() => {
+                          setHolesPerRound(opt.key);
+                          if (opt.key === '18') setMatchPlayNine(null);
+                        }}
+                      >
+                        <Text style={[styles.dayDn, on && styles.dayDnOn]}>{opt.title}</Text>
+                        <Text style={[styles.dayDs, on && styles.dayDsOn]}>{opt.sub}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {isMatchPlay && holesPerRound === '9' ? (
+                  <>
+                    <Text style={[styles.lbl, { marginTop: 12 }]}>Which nine?</Text>
+                    <Text style={styles.helper}>
+                      Everyone in the bracket plays the same nine so hole scores line up.
+                    </Text>
+                    <View style={styles.dayRow}>
+                      {(
+                        [
+                          { key: 'front' as const, title: 'Front 9', sub: 'Holes 1–9' },
+                          { key: 'back' as const, title: 'Back 9', sub: 'Holes 10–18' },
+                        ] as const
+                      ).map((opt) => {
+                        const on = matchPlayNine === opt.key;
+                        return (
+                          <Pressable
+                            key={opt.key}
+                            style={[styles.dayBtn, on && styles.dayBtnOn]}
+                            onPress={() => setMatchPlayNine(opt.key)}
+                          >
+                            <Text style={[styles.dayDn, on && styles.dayDnOn]}>{opt.title}</Text>
+                            <Text style={[styles.dayDs, on && styles.dayDsOn]}>{opt.sub}</Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                    {nineSelectionIncomplete ? (
+                      <Text style={styles.formatDisabledNote}>Choose Front 9 or Back 9.</Text>
+                    ) : null}
+                  </>
+                ) : null}
+              </>
+            ) : null}
             <DatePlayedField
               label="Start date"
               hint={null}
@@ -1078,7 +1157,8 @@ export default function LeagueCreateScreen() {
               />
             </View>
             <Pressable
-              style={styles.primaryBtn}
+              style={[styles.primaryBtn, nineSelectionIncomplete && styles.btnDisabled]}
+              disabled={nineSelectionIncomplete}
               onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
@@ -1261,6 +1341,13 @@ export default function LeagueCreateScreen() {
                 {isMatchPlay
                   ? `Bracket · ${playingMembers.length} players · Handicap ${useHandicap ? 'on' : 'off'}`
                   : `Best ${roundsThatCount} rounds · Handicap ${useHandicap ? 'on' : 'off'}`}
+                {holesPerRound === '9'
+                  ? ` · 9 holes${
+                      isMatchPlay
+                        ? ` (${matchPlayNine === 'back' ? 'Back 9' : 'Front 9'})`
+                        : ''
+                    }`
+                  : ''}
               </Text>
               {notes.trim() ? (
                 <Text style={styles.summaryMeta}>Notes: {notes.trim()}</Text>
@@ -1415,6 +1502,21 @@ const styles = StyleSheet.create({
   toggleRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   toggleLbl: { fontSize: 15, fontWeight: '600', color: colors.ink, flex: 1, paddingRight: 8 },
   toggleVal: { fontSize: 15, fontWeight: '700', color: colors.sage, minWidth: 28 },
+  dayRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
+  dayBtn: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.bg,
+    alignItems: 'center',
+  },
+  dayBtnOn: { backgroundColor: colors.accentSoft, borderColor: colors.sage },
+  dayDn: { fontSize: 14, fontWeight: '700', color: colors.muted },
+  dayDnOn: { color: colors.accentDark },
+  dayDs: { fontSize: 11, color: colors.subtle, marginTop: 2 },
+  dayDsOn: { color: colors.accent },
   outlineBtn: {
     marginTop: 8,
     marginBottom: 12,

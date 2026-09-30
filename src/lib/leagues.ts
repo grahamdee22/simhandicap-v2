@@ -12,9 +12,9 @@ import { fetchLeagueMatchPairings } from './matchPlayTournamentPairings';
 import { isUserDesignatedScorerForTeam } from './scrambleTournament';
 import { fetchTeamHoleScoresForLeague } from './tournamentTeamScores';
 import { resolveTournamentAccessToken } from './tournamentApi';
-import { isHoleByHoleLeagueFormat } from './tournamentTypes';
-import type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
-import { shouldBlockTournamentApplyForHoles } from './nineHoleRating';
+import { isHoleByHoleLeagueFormat, leagueAcceptsLoggedHoles } from './tournamentTypes';
+import type { HoleEntryStatus, HolesPerRound, MatchPlayPairingMethod } from './tournamentTypes';
+import type { HolesPlayed } from './nineHoleRating';
 
 export type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
 export { isHoleByHoleLeagueFormat, teamFormatRequires18Holes } from './tournamentTypes';
@@ -48,6 +48,8 @@ export type DbLeagueRow = {
     | 'final'
     | null;
   scramble_handicap_override: number | null;
+  holes_per_round: HolesPerRound;
+  match_play_nine: 'front' | 'back' | null;
   created_at: string;
   updated_at: string;
 };
@@ -470,6 +472,8 @@ export type CreateLeagueInput = {
   matchPlayPairingMethod?: MatchPlayPairingMethod | null;
   matchPlayMatchesThatCount?: number | null;
   scrambleHandicapOverride?: number | null;
+  holesPerRound?: HolesPerRound;
+  matchPlayNine?: 'front' | 'back' | null;
 };
 
 export async function createLeague(
@@ -494,6 +498,9 @@ export async function createLeague(
       input.format === 'match_play' ? (input.matchPlayMatchesThatCount ?? null) : null,
     scramble_handicap_override:
       input.format === 'scramble' ? (input.scrambleHandicapOverride ?? null) : null,
+    holes_per_round: input.holesPerRound ?? '18',
+    match_play_nine:
+      input.format === 'match_play' ? (input.matchPlayNine ?? null) : null,
   };
 
   let league: DbLeagueRow | null = null;
@@ -627,6 +634,7 @@ export async function fetchActiveTournamentsForUser(params: {
   userId: string;
   groups: { id: string; name: string }[];
   playedAt: string;
+  holesPlayed: HolesPlayed;
   accessToken?: string;
 }): Promise<ActiveTournamentOption[]> {
   const playedYmd = params.playedAt.slice(0, 10);
@@ -640,6 +648,7 @@ export async function fetchActiveTournamentsForUser(params: {
     for (const league of synced) {
       if (league.status !== 'active') continue;
       if (playedYmd < league.start_date || playedYmd > league.end_date) continue;
+      if (!leagueAcceptsLoggedHoles(league, params.holesPlayed)) continue;
       if (seen.has(league.id)) continue;
       const bundleRes = await fetchLeagueBundle(league.id, params.accessToken);
       if (!bundleRes.data) continue;
@@ -688,8 +697,8 @@ export type LeagueRoundRecordResult = {
 };
 
 /** Record league_round rows only for tournaments the player opted into at log time.
- * Nine-hole rounds are rejected (Decision 3): Stroke Play nets distort standings vs 18-hole
- * peers; Scramble/Best Ball hole cards are 18-only. DB trigger also enforces this.
+ * A league accepts the round only when its holes_per_round (and Match Play nine)
+ * matches. The DB trigger enforces the same rule.
  */
 export async function recordOptedInLeagueRounds(params: {
   userId: string;
@@ -700,15 +709,11 @@ export async function recordOptedInLeagueRounds(params: {
   selections: { leagueId: string; apply: boolean }[];
   displayNames?: Record<string, string>;
   accessToken?: string;
-  /** When front/back, skip all tournament association. */
+  /** Logged round length. Defaults to 18 when omitted. */
   holesPlayed?: '18' | 'front' | 'back';
 }): Promise<LeagueRoundRecordResult[]> {
   const results: LeagueRoundRecordResult[] = [];
-  // Stroke Play nets distort standings vs 18-hole peers; Scramble/Best Ball hole cards
-  // are 18-only. Block all formats here; DB trigger on league_rounds also rejects.
-  if (shouldBlockTournamentApplyForHoles(params.holesPlayed)) {
-    return results;
-  }
+  const holesPlayed = params.holesPlayed ?? '18';
   const applyIds = new Set(
     params.selections.filter((s) => s.apply).map((s) => s.leagueId)
   );
@@ -718,6 +723,7 @@ export async function recordOptedInLeagueRounds(params: {
     const bundleRes = await fetchLeagueBundle(leagueId, params.accessToken);
     if (!bundleRes.data) continue;
     const { league } = bundleRes.data;
+    if (!leagueAcceptsLoggedHoles(league, holesPlayed)) continue;
 
     const entry = bundleRes.data.entries.find(
       (e) => e.user_id === params.userId && isActiveLeagueEntry(e)

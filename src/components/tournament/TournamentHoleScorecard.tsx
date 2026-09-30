@@ -20,6 +20,10 @@ type Props = {
   teamScoreLabel?: string;
   /** Match play: opponent gross scores for live comparison when available */
   opponentHoles?: TournamentHoleInput[] | null;
+  /** 9 or 18. Scramble/Best Ball always pass 18. */
+  holeCount?: number;
+  /** Match Play 9-hole only: which physical nine the card represents. */
+  nine?: 'front' | 'back' | null;
 };
 
 function cellColors(gross: number | null | undefined, par: number): { bg: string; border: string } {
@@ -51,6 +55,7 @@ function HoleRow({
   holes,
   onChangeHole,
   teamScoreLabel,
+  holeNumberOffset = 0,
 }: {
   label: string;
   startHole: number;
@@ -61,6 +66,8 @@ function HoleRow({
   holes: TournamentHoleInput[];
   onChangeHole: (holeNumber: number, patch: Partial<TournamentHoleInput>) => void;
   teamScoreLabel?: string;
+  /** Display-only. Stored hole numbers stay 1..n. */
+  holeNumberOffset?: number;
 }) {
   const indices = Array.from({ length: count }, (_, i) => startHole + i);
   const totalGross = indices.reduce((s, idx) => {
@@ -86,7 +93,7 @@ function HoleRow({
 
           return (
             <View key={holeNum} style={styles.cell}>
-              <Text style={styles.holeNum}>{holeNum}</Text>
+              <Text style={styles.holeNum}>{holeNum + holeNumberOffset}</Text>
               <Text style={styles.par}>Par {par}</Text>
               <TextInput
                 style={[
@@ -131,72 +138,94 @@ export function TournamentHoleScorecard({
   onChangeHole,
   teamScoreLabel,
   opponentHoles,
+  holeCount = 18,
+  nine = null,
 }: Props) {
   const grandTotal = sumGrossFromHoles(holes);
+  const nineLabel = nine === 'back' ? 'Back 9' : 'Front 9';
 
   const matchComparison = useMemo(() => {
     if (format !== 'match_play' || !opponentHoles?.length) return null;
-    return compareMatchPlayGrossHoles(holes, opponentHoles);
-  }, [format, holes, opponentHoles]);
+    return compareMatchPlayGrossHoles(holes, opponentHoles, holeCount);
+  }, [format, holes, opponentHoles, holeCount]);
 
   const matchSummary = useMemo(() => {
     if (format !== 'match_play') return null;
-    if (matchComparison && countComparedMatchPlayHoles(holes, opponentHoles ?? []) > 0) {
+    if (matchComparison && countComparedMatchPlayHoles(holes, opponentHoles ?? [], holeCount) > 0) {
       return matchComparison.summary;
     }
     const fromResults = computeMatchPlayRunningScore(holes);
     if (fromResults.wins + fromResults.losses + fromResults.halved > 0) return fromResults;
     return null;
-  }, [format, holes, opponentHoles, matchComparison]);
+  }, [format, holes, opponentHoles, matchComparison, holeCount]);
 
   const throughHoles = useMemo(() => {
     if (format !== 'match_play') return 0;
     if (opponentHoles?.length) {
-      return countComparedMatchPlayHoles(holes, opponentHoles);
+      return countComparedMatchPlayHoles(holes, opponentHoles, holeCount);
     }
     return holes.filter((h) => h.result != null).length;
-  }, [format, holes, opponentHoles]);
+  }, [format, holes, opponentHoles, holeCount]);
 
   const matchStatusText = useMemo(() => {
     if (format !== 'match_play') return null;
     if (matchSummary && throughHoles > 0) {
-      return formatMatchPlayStatus(matchSummary, throughHoles);
+      return formatMatchPlayStatus(matchSummary, throughHoles, holeCount);
     }
     const filled = holes.filter((h) => h.gross_score != null).length;
     if (filled > 0 && !opponentHoles?.length) {
       return 'Submit your scorecard — match status updates when your opponent submits.';
     }
     return null;
-  }, [format, matchSummary, throughHoles, holes, opponentHoles]);
+  }, [format, matchSummary, throughHoles, holes, opponentHoles, holeCount]);
 
   return (
     <View style={styles.card}>
       {matchStatusText ? <Text style={styles.matchStatus}>{matchStatusText}</Text> : null}
-      <HoleRow
-        label="Front 9"
-        startHole={0}
-        count={9}
-        totalLabel="Out"
-        format={format}
-        pars={pars}
-        holes={holes}
-        onChangeHole={onChangeHole}
-        teamScoreLabel={teamScoreLabel}
-      />
-      <HoleRow
-        label="Back 9"
-        startHole={9}
-        count={9}
-        totalLabel="In"
-        format={format}
-        pars={pars}
-        holes={holes}
-        onChangeHole={onChangeHole}
-      />
-      <View style={styles.grandTotal}>
-        <Text style={styles.grandLbl}>Total</Text>
-        <Text style={styles.grandVal}>{grandTotal ?? '—'}</Text>
-      </View>
+      {holeCount === 9 ? (
+        <HoleRow
+          label={nineLabel}
+          startHole={0}
+          count={9}
+          totalLabel="Total"
+          format={format}
+          pars={pars}
+          holes={holes}
+          onChangeHole={onChangeHole}
+          teamScoreLabel={teamScoreLabel}
+          holeNumberOffset={nine === 'back' ? 9 : 0}
+        />
+      ) : (
+        <>
+          <HoleRow
+            label="Front 9"
+            startHole={0}
+            count={9}
+            totalLabel="Out"
+            format={format}
+            pars={pars}
+            holes={holes}
+            onChangeHole={onChangeHole}
+            teamScoreLabel={teamScoreLabel}
+          />
+          <HoleRow
+            label="Back 9"
+            startHole={9}
+            count={9}
+            totalLabel="In"
+            format={format}
+            pars={pars}
+            holes={holes}
+            onChangeHole={onChangeHole}
+          />
+        </>
+      )}
+      {holeCount === 9 ? null : (
+        <View style={styles.grandTotal}>
+          <Text style={styles.grandLbl}>Total</Text>
+          <Text style={styles.grandVal}>{grandTotal ?? '—'}</Text>
+        </View>
+      )}
     </View>
   );
 }
