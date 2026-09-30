@@ -375,6 +375,43 @@ export async function updateRoundInSupabase(
   return null;
 }
 
+/** Best-effort. Round soft-delete already succeeded; a cleanup failure must not fail the delete. */
+async function cleanupLeagueRoundsForDeletedRound(
+  roundId: string,
+  accessToken?: string
+): Promise<void> {
+  try {
+    if (accessToken) {
+      const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+      if (!supabaseUrl || !supabaseAnonKey) return;
+      const res = await fetch(`${supabaseUrl}/rest/v1/rpc/delete_league_rounds_for_round`, {
+        method: 'POST',
+        headers: {
+          apikey: supabaseAnonKey,
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ p_round_id: roundId }),
+      });
+      if (!res.ok) {
+        const rawText = await res.text().catch(() => '');
+        console.warn('[rounds] delete_league_rounds_for_round failed', rawText || res.statusText);
+      }
+      return;
+    }
+
+    if (!supabase) return;
+    const { error } = await supabase.rpc('delete_league_rounds_for_round', {
+      p_round_id: roundId,
+    });
+    if (error) {
+      console.warn('[rounds] delete_league_rounds_for_round failed', error.message);
+    }
+  } catch (err) {
+    console.warn('[rounds] delete_league_rounds_for_round failed', err);
+  }
+}
+
 export async function deleteRoundInSupabase(
   roundId: string,
   accessToken?: string
@@ -412,8 +449,10 @@ export async function deleteRoundInSupabase(
       if (rows.length === 0) {
         return 'No round was deleted (not found, wrong account, or already deleted)';
       }
+      await cleanupLeagueRoundsForDeletedRound(roundId, accessToken);
       return null;
     } catch {
+      await cleanupLeagueRoundsForDeletedRound(roundId, accessToken);
       return null;
     }
   }
@@ -445,5 +484,6 @@ export async function deleteRoundInSupabase(
     return 'No round was deleted (not found, wrong account, or already deleted)';
   }
 
+  await cleanupLeagueRoundsForDeletedRound(roundId);
   return null;
 }
