@@ -41,3 +41,4 @@ scripts/.cache/
 # generated native folders
 /ios
 /android
+Claude outputs/
