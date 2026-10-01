@@ -14,6 +14,7 @@ import {
   getNineHoleRatingSlope,
   isNineHolePlayed,
   nineHoleLoggingUnlocked,
+  parAnchorForHoles,
   ratingSlopeForHolesPlayed,
 } from '../nineHoleRating';
 import { isNineHoleSocialMatch, buildNewRoundInputFromCompletedMatch } from '../matchPlayIndexRound';
@@ -116,6 +117,14 @@ describe('null-index / score bounds helpers', () => {
     assert.equal(isNineHolePlayed('18'), false);
     assert.equal(isNineHolePlayed('front'), true);
     assert.equal(isNineHolePlayed(undefined), false);
+  });
+
+  it('parAnchorForHoles', () => {
+    assert.equal(parAnchorForHoles('18'), 72);
+    assert.equal(parAnchorForHoles('front'), 36);
+    assert.equal(parAnchorForHoles('back'), 36);
+    assert.equal(parAnchorForHoles(null), 72);
+    assert.equal(parAnchorForHoles(undefined), 72);
   });
 });
 

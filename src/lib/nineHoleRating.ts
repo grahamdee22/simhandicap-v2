@@ -44,6 +44,12 @@ export function isNineHolePlayed(holes: HolesPlayed | null | undefined): boolean
   return holes === 'front' || holes === 'back';
 }
 
+/** Scratch/par anchor gross score — used as the score stepper's starting point and as the
+ *  expected-differential calc's rating anchor. 36 for a 9-hole round, 72 for 18. */
+export function parAnchorForHoles(holes: HolesPlayed | null | undefined): number {
+  return isNineHolePlayed(holes) ? 36 : 72;
+}
+
 /**
  * Decision 2: Front/Back 9 unlocked once Home would show a non-null SimCap index
  * (`currentIndexFromRounds` ≠ null). Editing an already-saved 9-hole round stays allowed.

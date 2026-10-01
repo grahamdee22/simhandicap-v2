@@ -2,7 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { FlatList, Keyboard, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableWithoutFeedback, useWindowDimensions, View, Alert, ActivityIndicator, InputAccessoryView } from 'react-native';
+import { FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, Alert, ActivityIndicator, InputAccessoryView } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useKeyboardBottomInset } from '../../../src/lib/useKeyboardBottomInset';
 import * as ImagePicker from 'expo-image-picker';
@@ -78,6 +78,7 @@ import {
   holesPlayedLabel,
   isNineHolePlayed,
   nineHoleLoggingUnlocked,
+  parAnchorForHoles,
   ratingSlopeForHolesPlayed,
   type HolesPlayed,
 } from '../../../src/lib/nineHoleRating';
@@ -224,7 +225,7 @@ export default function LogRoundScreen() {
     setPlatform(preferredLogPlatform);
     setCourseId('pebble');
     setHolesPlayed('18');
-    setGrossScore(72);
+    setGrossScore(parAnchorForHoles('18'));
     setPutting('auto_2putt');
     setPin('thu');
     setWind('off');
@@ -692,7 +693,7 @@ export default function LogRoundScreen() {
   const scoreBounds = grossScoreBounds(holesPlayed);
   const expectedDiffPre = useMemo(() => {
     if (simIndexCurrent == null || modifier <= 0 || slope <= 0) return null;
-    const ratingAnchor = isNineHolePlayed(holesPlayed) ? 36 : 72;
+    const ratingAnchor = parAnchorForHoles(holesPlayed);
     let e = (simIndexCurrent * slope) / 113 + (rating - ratingAnchor);
     e *= modifier;
     return Number.isFinite(e) ? round1(e) : null;
@@ -989,9 +990,11 @@ export default function LogRoundScreen() {
   return (
     <ContentWidth bg={colors.surface}>
       <>
-      <View style={styles.root}>
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss} accessible={false}>
-          <View style={styles.scrollWrap}>
+      <KeyboardAvoidingView
+        style={styles.root}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top + 56 : 0}
+      >
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={{
@@ -1000,7 +1003,6 @@ export default function LogRoundScreen() {
             paddingBottom: insets.bottom + 100,
           }}
           keyboardShouldPersistTaps="handled"
-          onScrollBeginDrag={Keyboard.dismiss}
           nestedScrollEnabled
           showsVerticalScrollIndicator={false}
         >
@@ -1102,7 +1104,7 @@ export default function LogRoundScreen() {
                   disabled={locked}
                   onPress={() => {
                     setHolesPlayed(h.key);
-                    setGrossScore((g) => clampGrossScore(g, h.key));
+                    setGrossScore(parAnchorForHoles(h.key));
                   }}
                   accessibilityState={{ disabled: locked, selected: on }}
                 >
@@ -1434,9 +1436,7 @@ export default function LogRoundScreen() {
           Saves to your SimCap account, opens Round analysis, and updates your sim index, home chart, and profile.
         </Text>
         </ScrollView>
-          </View>
-        </TouchableWithoutFeedback>
-      </View>
+      </KeyboardAvoidingView>
 
       <Modal
         visible={diffInfoOpen != null}
@@ -1599,7 +1599,6 @@ export default function LogRoundScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, minHeight: 0, backgroundColor: colors.surface, width: '100%' },
-  scrollWrap: { flex: 1, minHeight: 0 },
   scroll: { flex: 1, minHeight: 0, width: '100%' },
   pickRow: { flexDirection: 'row', gap: 12, width: '100%' },
   pickCol: { flex: 1, minWidth: 0 },
