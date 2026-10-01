@@ -16,6 +16,7 @@ export type StandingsLeague = {
   format: LeagueFormat | string;
   use_handicap: boolean;
   rounds_that_count: number;
+  holes_per_round?: string | null;
 };
 
 export type StandingsEntry = {
@@ -157,11 +158,13 @@ export function computeLeagueStandings(params: {
     const partialByTeam = new Map<string, boolean>();
 
     if (league.format === 'best_ball' && params.teamHoleScores?.length) {
+      const expectedHoles = league.holes_per_round === '9' ? 9 : 18;
       for (const t of teams) {
         const aggregates = aggregateBestBallTeamRounds(
           params.teamHoleScores,
           t.id,
-          league.use_handicap
+          league.use_handicap,
+          expectedHoles
         );
         const { netScores, grossScores, hasPartialPending } = bestBallStandingsScores(
           aggregates,

@@ -81,11 +81,13 @@ function allBestBallTeamsMetThreshold(
   roundsThatCount: number
 ): boolean {
   if (teams.length === 0) return false;
+  const expectedHoles = league.holes_per_round === '9' ? 9 : 18;
   return teams.every((t) => {
     const aggregates = aggregateBestBallTeamRounds(
       teamHoleScores,
       t.id,
-      league.use_handicap
+      league.use_handicap,
+      expectedHoles
     );
     const { netScores } = bestBallStandingsScores(aggregates, league.use_handicap);
     return netScores.length >= roundsThatCount;

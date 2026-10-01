@@ -107,6 +107,14 @@ describe('best ball aggregation', () => {
     assert.deepEqual(netScores, [72]);
     assert.deepEqual(grossScores, [72]);
   });
+
+  it('counts a complete 9-hole team round', () => {
+    const rows = Array.from({ length: 9 }, (_, i) => holeRow(i + 1, 4, false));
+    const agg = aggregateBestBallTeamRounds(rows, teamId, false, 9);
+    const { netScores, hasPartialPending } = bestBallStandingsScores(agg, false);
+    assert.deepEqual(netScores, [36]);
+    assert.equal(hasPartialPending, false);
+  });
 });
 
 describe('match play gross comparison', () => {

@@ -10,6 +10,7 @@ export type BestBallTeamRoundAggregate = {
   netTotal: number;
   isPartial: boolean;
   holesRecorded: number;
+  expectedHoles: number;
 };
 
 export function validateBestBallTeamSizes(
@@ -23,11 +24,12 @@ export function validateBestBallTeamSizes(
   return null;
 }
 
-/** Group team hole rows by round_date and compute 18-hole totals. */
+/** Group team hole rows by round_date and total the holes that count for that tournament. */
 export function aggregateBestBallTeamRounds(
   rows: DbTournamentTeamHoleScoreRow[],
   leagueTeamId: string,
-  useNet: boolean
+  useNet: boolean,
+  expectedHoles: number = 18
 ): BestBallTeamRoundAggregate[] {
   const byDate = new Map<string, DbTournamentTeamHoleScoreRow[]>();
   for (const row of rows) {
@@ -40,7 +42,7 @@ export function aggregateBestBallTeamRounds(
   const out: BestBallTeamRoundAggregate[] = [];
   for (const [roundDate, holes] of byDate) {
     const sorted = [...holes].sort((a, b) => a.hole_number - b.hole_number);
-    const isPartial = sorted.some((h) => h.is_partial) || sorted.length < 18;
+    const isPartial = sorted.some((h) => h.is_partial) || sorted.length < expectedHoles;
     const grossTotal = sorted.reduce((s, h) => s + h.team_score, 0);
     const netTotal = sorted.reduce(
       (s, h) => s + Number(h.team_net_score ?? h.team_score),
@@ -52,6 +54,7 @@ export function aggregateBestBallTeamRounds(
       netTotal,
       isPartial,
       holesRecorded: sorted.length,
+      expectedHoles,
     });
   }
   out.sort((a, b) => b.roundDate.localeCompare(a.roundDate));
@@ -71,7 +74,7 @@ export function bestBallStandingsScores(
       if (a.holesRecorded > 0) hasPartialPending = true;
       continue;
     }
-    if (a.holesRecorded < 18) continue;
+    if (a.holesRecorded < a.expectedHoles) continue;
     netScores.push(a.netTotal);
     grossScores.push(a.grossTotal);
   }
