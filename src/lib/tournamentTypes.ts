@@ -8,16 +8,11 @@ export const TOURNAMENT_HOLE_COUNT = 18 as const;
 
 export type HolesPerRound = '18' | '9';
 
-/** Expected tournament-scorecard hole count for a league. Scramble/Best Ball are
- * always 18 in this phase regardless of `holes_per_round` — only Stroke Play and
- * Match Play can actually be 9-hole. */
+/** Expected tournament-scorecard hole count for a league, based on `holes_per_round`. */
 export function expectedTournamentHoleCount(league: {
   format: LeagueFormat;
   holes_per_round?: HolesPerRound | string | null;
 }): number {
-  if (league.format === 'scramble' || league.format === 'best_ball') {
-    return TOURNAMENT_HOLE_COUNT;
-  }
   return league.holes_per_round === '9' ? 9 : TOURNAMENT_HOLE_COUNT;
 }
 
@@ -88,11 +83,6 @@ export type PendingTournamentHoleRound = {
 /** Formats that require the post–log-round hole-by-hole screen (PRD §1.2). */
 export function isHoleByHoleLeagueFormat(format: LeagueFormat): boolean {
   return format === 'match_play' || format === 'scramble' || format === 'best_ball';
-}
-
-/** Team formats require 18 holes when opting in at log time (PRD §6.5). */
-export function teamFormatRequires18Holes(format: LeagueFormat): boolean {
-  return format === 'scramble' || format === 'best_ball';
 }
 
 export function isMatchPlayHoleResult(value: string): value is MatchPlayHoleResult {

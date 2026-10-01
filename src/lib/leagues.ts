@@ -17,7 +17,7 @@ import type { HoleEntryStatus, HolesPerRound, MatchPlayPairingMethod } from './t
 import type { HolesPlayed } from './nineHoleRating';
 
 export type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
-export { isHoleByHoleLeagueFormat, teamFormatRequires18Holes } from './tournamentTypes';
+export { isHoleByHoleLeagueFormat } from './tournamentTypes';
 
 export const LEAGUE_FORMATS = ['stroke', 'match_play', 'scramble', 'best_ball'] as const;
 export type LeagueFormat = (typeof LEAGUE_FORMATS)[number];

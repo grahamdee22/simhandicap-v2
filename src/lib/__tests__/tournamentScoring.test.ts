@@ -143,12 +143,14 @@ describe('match play gross comparison', () => {
 });
 
 describe('9-hole tournament eligibility', () => {
-  it('keeps scramble and best ball on 18 holes', async () => {
+  it('scramble and best ball follow holes_per_round same as stroke/match play', async () => {
     const { expectedTournamentHoleCount, leagueAcceptsLoggedHoles } = await import(
       '../tournamentTypes'
     );
-    assert.equal(expectedTournamentHoleCount({ format: 'scramble', holes_per_round: '9' }), 18);
-    assert.equal(expectedTournamentHoleCount({ format: 'best_ball', holes_per_round: '9' }), 18);
+    assert.equal(expectedTournamentHoleCount({ format: 'scramble', holes_per_round: '9' }), 9);
+    assert.equal(expectedTournamentHoleCount({ format: 'best_ball', holes_per_round: '9' }), 9);
+    assert.equal(expectedTournamentHoleCount({ format: 'scramble', holes_per_round: '18' }), 18);
+    assert.equal(expectedTournamentHoleCount({ format: 'best_ball', holes_per_round: '18' }), 18);
     assert.equal(expectedTournamentHoleCount({ format: 'stroke', holes_per_round: '9' }), 9);
     assert.equal(expectedTournamentHoleCount({ format: 'match_play', holes_per_round: '18' }), 18);
 
@@ -184,6 +186,14 @@ describe('9-hole tournament eligibility', () => {
     );
     assert.equal(
       leagueAcceptsLoggedHoles({ format: 'scramble', holes_per_round: '18' }, 'front'),
+      false
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles({ format: 'scramble', holes_per_round: '9' }, 'front'),
+      true
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles({ format: 'best_ball', holes_per_round: '9' }, '18'),
       false
     );
   });

@@ -202,8 +202,7 @@ export default function LeagueCreateScreen() {
   }, [step]);
 
   useEffect(() => {
-    if (format !== 'stroke' && format !== 'match_play') {
-      setHolesPerRound('18');
+    if (format !== 'match_play') {
       setMatchPlayNine(null);
     }
   }, [format]);
@@ -604,7 +603,7 @@ export default function LeagueCreateScreen() {
         createdBy: user.id,
         members: playingMembers,
         matchPlayPairingMethod: isMatchPlay ? 'bracket' : null,
-        holesPerRound: format === 'stroke' || format === 'match_play' ? holesPerRound : '18',
+        holesPerRound,
         matchPlayNine: isMatchPlay && holesPerRound === '9' ? matchPlayNine : null,
         matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
         scrambleHandicapOverride: isScramble
@@ -954,9 +953,7 @@ export default function LeagueCreateScreen() {
         {step === 'settings' ? (
           <>
             <Text style={styles.head}>Settings</Text>
-            {format === 'stroke' || format === 'match_play' ? (
-              <>
-                <Text style={styles.lbl}>Holes per round</Text>
+            <Text style={styles.lbl}>Holes per round</Text>
                 <View style={styles.dayRow}>
                   {(
                     [
@@ -1011,8 +1008,6 @@ export default function LeagueCreateScreen() {
                     ) : null}
                   </>
                 ) : null}
-              </>
-            ) : null}
             <DatePlayedField
               label="Start date"
               hint={null}

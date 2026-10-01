@@ -20,6 +20,7 @@ import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken'
 import { fetchLeagueBundle, type LeagueFormat } from '../../../src/lib/leagues';
 import { formatLeagueFormatLabel } from '../../../src/lib/leagueStandings';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
+import { restSelect } from '../../../src/lib/tournamentApi';
 import { formatBestBallPartialNote } from '../../../src/lib/bestBallTournament';
 import { invokeCalculateMatchPlayResult } from '../../../src/lib/matchPlayTournament';
 import {
@@ -100,6 +101,7 @@ export default function TournamentHolesScreen() {
   const [format, setFormat] = useState<LeagueFormat>(formatParam ?? 'stroke');
   const [holesPerRound, setHolesPerRound] = useState<HolesPerRound>('18');
   const [matchPlayNine, setMatchPlayNine] = useState<'front' | 'back' | null>(null);
+  const [roundNine, setRoundNine] = useState<'front' | 'back' | null>(null);
   const [holes, setHoles] = useState<TournamentHoleInput[]>(() => emptyTournamentHoleDraft());
   const [opponentHoles, setOpponentHoles] = useState<TournamentHoleInput[] | null>(null);
   const [scrambleBlocked, setScrambleBlocked] = useState<string | null>(null);
@@ -112,10 +114,11 @@ export default function TournamentHolesScreen() {
   const pars = useMemo(() => {
     const full = course?.pars ?? Array.from({ length: 18 }, () => 4);
     if (holeCount === 9) {
-      return matchPlayNine === 'back' ? full.slice(9, 18) : full.slice(0, 9);
+      const nine = matchPlayNine ?? roundNine;
+      return nine === 'back' ? full.slice(9, 18) : full.slice(0, 9);
     }
     return full;
-  }, [course, holeCount, matchPlayNine]);
+  }, [course, holeCount, matchPlayNine, roundNine]);
 
   const reconciliation = useMemo(
     () => reconcileGrossWithHoles(holes, grossScore),
@@ -126,6 +129,16 @@ export default function TournamentHolesScreen() {
     setLoading(true);
     const token = googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
     let bundle = null as Awaited<ReturnType<typeof fetchLeagueBundle>>['data'];
+
+    const roundRes = await restSelect<{
+      rounds: { holes_played: string | null } | { holes_played: string | null }[] | null;
+    }>(
+      `league_rounds?id=eq.${encodeURIComponent(leagueRoundId)}&select=rounds(holes_played)`,
+      token
+    );
+    const joined = roundRes.data?.[0]?.rounds;
+    const played = Array.isArray(joined) ? joined[0]?.holes_played : joined?.holes_played;
+    setRoundNine(played === 'front' || played === 'back' ? played : null);
 
     if (leagueId) {
       const bundleRes = await fetchLeagueBundle(leagueId, token);
@@ -335,7 +348,7 @@ export default function TournamentHolesScreen() {
           holes={holes}
           onChangeHole={onChangeHole}
           holeCount={holeCount}
-          nine={matchPlayNine}
+          nine={matchPlayNine ?? roundNine}
           opponentHoles={format === 'match_play' ? opponentHoles : undefined}
           teamScoreLabel={
             format === 'scramble'
