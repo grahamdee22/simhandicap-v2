@@ -10,6 +10,7 @@ import {
 } from '../lib/leagues';
 import {
   computeLeagueStandings,
+  formatLeagueDateRange,
   formatLeagueFormatLabel,
   isLeagueActive,
   leagueDaysRemaining,
@@ -36,6 +37,7 @@ import {
   setTournamentSectionCache,
 } from '../lib/tournamentSectionCache';
 import { supabase } from '../lib/supabase';
+import { buildBracketViewModel } from '../lib/matchPlayBracket';
 import type { FriendGroup } from '../store/useAppStore';
 
 function ordinalSuffix(n: number): string {
@@ -55,6 +57,63 @@ function ordinalSuffix(n: number): string {
 
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
 const ALLOW_DEV_CREATOR_VIEW = __DEV__;
+
+type PastSummary = {
+  dateRange: string;
+  resultLine: string;
+};
+
+async function summarizePastLeague(
+  league: DbLeagueRow,
+  accessToken: string | undefined,
+  displayNames: Record<string, string>
+): Promise<PastSummary> {
+  const dateRange = formatLeagueDateRange(league.start_date, league.end_date);
+  const bundleRes = await fetchLeagueBundle(league.id, accessToken);
+  const bundle = bundleRes.data;
+  if (!bundle) {
+    const empty =
+      league.format === 'match_play' && league.match_play_pairing_method === 'bracket'
+        ? 'No champion decided'
+        : 'No result recorded';
+    return { dateRange, resultLine: empty };
+  }
+
+  if (league.format === 'match_play' && league.match_play_pairing_method === 'bracket') {
+    const pr = await fetchLeagueMatchPairings(league.id, accessToken);
+    const model = buildBracketViewModel({
+      pairings: pr.data ?? [],
+      entries: bundle.entries,
+      displayNames,
+      currentBracketRound: league.current_bracket_round,
+      myEntryId: null,
+      playerCount: bundle.entries.length,
+    });
+    return {
+      dateRange,
+      resultLine: model.championName ? `🏆 ${model.championName}` : 'No champion decided',
+    };
+  }
+
+  let teamHoleScores = undefined;
+  if (league.format === 'best_ball') {
+    const th = await fetchTeamHoleScoresForLeague(league.id, accessToken);
+    teamHoleScores = th.data ?? undefined;
+  }
+  const standings = computeLeagueStandings({
+    league: bundle.league,
+    entries: bundle.entries,
+    rounds: bundle.rounds,
+    teams: bundle.teams,
+    displayNames,
+    teamHoleScores,
+  });
+  const winner = standings[0]?.displayName;
+  return {
+    dateRange,
+    resultLine: winner ? `🏆 ${winner}` : 'No result recorded',
+  };
+}
 
 type ManagerCheck = 'pending' | 'manager' | 'member';
 
@@ -121,6 +180,7 @@ export function GroupTournamentsSection({
   const [loading, setLoading] = useState(() => !initialCache);
   const [leagues, setLeagues] = useState<DbLeagueRow[]>(() => initialCache?.leagues ?? []);
   const [pastOpen, setPastOpen] = useState(false);
+  const [pastSummaries, setPastSummaries] = useState<Record<string, PastSummary | null>>({});
   const [previewTop3, setPreviewTop3] = useState<{ name: string; rank: number }[]>(
     () => initialCache?.previewTop3 ?? []
   );
@@ -221,6 +281,15 @@ export function GroupTournamentsSection({
     }, [load])
   );
 
+  const activeLeague = useMemo(
+    () => leagues.find((l) => l.status === 'active' && isLeagueActive(l)) ?? null,
+    [leagues]
+  );
+  const pastLeagues = useMemo(
+    () => leagues.filter((l) => l.status === 'completed' || l.status === 'archived'),
+    [leagues]
+  );
+
   useEffect(() => {
     const client = supabase;
     if (!client || !group.id) return;
@@ -238,24 +307,59 @@ export function GroupTournamentsSection({
       }, 280);
     };
 
+    const activeId = activeLeague?.id;
+    const activeFormat = activeLeague?.format;
+
     void (async () => {
       const token = (await resolveSocialGroupsAccessToken()) ?? null;
       await client.realtime.setAuth(token);
       if (cancelled) return;
 
-      channel = client
-        .channel(`group-tournaments:${group.id}`)
-        .on(
+      let next = client.channel(`group-tournaments:${group.id}`).on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'leagues',
+          filter: `group_id=eq.${group.id}`,
+        },
+        scheduleLoad
+      );
+
+      if (activeId) {
+        const leagueFilter = `league_id=eq.${activeId}`;
+        next = next.on(
           'postgres_changes',
-          {
-            event: '*',
-            schema: 'public',
-            table: 'leagues',
-            filter: `group_id=eq.${group.id}`,
-          },
+          { event: '*', schema: 'public', table: 'league_rounds', filter: leagueFilter },
           scheduleLoad
-        )
-        .subscribe();
+        );
+        if (activeFormat === 'scramble' || activeFormat === 'best_ball') {
+          next = next.on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'tournament_team_hole_scores',
+              filter: leagueFilter,
+            },
+            scheduleLoad
+          );
+        }
+        if (activeFormat === 'match_play') {
+          next = next.on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'league_match_pairings',
+              filter: leagueFilter,
+            },
+            scheduleLoad
+          );
+        }
+      }
+
+      channel = next.subscribe();
     })();
 
     return () => {
@@ -268,16 +372,36 @@ export function GroupTournamentsSection({
         void client.removeChannel(channel);
       }
     };
-  }, [group.id, load]);
+  }, [group.id, activeLeague?.id, activeLeague?.format, load]);
 
-  const activeLeague = useMemo(
-    () => leagues.find((l) => l.status === 'active' && isLeagueActive(l)) ?? null,
-    [leagues]
-  );
-  const pastLeagues = useMemo(
-    () => leagues.filter((l) => l.status === 'completed' || l.status === 'archived'),
-    [leagues]
-  );
+  useEffect(() => {
+    if (!pastOpen) return;
+    const missing = pastLeagues.filter((l) => !(l.id in pastSummaries));
+    if (missing.length === 0) return;
+    let alive = true;
+    void (async () => {
+      const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const rows = await Promise.all(
+        missing.map(async (league) => {
+          try {
+            const summary = await summarizePastLeague(league, accessToken, displayNames);
+            return [league.id, summary] as const;
+          } catch {
+            return [league.id, null] as const;
+          }
+        })
+      );
+      if (!alive) return;
+      setPastSummaries((prev) => {
+        const next = { ...prev };
+        for (const [id, summary] of rows) next[id] = summary;
+        return next;
+      });
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [pastOpen, pastLeagues, pastSummaries, displayNames]);
 
   const showLoadingSpinner = loading && !hasCache && !activeLeague;
   const showCreateBtn = !activeLeague && managerCheck !== 'pending' && showCreatorUi;
@@ -399,18 +523,35 @@ export function GroupTournamentsSection({
               <Text style={styles.pastChev}>{pastOpen ? '▾' : '▸'}</Text>
             </Pressable>
             {pastOpen
-              ? pastLeagues.map((l) => (
-                  <Pressable
-                    key={l.id}
-                    onPress={() => router.push(`/(tabs)/league/${l.id}` as never)}
-                    style={styles.pastRow}
-                  >
-                    <Text style={styles.pastName}>{l.name}</Text>
-                    <Text style={styles.pastMeta}>
-                      {formatLeagueFormatLabel(l.format)} · {l.status}
-                    </Text>
-                  </Pressable>
-                ))
+              ? pastLeagues.map((l) => {
+                  const summary = pastSummaries[l.id];
+                  return (
+                    <Pressable
+                      key={l.id}
+                      onPress={() => router.push(`/(tabs)/league/${l.id}` as never)}
+                      style={styles.pastRow}
+                    >
+                      <Text style={styles.pastName}>{l.name}</Text>
+                      <Text style={styles.pastMeta}>
+                        {formatLeagueFormatLabel(l.format)} · {l.status}
+                      </Text>
+                      {summary === undefined ? (
+                        <Text style={styles.pastMeta}>Loading…</Text>
+                      ) : summary ? (
+                        <Text style={styles.pastMeta}>
+                          {summary.dateRange} · {summary.resultLine}
+                        </Text>
+                      ) : (
+                        <Text style={styles.pastMeta}>
+                          {formatLeagueDateRange(l.start_date, l.end_date)} ·{' '}
+                          {l.format === 'match_play' && l.match_play_pairing_method === 'bracket'
+                            ? 'No champion decided'
+                            : 'No result recorded'}
+                        </Text>
+                      )}
+                    </Pressable>
+                  );
+                })
               : null}
           </View>
         ) : null}

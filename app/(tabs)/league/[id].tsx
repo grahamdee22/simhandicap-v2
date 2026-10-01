@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
@@ -33,6 +33,7 @@ import {
   leagueDaysRemaining,
 } from '../../../src/lib/leagueStandings';
 import { useResponsive } from '../../../src/lib/responsive';
+import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 export default function LeagueDetailScreen() {
@@ -64,8 +65,8 @@ export default function LeagueDetailScreen() {
     return m;
   }, [group?.members]);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     const accessToken =
       googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
     const res = await fetchLeagueBundle(leagueId, accessToken);
@@ -102,6 +103,75 @@ export default function LeagueDetailScreen() {
       void load();
     }, [load])
   );
+
+  const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const leagueFormat = bundle?.league.format;
+
+  useEffect(() => {
+    const client = supabase;
+    if (!leagueId || !client || !isSupabaseConfigured() || !user?.id) return;
+
+    let cancelled = false;
+    let channel: ReturnType<typeof client.channel> | null = null;
+
+    const scheduleLoad = () => {
+      if (realtimeDebounceRef.current) clearTimeout(realtimeDebounceRef.current);
+      realtimeDebounceRef.current = setTimeout(() => {
+        realtimeDebounceRef.current = null;
+        void load(true);
+      }, 280);
+    };
+
+    void (async () => {
+      const token =
+        googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? null;
+      await client.realtime.setAuth(token);
+      if (cancelled) return;
+
+      const leagueFilter = `league_id=eq.${leagueId}`;
+      let next = client
+        .channel(`league-detail:${leagueId}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'league_rounds', filter: leagueFilter },
+          scheduleLoad
+        );
+      if (leagueFormat === 'scramble' || leagueFormat === 'best_ball') {
+        next = next.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'tournament_team_hole_scores',
+            filter: leagueFilter,
+          },
+          scheduleLoad
+        );
+      }
+      if (leagueFormat === 'match_play') {
+        next = next.on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'league_match_pairings',
+            filter: leagueFilter,
+          },
+          scheduleLoad
+        );
+      }
+      channel = next.subscribe();
+    })();
+
+    return () => {
+      cancelled = true;
+      if (realtimeDebounceRef.current) {
+        clearTimeout(realtimeDebounceRef.current);
+        realtimeDebounceRef.current = null;
+      }
+      if (channel) void client.removeChannel(channel);
+    };
+  }, [leagueId, leagueFormat, user?.id, load]);
 
   const standings = useMemo(() => {
     if (!bundle) return [];
