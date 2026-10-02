@@ -10,6 +10,8 @@ import {
 } from './handicap';
 import { supabase } from './supabase';
 import type { SimRound } from '../store/useAppStore';
+import { restSelect } from './tournamentApi';
+import { invokeCalculateTeamHoleScores } from './tournamentTeamScores';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -376,37 +378,149 @@ export async function updateRoundInSupabase(
 }
 
 /** Best-effort. Round soft-delete already succeeded; a cleanup failure must not fail the delete. */
+type TeamRoundAnchor = {
+  leagueTeamId: string;
+  playedOn: string;
+};
+
+function playedOnDate(playedAt: string | null | undefined): string | null {
+  if (!playedAt) return null;
+  return playedAt.slice(0, 10);
+}
+
+function embeddedPlayedAt(
+  rounds: { played_at?: string | null } | { played_at?: string | null }[] | null | undefined
+): string | null {
+  const row = Array.isArray(rounds) ? rounds[0] : rounds;
+  return playedOnDate(row?.played_at);
+}
+
+async function listTeamRoundAnchors(
+  roundId: string,
+  accessToken?: string
+): Promise<TeamRoundAnchor[]> {
+  type Row = {
+    league_team_id: string | null;
+    rounds: { played_at?: string | null } | { played_at?: string | null }[] | null;
+  };
+  const path =
+    `league_rounds?round_id=eq.${encodeURIComponent(roundId)}` +
+    '&league_team_id=not.is.null&select=league_team_id,rounds(played_at)';
+
+  let rows: Row[] = [];
+  if (accessToken) {
+    const res = await restSelect<Row>(path, accessToken);
+    rows = res.data ?? [];
+  } else if (supabase) {
+    const { data, error } = await supabase
+      .from('league_rounds')
+      .select('league_team_id, rounds(played_at)')
+      .eq('round_id', roundId)
+      .not('league_team_id', 'is', null);
+    if (error) {
+      console.warn('[rounds] team round lookup failed', error.message);
+      return [];
+    }
+    rows = (data ?? []) as Row[];
+  }
+
+  const anchors: TeamRoundAnchor[] = [];
+  for (const row of rows) {
+    const playedOn = embeddedPlayedAt(row.rounds);
+    if (!row.league_team_id || !playedOn) continue;
+    anchors.push({ leagueTeamId: row.league_team_id, playedOn });
+  }
+  return anchors;
+}
+
+async function recomputeSurvivingTeamScores(
+  anchors: TeamRoundAnchor[],
+  deletedRoundId: string,
+  accessToken?: string
+): Promise<void> {
+  for (const anchor of anchors) {
+    type Survivor = {
+      id: string;
+      round_id: string;
+      rounds: { played_at?: string | null } | { played_at?: string | null }[] | null;
+    };
+    const path =
+      `league_rounds?league_team_id=eq.${encodeURIComponent(anchor.leagueTeamId)}` +
+      '&select=id,round_id,rounds(played_at)';
+
+    let rows: Survivor[] = [];
+    if (accessToken) {
+      const res = await restSelect<Survivor>(path, accessToken);
+      rows = res.data ?? [];
+    } else if (supabase) {
+      const { data, error } = await supabase
+        .from('league_rounds')
+        .select('id, round_id, rounds(played_at)')
+        .eq('league_team_id', anchor.leagueTeamId);
+      if (error) {
+        console.warn('[rounds] remaining team rounds lookup failed', error.message);
+        continue;
+      }
+      rows = (data ?? []) as Survivor[];
+    }
+
+    const survivor = rows.find(
+      (row) =>
+        row.round_id !== deletedRoundId && embeddedPlayedAt(row.rounds) === anchor.playedOn
+    );
+    if (!survivor) continue;
+
+    const recalc = await invokeCalculateTeamHoleScores(survivor.id, accessToken);
+    if (recalc.error) {
+      console.warn('[rounds] calculate-team-hole-scores after delete failed', recalc.error);
+    }
+  }
+}
+
+async function deleteLeagueRoundsRpc(
+  roundId: string,
+  accessToken?: string
+): Promise<boolean> {
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return false;
+    const res = await fetch(`${supabaseUrl}/rest/v1/rpc/delete_league_rounds_for_round`, {
+      method: 'POST',
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ p_round_id: roundId }),
+    });
+    if (!res.ok) {
+      const rawText = await res.text().catch(() => '');
+      console.warn('[rounds] delete_league_rounds_for_round failed', rawText || res.statusText);
+      return false;
+    }
+    return true;
+  }
+
+  if (!supabase) return false;
+  const { error } = await supabase.rpc('delete_league_rounds_for_round', {
+    p_round_id: roundId,
+  });
+  if (error) {
+    console.warn('[rounds] delete_league_rounds_for_round failed', error.message);
+    return false;
+  }
+  return true;
+}
+
 async function cleanupLeagueRoundsForDeletedRound(
   roundId: string,
   accessToken?: string
 ): Promise<void> {
   try {
-    if (accessToken) {
-      const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
-      if (!supabaseUrl || !supabaseAnonKey) return;
-      const res = await fetch(`${supabaseUrl}/rest/v1/rpc/delete_league_rounds_for_round`, {
-        method: 'POST',
-        headers: {
-          apikey: supabaseAnonKey,
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ p_round_id: roundId }),
-      });
-      if (!res.ok) {
-        const rawText = await res.text().catch(() => '');
-        console.warn('[rounds] delete_league_rounds_for_round failed', rawText || res.statusText);
-      }
-      return;
-    }
-
-    if (!supabase) return;
-    const { error } = await supabase.rpc('delete_league_rounds_for_round', {
-      p_round_id: roundId,
-    });
-    if (error) {
-      console.warn('[rounds] delete_league_rounds_for_round failed', error.message);
-    }
+    const anchors = await listTeamRoundAnchors(roundId, accessToken);
+    const deleted = await deleteLeagueRoundsRpc(roundId, accessToken);
+    if (!deleted || anchors.length === 0) return;
+    await recomputeSurvivingTeamScores(anchors, roundId, accessToken);
   } catch (err) {
     console.warn('[rounds] delete_league_rounds_for_round failed', err);
   }

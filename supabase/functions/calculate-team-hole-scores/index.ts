@@ -243,8 +243,22 @@ Deno.serve(async (req) => {
     }
 
     const leagueRound = lr as LeagueRoundRow;
-    if (leagueRound.user_id !== user.id) {
-      return jsonResponse({ error: 'Forbidden' }, 403);
+    const callerOwnsRound = leagueRound.user_id === user.id;
+    if (!callerOwnsRound) {
+      if (!leagueRound.league_team_id) {
+        return jsonResponse({ error: 'Forbidden' }, 403);
+      }
+      const { data: callerEntry } = await userClient
+        .from('league_entries')
+        .select('id')
+        .eq('league_id', leagueRound.league_id)
+        .eq('user_id', user.id)
+        .eq('league_team_id', leagueRound.league_team_id)
+        .is('removed_at', null)
+        .maybeSingle();
+      if (!callerEntry) {
+        return jsonResponse({ error: 'Forbidden' }, 403);
+      }
     }
 
     const { data: league, error: leagueErr } = await userClient
@@ -300,7 +314,11 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: 'Team not found' }, 404);
       }
 
-      if (team.designated_scorer_id && team.designated_scorer_id !== user.id) {
+      if (
+        callerOwnsRound &&
+        team.designated_scorer_id &&
+        team.designated_scorer_id !== user.id
+      ) {
         return jsonResponse({ error: 'Only the designated scorer can submit team hole scores' }, 403);
       }
 
