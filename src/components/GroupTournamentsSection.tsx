@@ -99,7 +99,7 @@ async function summarizePastLeague(
   }
 
   let teamHoleScores = undefined;
-  if (league.format === 'best_ball') {
+  if (league.format === 'best_ball' || league.format === 'scramble') {
     const th = await fetchTeamHoleScoresForLeague(league.id, accessToken);
     teamHoleScores = th.data ?? undefined;
   }
@@ -213,7 +213,7 @@ export function GroupTournamentsSection({
       const bundle = await fetchLeagueBundle(active.id, accessToken);
       if (bundle.data) {
         let teamHoleScores = undefined;
-        if (active.format === 'best_ball') {
+        if (active.format === 'best_ball' || active.format === 'scramble') {
           const th = await fetchTeamHoleScoresForLeague(active.id, accessToken);
           teamHoleScores = th.data ?? undefined;
         }

@@ -42,6 +42,37 @@ export function whsCourseHandicapFromIndex(
   return Math.round(base);
 }
 
+export type TournamentNetCourseSnap = {
+  courseRating?: number | null;
+  slope?: number | null;
+  coursePar?: number | null;
+};
+
+/** Stroke and scramble league nets. Course handicap when the round snapshot is complete, else a flat index. */
+export function netScoreForLeagueRound(
+  gross: number,
+  useHandicap: boolean,
+  simIndex: number | null,
+  course?: TournamentNetCourseSnap | null
+): number {
+  if (!useHandicap || simIndex == null || !Number.isFinite(simIndex)) return gross;
+  const rating = course?.courseRating;
+  const slope = course?.slope;
+  const par = course?.coursePar;
+  const hasCourse =
+    rating != null &&
+    Number.isFinite(rating) &&
+    slope != null &&
+    Number.isFinite(slope) &&
+    slope !== 0 &&
+    par != null &&
+    Number.isFinite(par);
+  const strokes = hasCourse
+    ? whsCourseHandicapFromIndex(simIndex, rating, slope, par)
+    : Math.round(simIndex);
+  return Math.max(1, gross - strokes);
+}
+
 /**
  * Playing handicap for this sim round: WHS-style course handicap from index,
  * scaled by the same difficulty product used for differentials.

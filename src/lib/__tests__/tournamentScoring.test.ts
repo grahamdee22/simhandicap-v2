@@ -27,6 +27,8 @@ import {
   validPresetPlayersPerTeam,
 } from '../tournamentTeamCount';
 import { reconcileGrossWithHoles } from '../tournamentReconciliation';
+import { computeLeagueStandings } from '../computeLeagueStandings';
+import { netScoreForLeagueRound } from '../netHandicap';
 import type { DbTournamentTeamHoleScoreRow } from '../tournamentTypes';
 
 describe('reconcileGrossWithHoles', () => {
@@ -507,5 +509,84 @@ describe('tournament players per team', () => {
       { randomizeMissingHandicap: true }
     );
     assert.equal(withRandom.flatMap((t) => t.memberIds).length, 4);
+  });
+});
+
+describe('netScoreForLeagueRound', () => {
+  it('uses course handicap from the round snapshot', () => {
+    const a = netScoreForLeagueRound(80, true, 10, {
+      courseRating: 74,
+      slope: 130,
+      coursePar: 72,
+    });
+    const b = netScoreForLeagueRound(80, true, 10, {
+      courseRating: 68,
+      slope: 113,
+      coursePar: 72,
+    });
+    assert.equal(a, 66);
+    assert.equal(b, 74);
+    assert.notEqual(a, b);
+  });
+
+  it('falls back to a flat index deduction when course par is missing', () => {
+    assert.equal(
+      netScoreForLeagueRound(80, true, 10.4, { courseRating: 72, slope: 113, coursePar: null }),
+      70
+    );
+  });
+
+  it('returns gross when handicap scoring is off', () => {
+    assert.equal(
+      netScoreForLeagueRound(80, false, 10, { courseRating: 74, slope: 130, coursePar: 72 }),
+      80
+    );
+  });
+});
+
+describe('scramble standings from team hole nets', () => {
+  const holes: DbTournamentTeamHoleScoreRow[] = Array.from({ length: 18 }, (_, i) => ({
+    id: `h${i + 1}`,
+    league_id: 'l1',
+    league_team_id: 't1',
+    round_date: '2026-06-01',
+    hole_number: i + 1,
+    team_score: 4,
+    team_net_score: 3,
+    is_partial: false,
+    source_league_round_id: 'lr1',
+    created_at: '2026-06-01T00:00:00Z',
+    updated_at: '2026-06-01T00:00:00Z',
+  }));
+
+  const params = {
+    league: { format: 'scramble' as const, use_handicap: true, rounds_that_count: 1, holes_per_round: '18' },
+    entries: [{ id: 'e1', user_id: 'u1', league_team_id: 't1', points: 0 }],
+    rounds: [
+      {
+        user_id: 'u1',
+        league_team_id: 't1',
+        gross_score: 72,
+        net_score: 70,
+        player_opted_in: true,
+        hole_entry_status: 'complete',
+      },
+    ],
+    teams: [{ id: 't1', name: 'A', designated_scorer_id: 'u1' }],
+    displayNames: { u1: 'Ada' },
+  };
+
+  it('totals team_net_score instead of the flat league round net', () => {
+    const row = computeLeagueStandings({ ...params, teamHoleScores: holes })[0];
+    assert.equal(row.lowNet, 54);
+  });
+
+  it('keeps best ball on the hole-score total', () => {
+    const row = computeLeagueStandings({
+      ...params,
+      league: { ...params.league, format: 'best_ball' },
+      teamHoleScores: holes,
+    })[0];
+    assert.equal(row.lowNet, 54);
   });
 });

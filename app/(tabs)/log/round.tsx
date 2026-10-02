@@ -37,6 +37,7 @@ import {
   type ActiveTournamentOption,
 } from '../../../src/lib/leagues';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
+import { courseSnapshot } from '../../../src/lib/rounds';
 import { nearestTeeByYards } from '../../../src/lib/communityEnrichment';
 import {
   curatedPickerCourses,
@@ -911,6 +912,7 @@ export default function LogRoundScreen() {
             }
             const saveAccessToken =
               googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+            const snapshot = courseSnapshot(saved.courseId, saved.holesPlayed);
             const leagueResults = await recordOptedInLeagueRounds({
               userId: user.id,
               roundId: saved.id,
@@ -928,6 +930,9 @@ export default function LogRoundScreen() {
               accessToken: saveAccessToken,
               holesPlayed: saved.holesPlayed ?? '18',
               courseId: saved.courseId,
+              courseRating: saved.courseRating,
+              slope: saved.slope,
+              coursePar: snapshot.course_par,
             });
             const pendingHoleResults = leagueResults.filter((r) => r.needsHoleByHoleEntry);
             const completedLeagueResults = leagueResults.filter((r) => !r.needsHoleByHoleEntry);

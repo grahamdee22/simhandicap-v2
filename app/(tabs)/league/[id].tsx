@@ -79,7 +79,7 @@ export default function LeagueDetailScreen() {
         const pr = await fetchLeagueMatchPairings(league.id, accessToken);
         setPairings(pr.data ?? []);
         setTeamHoleScores([]);
-      } else if (league.format === 'best_ball') {
+      } else if (league.format === 'best_ball' || league.format === 'scramble') {
         setPairings([]);
         const th = await fetchTeamHoleScoresForLeague(league.id, accessToken);
         setTeamHoleScores(th.data ?? []);
@@ -183,7 +183,9 @@ export default function LeagueDetailScreen() {
       teams: bundle.teams,
       displayNames,
       teamHoleScores:
-        bundle.league.format === 'best_ball' ? teamHoleScores : undefined,
+        bundle.league.format === 'best_ball' || bundle.league.format === 'scramble'
+          ? teamHoleScores
+          : undefined,
     });
   }, [bundle, displayNames, teamHoleScores]);
 

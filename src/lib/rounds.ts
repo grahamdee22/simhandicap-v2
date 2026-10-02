@@ -169,7 +169,7 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
 
 type RoundDbFields = Omit<SimRound, 'id'>;
 
-function courseSnapshot(courseId: string, holesPlayed: string | null | undefined) {
+export function courseSnapshot(courseId: string, holesPlayed: string | null | undefined) {
   const seed = getCourseById(courseId);
   if (!seed) return { course_par: null as number | null, stroke_index_by_hole: null as number[] | null };
   const holes = holesPlayed === 'front' || holesPlayed === 'back' ? holesPlayed : '18';

@@ -157,24 +157,27 @@ export function computeLeagueStandings(params: {
     const grossByTeam = new Map<string, number[]>();
     const partialByTeam = new Map<string, boolean>();
 
-    if (league.format === 'best_ball' && params.teamHoleScores?.length) {
-      const expectedHoles = league.holes_per_round === '9' ? 9 : 18;
-      for (const t of teams) {
-        const aggregates = aggregateBestBallTeamRounds(
-          params.teamHoleScores,
-          t.id,
-          league.use_handicap,
-          expectedHoles
-        );
-        const { netScores, grossScores, hasPartialPending } = bestBallStandingsScores(
-          aggregates,
-          league.use_handicap
-        );
-        netByTeam.set(t.id, netScores);
-        grossByTeam.set(t.id, grossScores);
-        partialByTeam.set(t.id, hasPartialPending);
+    if (league.format === 'best_ball' || league.format === 'scramble') {
+      if (params.teamHoleScores?.length) {
+        const expectedHoles = league.holes_per_round === '9' ? 9 : 18;
+        for (const t of teams) {
+          const aggregates = aggregateBestBallTeamRounds(
+            params.teamHoleScores,
+            t.id,
+            league.use_handicap,
+            expectedHoles
+          );
+          const { netScores, grossScores, hasPartialPending } = bestBallStandingsScores(
+            aggregates,
+            league.use_handicap
+          );
+          netByTeam.set(t.id, netScores);
+          grossByTeam.set(t.id, grossScores);
+          partialByTeam.set(t.id, hasPartialPending);
+        }
       }
-    } else {
+    }
+    if (netByTeam.size === 0) {
       for (const r of rounds) {
         if (!r.league_team_id) continue;
         const nets = netByTeam.get(r.league_team_id) ?? [];

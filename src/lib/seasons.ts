@@ -188,7 +188,7 @@ async function pointsForFinishedLeague(
   if (!bundle) return [];
 
   let teamHoleScores = undefined;
-  if (league.format === 'best_ball') {
+  if (league.format === 'best_ball' || league.format === 'scramble') {
     const th = await fetchTeamHoleScoresForLeague(league.id, accessToken);
     teamHoleScores = th.data ?? undefined;
   }

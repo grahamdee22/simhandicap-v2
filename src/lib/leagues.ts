@@ -12,8 +12,14 @@ import { fetchLeagueMatchPairings } from './matchPlayTournamentPairings';
 import { isUserDesignatedScorerForTeam } from './scrambleTournament';
 import { fetchTeamHoleScoresForLeague } from './tournamentTeamScores';
 import { resolveTournamentAccessToken } from './tournamentApi';
-import { isHoleByHoleLeagueFormat, leagueAcceptsLoggedHoles } from './tournamentTypes';
-import type { HoleEntryStatus, HolesPerRound, MatchPlayPairingMethod } from './tournamentTypes';
+import { netScoreForLeagueRound } from './netHandicap';
+import {
+  isHoleByHoleLeagueFormat,
+  leagueAcceptsLoggedHoles,
+  type HoleEntryStatus,
+  type HolesPerRound,
+  type MatchPlayPairingMethod,
+} from './tournamentTypes';
 import type { HolesPlayed } from './nineHoleRating';
 
 export type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
@@ -626,11 +632,7 @@ export async function createLeague(
   return { data: league, error: null };
 }
 
-export function netScoreForLeagueRound(gross: number, useHandicap: boolean, simIndex: number | null): number {
-  if (!useHandicap || simIndex == null || !Number.isFinite(simIndex)) return gross;
-  const strokes = Math.round(simIndex);
-  return Math.max(1, gross - strokes);
-}
+export { netScoreForLeagueRound };
 
 /** Rounds that count in standings (opted in + hole scorecard complete). */
 export { leagueRoundsForStandings } from './computeLeagueStandings';
@@ -719,6 +721,9 @@ export async function recordOptedInLeagueRounds(params: {
   /** Logged round length. Defaults to 18 when omitted. */
   holesPlayed?: '18' | 'front' | 'back';
   courseId?: string | null;
+  courseRating?: number | null;
+  slope?: number | null;
+  coursePar?: number | null;
 }): Promise<LeagueRoundRecordResult[]> {
   const results: LeagueRoundRecordResult[] = [];
   const holesPlayed = params.holesPlayed ?? '18';
@@ -746,7 +751,11 @@ export async function recordOptedInLeagueRounds(params: {
     }
 
     const needsHoles = isHoleByHoleLeagueFormat(league.format);
-    const net = netScoreForLeagueRound(params.grossScore, league.use_handicap, params.simIndex);
+    const net = netScoreForLeagueRound(params.grossScore, league.use_handicap, params.simIndex, {
+      courseRating: params.courseRating,
+      slope: params.slope,
+      coursePar: params.coursePar,
+    });
     const row = {
       league_id: league.id,
       user_id: params.userId,
