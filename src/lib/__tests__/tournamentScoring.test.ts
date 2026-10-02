@@ -204,6 +204,43 @@ describe('9-hole tournament eligibility', () => {
       leagueAcceptsLoggedHoles({ format: 'best_ball', holes_per_round: '9' }, '18'),
       false
     );
+    assert.equal(
+      leagueAcceptsLoggedHoles(
+        { format: 'stroke', holes_per_round: '18', course_id: 'pebble' },
+        '18',
+        'pebble'
+      ),
+      true
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles(
+        { format: 'stroke', holes_per_round: '18', course_id: 'pebble' },
+        '18',
+        'merion-east'
+      ),
+      false
+    );
+    assert.equal(
+      leagueAcceptsLoggedHoles(
+        { format: 'stroke', holes_per_round: '18', course_id: null },
+        '18',
+        'merion-east'
+      ),
+      true
+    );
+  });
+
+  it('Merion East par is 70', async () => {
+    const { getCourseById } = await import('../courses');
+    const { courseParFromSeed, courseParForLoggedHoles } = await import('../netHandicap');
+    const course = getCourseById('merion-east');
+    assert.ok(course);
+    assert.equal(courseParFromSeed(course), 70);
+    assert.equal(courseParForLoggedHoles(course, '18'), 70);
+    assert.equal(
+      courseParForLoggedHoles(course, 'front') + courseParForLoggedHoles(course, 'back'),
+      70
+    );
   });
 });
 

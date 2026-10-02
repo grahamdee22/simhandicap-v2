@@ -39,6 +39,8 @@ type RoundRow = {
   course_rating: number;
   slope: number;
   holes_played: string | null;
+  course_par: number | null;
+  stroke_index_by_hole: number[] | null;
 };
 
 /** Default stroke index (1 = hardest) per hole — mirrors src/lib/netHandicap.ts. */
@@ -49,15 +51,28 @@ const DEFAULT_STROKE_INDEX_BY_HOLE: number[] = [
 const DEFAULT_COURSE_PAR = 72;
 const DEFAULT_COURSE_PAR_9 = 36; // flat default, same approximation style as the 18-hole default
 
-/** Front 9 → holes 1-9's real stroke indexes; Back 9 → holes 10-18's. Same array, just sliced. */
-function strokeIndexForNine(nine: 'front' | 'back' | null): number[] {
-  if (nine === 'back') return DEFAULT_STROKE_INDEX_BY_HOLE.slice(9, 18);
-  return DEFAULT_STROKE_INDEX_BY_HOLE.slice(0, 9);
-}
-
 function nineFromHolesPlayed(holesPlayed: string | null | undefined): 'front' | 'back' | null {
   if (holesPlayed === 'front' || holesPlayed === 'back') return holesPlayed;
   return null;
+}
+
+function courseParFromRound(
+  round: { course_par?: number | null },
+  expectedHoles: number
+): number {
+  const n = round.course_par == null ? NaN : Number(round.course_par);
+  if (Number.isFinite(n)) return n;
+  return expectedHoles === 9 ? DEFAULT_COURSE_PAR_9 : DEFAULT_COURSE_PAR;
+}
+
+function strokeIndexFromRound(
+  round: { stroke_index_by_hole?: number[] | null; holes_played?: string | null },
+  expectedHoles: number
+): number[] {
+  const stored = round.stroke_index_by_hole;
+  const full = stored && stored.length === 18 ? stored : DEFAULT_STROKE_INDEX_BY_HOLE;
+  if (expectedHoles !== 9) return full;
+  return nineFromHolesPlayed(round.holes_played) === 'back' ? full.slice(9, 18) : full.slice(0, 9);
 }
 const SIMCAP_INDEX_MIN_ROUNDS = 3;
 
@@ -273,7 +288,6 @@ Deno.serve(async (req) => {
 
     const leagueRow = league as LeagueRow;
     const expectedHoles = leagueRow.holes_per_round === '9' ? 9 : 18;
-    const coursePar = expectedHoles === 9 ? DEFAULT_COURSE_PAR_9 : DEFAULT_COURSE_PAR;
     if (leagueRow.format !== 'scramble' && leagueRow.format !== 'best_ball') {
       return jsonResponse(
         { error: 'Team hole calculation only applies to scramble and best ball tournaments' },
@@ -287,7 +301,7 @@ Deno.serve(async (req) => {
 
     const { data: roundRow, error: roundErr } = await userClient
       .from('rounds')
-      .select('played_at, course_rating, slope, holes_played')
+      .select('played_at, course_rating, slope, holes_played, course_par, stroke_index_by_hole')
       .eq('id', leagueRound.round_id)
       .maybeSingle();
 
@@ -342,10 +356,8 @@ Deno.serve(async (req) => {
         });
       }
 
-      const strokeIndex =
-        expectedHoles === 9
-          ? strokeIndexForNine(nineFromHolesPlayed(scorerRound.holes_played))
-          : DEFAULT_STROKE_INDEX_BY_HOLE;
+      const strokeIndex = strokeIndexFromRound(scorerRound, expectedHoles);
+      const roundPar = courseParFromRound(scorerRound, expectedHoles);
 
       let courseHandicap: number | null = null;
       if (useHandicap) {
@@ -372,7 +384,7 @@ Deno.serve(async (req) => {
             teamIndex,
             Number(scorerRound.course_rating),
             Number(scorerRound.slope),
-            coursePar
+            roundPar
           );
         }
       }
@@ -435,7 +447,7 @@ Deno.serve(async (req) => {
 
     const { data: teamRounds, error: trErr } = await admin
       .from('league_rounds')
-      .select('id, user_id, hole_entry_status, round_id, rounds!inner(played_at, course_rating, slope, holes_played)')
+      .select('id, user_id, hole_entry_status, round_id, rounds!inner(played_at, course_rating, slope, holes_played, course_par, stroke_index_by_hole)')
       .eq('league_id', leagueRow.id)
       .eq('league_team_id', leagueRound.league_team_id)
       .in('user_id', memberIds);
@@ -449,7 +461,14 @@ Deno.serve(async (req) => {
       user_id: string;
       hole_entry_status: string;
       round_id: string;
-      rounds: { played_at: string; course_rating: number; slope: number; holes_played: string | null };
+      rounds: {
+        played_at: string;
+        course_rating: number;
+        slope: number;
+        holes_played: string | null;
+        course_par: number | null;
+        stroke_index_by_hole: number[] | null;
+      };
     };
 
     const includedRounds: TeamRoundJoined[] = [];
@@ -475,6 +494,8 @@ Deno.serve(async (req) => {
           course_rating: scorerRound.course_rating,
           slope: scorerRound.slope,
           holes_played: scorerRound.holes_played,
+          course_par: scorerRound.course_par,
+          stroke_index_by_hole: scorerRound.stroke_index_by_hole,
         },
       });
       submittedMembers.add(user.id);
@@ -489,14 +510,11 @@ Deno.serve(async (req) => {
       }
     }
 
-    const teamNine = nineFromHolesPlayed(includedRounds[0]?.rounds.holes_played ?? scorerRound.holes_played);
-    const strokeIndex = expectedHoles === 9 ? strokeIndexForNine(teamNine) : DEFAULT_STROKE_INDEX_BY_HOLE;
-
     const memberIndexes = useHandicap
       ? await resolveMemberIndexes(admin, [...submittedMembers])
       : new Map<string, number>();
 
-    type PlayerHole = { gross: number; courseHandicap: number | null };
+    type PlayerHole = { gross: number; courseHandicap: number | null; strokeIndex: number[] };
     const holesByNumber = new Map<number, PlayerHole[]>();
 
     for (const tr of includedRounds) {
@@ -506,6 +524,7 @@ Deno.serve(async (req) => {
         .eq('league_round_id', tr.id);
 
       let courseHandicap: number | null = null;
+      const playerStrokeIndex = strokeIndexFromRound(tr.rounds, expectedHoles);
       if (useHandicap) {
         const idx = memberIndexes.get(tr.user_id);
         if (idx != null) {
@@ -513,7 +532,7 @@ Deno.serve(async (req) => {
             idx,
             Number(tr.rounds.course_rating),
             Number(tr.rounds.slope),
-            coursePar
+            courseParFromRound(tr.rounds, expectedHoles)
           );
         }
       }
@@ -521,7 +540,7 @@ Deno.serve(async (req) => {
       for (const h of (holeRows ?? []) as { hole_number: number; gross_score: number | null }[]) {
         if (h.gross_score == null) continue;
         const list = holesByNumber.get(h.hole_number) ?? [];
-        list.push({ gross: h.gross_score, courseHandicap });
+        list.push({ gross: h.gross_score, courseHandicap, strokeIndex: playerStrokeIndex });
         holesByNumber.set(h.hole_number, list);
       }
     }
@@ -535,7 +554,7 @@ Deno.serve(async (req) => {
       if (!scores?.length) continue;
       const teamScore = Math.min(...scores.map((s) => s.gross));
       const nets = scores.map((s) =>
-        s.courseHandicap == null ? s.gross : holeNet(s.gross, hole, s.courseHandicap, strokeIndex)
+        s.courseHandicap == null ? s.gross : holeNet(s.gross, hole, s.courseHandicap, s.strokeIndex)
       );
       const teamNet = Math.min(...nets);
       upserts.push({

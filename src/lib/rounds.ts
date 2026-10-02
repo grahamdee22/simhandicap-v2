@@ -12,6 +12,8 @@ import { supabase } from './supabase';
 import type { SimRound } from '../store/useAppStore';
 import { restSelect } from './tournamentApi';
 import { invokeCalculateTeamHoleScores } from './tournamentTeamScores';
+import { getCourseById } from './courses';
+import { courseParForLoggedHoles, strokeIndexForCourse } from './netHandicap';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -167,6 +169,16 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
 
 type RoundDbFields = Omit<SimRound, 'id'>;
 
+function courseSnapshot(courseId: string, holesPlayed: string | null | undefined) {
+  const seed = getCourseById(courseId);
+  if (!seed) return { course_par: null as number | null, stroke_index_by_hole: null as number[] | null };
+  const holes = holesPlayed === 'front' || holesPlayed === 'back' ? holesPlayed : '18';
+  return {
+    course_par: courseParForLoggedHoles(seed, holes),
+    stroke_index_by_hole: strokeIndexForCourse(seed),
+  };
+}
+
 function roundToDbInsert(userId: string, r: RoundDbFields) {
   return {
     user_id: userId,
@@ -195,6 +207,7 @@ function roundToDbInsert(userId: string, r: RoundDbFields) {
     excludes_from_simcap_index: !!r.excludesFromSimcapIndex,
     holes_played: r.holesPlayed ?? '18',
     nine_hole_source: r.nineHoleSource ?? null,
+    ...courseSnapshot(r.courseId, r.holesPlayed),
   };
 }
 
@@ -328,6 +341,7 @@ export async function updateRoundInSupabase(
     excludes_from_simcap_index: !!round.excludesFromSimcapIndex,
     holes_played: round.holesPlayed ?? '18',
     nine_hole_source: round.nineHoleSource ?? null,
+    ...courseSnapshot(round.courseId, round.holesPlayed),
   };
 
   if (accessToken) {

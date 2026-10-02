@@ -21,6 +21,7 @@ import {
   formatPairingResultLine,
 } from '../lib/matchPlayTournamentPairings';
 import { fetchTeamHoleScoresForLeague } from '../lib/tournamentTeamScores';
+import { getCourseById } from '../lib/courses';
 import {
   socialPageSectionTitleStyles,
   socialSectionHeaderStyles,
@@ -446,6 +447,11 @@ export function GroupTournamentsSection({
                 </View>
               </View>
               <Text style={styles.tournamentName}>{activeLeague.name}</Text>
+              {activeLeague.course_id ? (
+                <Text style={styles.matchPreview}>
+                  📍 {getCourseById(activeLeague.course_id)?.name ?? activeLeague.course_id}
+                </Text>
+              ) : null}
               {activeLeague.notes?.trim() ? (
                 <Text style={styles.tournamentNotes}>{activeLeague.notes.trim()}</Text>
               ) : null}

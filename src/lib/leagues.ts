@@ -50,6 +50,7 @@ export type DbLeagueRow = {
   scramble_handicap_override: number | null;
   holes_per_round: HolesPerRound;
   match_play_nine: 'front' | 'back' | null;
+  course_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -474,6 +475,7 @@ export type CreateLeagueInput = {
   scrambleHandicapOverride?: number | null;
   holesPerRound?: HolesPerRound;
   matchPlayNine?: 'front' | 'back' | null;
+  courseId?: string | null;
 };
 
 export async function createLeague(
@@ -501,6 +503,7 @@ export async function createLeague(
     holes_per_round: input.holesPerRound ?? '18',
     match_play_nine:
       input.format === 'match_play' ? (input.matchPlayNine ?? null) : null,
+    course_id: input.courseId ?? null,
   };
 
   let league: DbLeagueRow | null = null;
@@ -635,6 +638,7 @@ export async function fetchActiveTournamentsForUser(params: {
   groups: { id: string; name: string }[];
   playedAt: string;
   holesPlayed: HolesPlayed;
+  courseId?: string | null;
   accessToken?: string;
 }): Promise<ActiveTournamentOption[]> {
   const playedYmd = params.playedAt.slice(0, 10);
@@ -648,7 +652,7 @@ export async function fetchActiveTournamentsForUser(params: {
     for (const league of synced) {
       if (league.status !== 'active') continue;
       if (playedYmd < league.start_date || playedYmd > league.end_date) continue;
-      if (!leagueAcceptsLoggedHoles(league, params.holesPlayed)) continue;
+      if (!leagueAcceptsLoggedHoles(league, params.holesPlayed, params.courseId)) continue;
       if (seen.has(league.id)) continue;
       const bundleRes = await fetchLeagueBundle(league.id, params.accessToken);
       if (!bundleRes.data) continue;
@@ -711,6 +715,7 @@ export async function recordOptedInLeagueRounds(params: {
   accessToken?: string;
   /** Logged round length. Defaults to 18 when omitted. */
   holesPlayed?: '18' | 'front' | 'back';
+  courseId?: string | null;
 }): Promise<LeagueRoundRecordResult[]> {
   const results: LeagueRoundRecordResult[] = [];
   const holesPlayed = params.holesPlayed ?? '18';
@@ -723,7 +728,7 @@ export async function recordOptedInLeagueRounds(params: {
     const bundleRes = await fetchLeagueBundle(leagueId, params.accessToken);
     if (!bundleRes.data) continue;
     const { league } = bundleRes.data;
-    if (!leagueAcceptsLoggedHoles(league, holesPlayed)) continue;
+    if (!leagueAcceptsLoggedHoles(league, holesPlayed, params.courseId)) continue;
 
     const entry = bundleRes.data.entries.find(
       (e) => e.user_id === params.userId && isActiveLeagueEntry(e)

@@ -273,6 +273,7 @@ export default function LogRoundScreen() {
         groups: memberGroups,
         playedAt: localYmdToIso(playedDate),
         holesPlayed,
+        courseId,
         accessToken,
       });
       if (fetchGen !== tournamentsFetchGen.current) return;
@@ -285,7 +286,7 @@ export default function LogRoundScreen() {
         setTournamentsReady(true);
       }
     }
-  }, [supabaseOn, user?.id, existing, groups, playedDate, holesPlayed]);
+  }, [supabaseOn, user?.id, existing, groups, playedDate, holesPlayed, courseId]);
 
   useEffect(() => {
     void loadActiveTournaments();
@@ -926,6 +927,7 @@ export default function LogRoundScreen() {
               displayNames,
               accessToken: saveAccessToken,
               holesPlayed: saved.holesPlayed ?? '18',
+              courseId: saved.courseId,
             });
             const pendingHoleResults = leagueResults.filter((r) => r.needsHoleByHoleEntry);
             const completedLeagueResults = leagueResults.filter((r) => !r.needsHoleByHoleEntry);

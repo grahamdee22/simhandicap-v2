@@ -23,6 +23,8 @@ import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
 import { dateFromYmdLocal, todayLocalYmd, ymdFromParts } from '../../../src/lib/dates';
 import { countMembersMissingHandicap } from '../../../src/lib/effectiveHandicap';
 import { colors } from '../../../src/lib/constants';
+import { getCourseById } from '../../../src/lib/courses';
+import { curatedPickerCourses } from '../../../src/lib/communityCourses';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, syncLeagueStatuses, type LeagueFormat } from '../../../src/lib/leagues';
 import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
@@ -125,6 +127,8 @@ export default function LeagueCreateScreen() {
   const [format, setFormat] = useState<LeagueFormat>('stroke');
   const [holesPerRound, setHolesPerRound] = useState<'18' | '9'>('18');
   const [matchPlayNine, setMatchPlayNine] = useState<'front' | 'back' | null>(null);
+  const [tournamentCourseId, setTournamentCourseId] = useState<string | null>(null);
+  const [courseSearch, setCourseSearch] = useState('');
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Record<string, boolean>>({});
   const [playerSearch, setPlayerSearch] = useState('');
   const [startDateYmd, setStartDateYmd] = useState(todayLocalYmd);
@@ -162,6 +166,8 @@ export default function LeagueCreateScreen() {
     setFormat('stroke');
     setHolesPerRound('18');
     setMatchPlayNine(null);
+    setTournamentCourseId(null);
+    setCourseSearch('');
     setPlayerSearch('');
     setStartDateYmd(todayLocalYmd());
     setEndDateYmd(defaultEndDateYmd());
@@ -209,6 +215,8 @@ export default function LeagueCreateScreen() {
 
   const nineSelectionIncomplete =
     format === 'match_play' && holesPerRound === '9' && matchPlayNine == null;
+  const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId;
+  const courseChoices = useMemo(() => curatedPickerCourses(courseSearch).slice(0, 30), [courseSearch]);
 
   /** Keep selection keys aligned with the group roster (new joins default on). */
   useEffect(() => {
@@ -561,6 +569,10 @@ export default function LeagueCreateScreen() {
       showAppAlert('Which nine?', 'Choose Front 9 or Back 9 for this Match Play tournament.');
       return;
     }
+    if (!tournamentCourseId) {
+      showAppAlert('Course', 'Choose the course this tournament is played at.');
+      return;
+    }
     if (isScramble) {
       const sizeErr = validateScrambleTeamSizes(teams);
       if (sizeErr) {
@@ -605,6 +617,7 @@ export default function LeagueCreateScreen() {
         matchPlayPairingMethod: isMatchPlay ? 'bracket' : null,
         holesPerRound,
         matchPlayNine: isMatchPlay && holesPerRound === '9' ? matchPlayNine : null,
+        courseId: tournamentCourseId,
         matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
         scrambleHandicapOverride: isScramble
           ? scrambleHandicapOverride.trim()
@@ -1008,6 +1021,42 @@ export default function LeagueCreateScreen() {
                     ) : null}
                   </>
                 ) : null}
+            <Text style={[styles.lbl, { marginTop: 12 }]}>Course</Text>
+            <Text style={styles.helper}>
+              Everyone logs this tournament at the same verified course.
+            </Text>
+            {tournamentCourseId ? (
+              <Text style={styles.summaryLine}>
+                📍 {getCourseById(tournamentCourseId)?.name ?? 'Selected course'}
+              </Text>
+            ) : (
+              <Text style={styles.formatDisabledNote}>Choose a course to continue.</Text>
+            )}
+            <TextInput
+              style={[styles.input, { marginTop: 8, marginBottom: 8 }]}
+              value={courseSearch}
+              onChangeText={setCourseSearch}
+              placeholder="Search courses"
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="while-editing"
+            />
+            <View style={styles.courseList}>
+              {courseChoices.map((c) => {
+                const on = tournamentCourseId === c.id;
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.courseRow, on && styles.courseRowOn]}
+                    onPress={() => setTournamentCourseId(c.id)}
+                  >
+                    <Text style={[styles.memberName, on && styles.dayDnOn]}>{c.name}</Text>
+                    {c.location ? <Text style={styles.helper}>{c.location}</Text> : null}
+                  </Pressable>
+                );
+              })}
+            </View>
             <DatePlayedField
               label="Start date"
               hint={null}
@@ -1152,8 +1201,8 @@ export default function LeagueCreateScreen() {
               />
             </View>
             <Pressable
-              style={[styles.primaryBtn, nineSelectionIncomplete && styles.btnDisabled]}
-              disabled={nineSelectionIncomplete}
+              style={[styles.primaryBtn, settingsIncomplete && styles.btnDisabled]}
+              disabled={settingsIncomplete}
               onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
             >
               <Text style={styles.primaryBtnTxt}>Continue</Text>
@@ -1329,6 +1378,11 @@ export default function LeagueCreateScreen() {
             <Text style={styles.head}>Review & Launch</Text>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLine}>{name}</Text>
+              {tournamentCourseId ? (
+                <Text style={styles.summaryMeta}>
+                  📍 {getCourseById(tournamentCourseId)?.name ?? 'Course'}
+                </Text>
+              ) : null}
               <Text style={styles.summaryMeta}>
                 {format.replace('_', ' ')} · {formatYmdDisplay(startDateYmd)} – {formatYmdDisplay(endDateYmd)}
               </Text>
@@ -1625,6 +1679,13 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
+  courseList: { maxHeight: 220 },
+  courseRow: {
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
+  courseRowOn: { backgroundColor: '#f0f7f3' },
   summaryLine: { fontSize: 18, fontWeight: '700', color: colors.ink },
   summaryMeta: { fontSize: 13, color: colors.muted, marginTop: 6 },
   scorerBlock: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },

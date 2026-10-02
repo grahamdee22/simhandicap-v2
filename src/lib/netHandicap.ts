@@ -10,6 +10,16 @@ export function courseParFromSeed(course: CourseSeed): number {
   return course.pars.reduce((s, p) => s + p, 0);
 }
 
+/** Par for the holes actually logged. 18-hole rounds use the full card; a nine uses that nine. */
+export function courseParForLoggedHoles(
+  course: CourseSeed,
+  holes: '18' | 'front' | 'back' | null | undefined
+): number {
+  if (holes === 'front') return course.pars.slice(0, 9).reduce((s, p) => s + p, 0);
+  if (holes === 'back') return course.pars.slice(9, 18).reduce((s, p) => s + p, 0);
+  return courseParFromSeed(course);
+}
+
 export function strokeIndexForCourse(course: CourseSeed): number[] {
   if (course.strokeIndex && course.strokeIndex.length === 18) {
     return [...course.strokeIndex];

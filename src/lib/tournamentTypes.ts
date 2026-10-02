@@ -16,14 +16,16 @@ export function expectedTournamentHoleCount(league: {
   return league.holes_per_round === '9' ? 9 : TOURNAMENT_HOLE_COUNT;
 }
 
-/** Whether a logged round's length can be applied to this tournament. */
+/** Whether a logged round can be applied to this tournament. */
 export function leagueAcceptsLoggedHoles(
   league: {
     format: LeagueFormat;
     holes_per_round?: HolesPerRound | string | null;
     match_play_nine?: 'front' | 'back' | null;
+    course_id?: string | null;
   },
-  holesPlayed: '18' | 'front' | 'back'
+  holesPlayed: '18' | 'front' | 'back',
+  courseId?: string | null
 ): boolean {
   const leagueHolesPerRound = league.holes_per_round === '9' ? '9' : '18';
   if (leagueHolesPerRound === '18' && holesPlayed !== '18') return false;
@@ -36,6 +38,7 @@ export function leagueAcceptsLoggedHoles(
   ) {
     return false;
   }
+  if (league.course_id && courseId !== league.course_id) return false;
   return true;
 }
 

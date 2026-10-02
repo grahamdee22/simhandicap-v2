@@ -32,6 +32,7 @@ import {
   isTeamLeagueFormat,
   leagueDaysRemaining,
 } from '../../../src/lib/leagueStandings';
+import { getCourseById } from '../../../src/lib/courses';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
@@ -285,6 +286,9 @@ export default function LeagueDetailScreen() {
           )}
         </View>
         <Text style={styles.title}>{league.name}</Text>
+        {league.course_id ? (
+          <Text style={styles.dates}>📍 {getCourseById(league.course_id)?.name ?? league.course_id}</Text>
+        ) : null}
         <Text style={styles.dates}>
           {formatLeagueDateRange(league.start_date, league.end_date)}
         </Text>
