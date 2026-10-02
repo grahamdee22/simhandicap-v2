@@ -4,7 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
+  Modal,
   Platform,
+  FlatList,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,6 +29,8 @@ import { getCourseById } from '../../../src/lib/courses';
 import { curatedPickerCourses } from '../../../src/lib/communityCourses';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, syncLeagueStatuses, type LeagueFormat } from '../../../src/lib/leagues';
+import { isLeagueActive } from '../../../src/lib/leagueStandings';
+import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { fetchActiveSeasonForGroup, type DbLeagueSeasonRow } from '../../../src/lib/seasons';
 import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
 import {
@@ -129,7 +133,9 @@ export default function LeagueCreateScreen() {
   const [holesPerRound, setHolesPerRound] = useState<'18' | '9'>('18');
   const [matchPlayNine, setMatchPlayNine] = useState<'front' | 'back' | null>(null);
   const [tournamentCourseId, setTournamentCourseId] = useState<string | null>(null);
+  const [coursePickerOpen, setCoursePickerOpen] = useState(false);
   const [courseSearch, setCourseSearch] = useState('');
+  const [createGate, setCreateGate] = useState<'pending' | 'ready' | 'blocked'>('pending');
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Record<string, boolean>>({});
   const [playerSearch, setPlayerSearch] = useState('');
   const [startDateYmd, setStartDateYmd] = useState(todayLocalYmd);
@@ -153,6 +159,7 @@ export default function LeagueCreateScreen() {
   const [activeSeason, setActiveSeason] = useState<DbLeagueSeasonRow | null>(null);
   const [joinSeason, setJoinSeason] = useState(true);
   const handicapTouchedRef = useRef(false);
+  const launchInFlightRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const notesSectionYRef = useRef(0);
 
@@ -170,6 +177,7 @@ export default function LeagueCreateScreen() {
     setHolesPerRound('18');
     setMatchPlayNine(null);
     setTournamentCourseId(null);
+    setCoursePickerOpen(false);
     setCourseSearch('');
     setPlayerSearch('');
     setStartDateYmd(todayLocalYmd());
@@ -187,13 +195,13 @@ export default function LeagueCreateScreen() {
     setAssignedMemberAction(null);
     setBusy(false);
     setJoinSeason(true);
-    const roster = groups.find((g) => g.id === groupId)?.members ?? [];
+    const roster = useAppStore.getState().groups.find((g) => g.id === groupId)?.members ?? [];
     const next: Record<string, boolean> = {};
     for (const m of roster) {
       if (m.userId) next[m.userId] = true;
     }
     setSelectedPlayerIds(next);
-  }, [groupId, groups]);
+  }, [groupId]);
 
   useLayoutEffect(() => {
     resetWizard();
@@ -201,8 +209,9 @@ export default function LeagueCreateScreen() {
 
   useFocusEffect(
     useCallback(() => {
+      if (launchInFlightRef.current) return;
       resetWizard();
-    }, [groupId, resetWizard])
+    }, [resetWizard])
   );
 
   useEffect(() => {
@@ -224,6 +233,33 @@ export default function LeagueCreateScreen() {
   }, [groupId]);
 
   useEffect(() => {
+    let alive = true;
+    setCreateGate('pending');
+    void (async () => {
+      const token =
+        googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const existing = await fetchLeaguesForGroup(groupId, token);
+      if (!alive) return;
+      const blocked = (existing.data ?? []).some(
+        (league) => league.status === 'active' && isLeagueActive(league)
+      );
+      if (blocked) {
+        setCreateGate('blocked');
+        showAppAlert(
+          'Active tournament',
+          'This crew already has an active tournament. End it before creating another.'
+        );
+        router.replace('/(tabs)/groups' as never);
+        return;
+      }
+      setCreateGate('ready');
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [groupId, router]);
+
+  useEffect(() => {
     if (format !== 'match_play') {
       setMatchPlayNine(null);
     }
@@ -232,7 +268,7 @@ export default function LeagueCreateScreen() {
   const nineSelectionIncomplete =
     format === 'match_play' && holesPerRound === '9' && matchPlayNine == null;
   const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId;
-  const courseChoices = useMemo(() => curatedPickerCourses(courseSearch).slice(0, 30), [courseSearch]);
+  const courseChoices = useMemo(() => curatedPickerCourses(courseSearch), [courseSearch]);
 
   /** Keep selection keys aligned with the group roster (new joins default on). */
   useEffect(() => {
@@ -572,7 +608,10 @@ export default function LeagueCreateScreen() {
   };
 
   const onLaunch = async () => {
-    if (!user?.id || !group) return;
+    if (!user?.id || !group) {
+      showAppAlert('Could not create tournament', 'Sign in again, then open this from your crew.');
+      return;
+    }
     if (needsTeams && !teamsStepCanContinue) {
       showAppAlert('Invalid teams', 'Assign every player to a team with at least 2 per team.');
       return;
@@ -608,75 +647,85 @@ export default function LeagueCreateScreen() {
         return;
       }
     }
-    const existing = await fetchLeaguesForGroup(groupId, googleOAuthAccessToken ?? undefined);
-    const synced = await syncLeagueStatuses(
-      existing.data ?? [],
-      googleOAuthAccessToken ?? undefined
-    );
-    if (synced.some((l) => l.status === 'active')) {
-      showAppAlert('Active tournament', 'This crew already has an active tournament. End it before creating another.');
-      return;
-    }
+    launchInFlightRef.current = true;
     setBusy(true);
-    const res = await createLeague(
-      {
-        groupId,
-        name,
-        format,
-        startDate: startDateYmd,
-        endDate: endDateYmd,
-        roundsThatCount: isMatchPlay ? 1 : roundsThatCount,
-        useHandicap,
-        notes: notes.trim() || null,
-        createdBy: user.id,
-        members: playingMembers,
-        matchPlayPairingMethod: isMatchPlay ? 'bracket' : null,
-        holesPerRound,
-        matchPlayNine: isMatchPlay && holesPerRound === '9' ? matchPlayNine : null,
-        courseId: tournamentCourseId,
-        seasonId: activeSeason && joinSeason ? activeSeason.id : null,
-        matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
-        scrambleHandicapOverride: isScramble
-          ? scrambleHandicapOverride.trim()
-            ? parseFloat(scrambleHandicapOverride)
-            : null
-          : null,
-        teams: needsTeams
-          ? teams.map((t) => ({
-              name: t.name,
-              memberUserIds: t.memberIds,
-              designatedScorerUserId: isScramble ? t.designatedScorerUserId : null,
-            }))
-          : undefined,
-      },
-      googleOAuthAccessToken ?? undefined
-    );
-    if (res.error || !res.data) {
-      setBusy(false);
-      showAppAlert('Could not create tournament', res.error ?? 'Unknown error');
-      return;
-    }
-    if (isMatchPlay) {
-      const bracket = await generateMatchPlayBracket(
-        res.data.id,
-        seededUserIds,
+    try {
+      const existing = await fetchLeaguesForGroup(groupId, googleOAuthAccessToken ?? undefined);
+      const synced = await syncLeagueStatuses(
+        existing.data ?? [],
         googleOAuthAccessToken ?? undefined
       );
-      setBusy(false);
-      if (bracket.error) {
+      if (synced.some((l) => l.status === 'active')) {
         showAppAlert(
-          'Tournament created',
-          `Bracket could not be generated: ${bracket.error}. Use Manage tournament to try again.`
+          'Active tournament',
+          'This crew already has an active tournament. End it before creating another.'
         );
-      } else {
-        showAppAlert('Tournament created', 'Bracket is ready — lowest index is the #1 seed.');
+        router.replace('/(tabs)/groups' as never);
+        return;
       }
-    } else {
+      const res = await createLeague(
+        {
+          groupId,
+          name,
+          format,
+          startDate: startDateYmd,
+          endDate: endDateYmd,
+          roundsThatCount: isMatchPlay ? 1 : roundsThatCount,
+          useHandicap,
+          notes: notes.trim() || null,
+          createdBy: user.id,
+          members: playingMembers,
+          matchPlayPairingMethod: isMatchPlay ? 'bracket' : null,
+          holesPerRound,
+          matchPlayNine: isMatchPlay && holesPerRound === '9' ? matchPlayNine : null,
+          courseId: tournamentCourseId,
+          seasonId: activeSeason && joinSeason ? activeSeason.id : null,
+          matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
+          scrambleHandicapOverride: isScramble
+            ? scrambleHandicapOverride.trim()
+              ? parseFloat(scrambleHandicapOverride)
+              : null
+            : null,
+          teams: needsTeams
+            ? teams.map((t) => ({
+                name: t.name,
+                memberUserIds: t.memberIds,
+                designatedScorerUserId: isScramble ? t.designatedScorerUserId : null,
+              }))
+            : undefined,
+        },
+        googleOAuthAccessToken ?? undefined
+      );
+      if (res.error || !res.data) {
+        showAppAlert('Could not create tournament', res.error ?? 'Unknown error');
+        return;
+      }
+      if (isMatchPlay) {
+        const bracket = await generateMatchPlayBracket(
+          res.data.id,
+          seededUserIds,
+          googleOAuthAccessToken ?? undefined
+        );
+        if (bracket.error) {
+          showAppAlert(
+            'Tournament created',
+            `Bracket could not be generated: ${bracket.error}. Use Manage tournament to try again.`
+          );
+        } else {
+          showAppAlert('Tournament created', 'Bracket is ready — lowest index is the #1 seed.');
+        }
+      } else {
+        showAppAlert('Tournament created', 'Members will see it in their group.');
+      }
+      clearTournamentSectionCache(groupId);
+      router.replace('/(tabs)/groups' as never);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error';
+      showAppAlert('Could not create tournament', message);
+    } finally {
+      launchInFlightRef.current = false;
       setBusy(false);
-      showAppAlert('Tournament created', 'Members will see it in their group.');
     }
-    clearTournamentSectionCache(groupId);
-    router.replace('/(tabs)/groups' as never);
   };
 
   if (!group) {
@@ -684,6 +733,22 @@ export default function LeagueCreateScreen() {
       <ContentWidth bg={colors.surface}>
         <View style={{ padding: gutter }}>
           <Text>Group not found.</Text>
+        </View>
+      </ContentWidth>
+    );
+  }
+
+  if (createGate !== 'ready') {
+    return (
+      <ContentWidth bg={colors.surface}>
+        <View style={{ padding: gutter, paddingTop: 24 }}>
+          {createGate === 'blocked' ? (
+            <Text style={styles.helper}>
+              This crew already has an active tournament. End it before creating another.
+            </Text>
+          ) : (
+            <ActivityIndicator color={colors.header} />
+          )}
         </View>
       </ContentWidth>
     );
@@ -1043,37 +1108,92 @@ export default function LeagueCreateScreen() {
               Everyone logs this tournament at the same verified course.
             </Text>
             {tournamentCourseId ? (
-              <Text style={styles.summaryLine}>
-                📍 {getCourseById(tournamentCourseId)?.name ?? 'Selected course'}
-              </Text>
+              <View style={styles.courseSelectedRow}>
+                <Text style={styles.summaryLine}>
+                  📍 {getCourseById(tournamentCourseId)?.name ?? 'Selected course'}
+                </Text>
+                <Pressable
+                  onPress={() => {
+                    setCourseSearch('');
+                    setCoursePickerOpen(true);
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Change course"
+                >
+                  <Text style={styles.courseChange}>Change</Text>
+                </Pressable>
+              </View>
             ) : (
-              <Text style={styles.formatDisabledNote}>Choose a course to continue.</Text>
+              <>
+                <Text style={styles.formatDisabledNote}>Choose a course to continue.</Text>
+                <Pressable
+                  style={styles.courseOpenBtn}
+                  onPress={() => {
+                    setCourseSearch('');
+                    setCoursePickerOpen(true);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityLabel="Choose course"
+                >
+                  <Text style={styles.courseOpenBtnTxt}>Choose course</Text>
+                </Pressable>
+              </>
             )}
-            <TextInput
-              style={[styles.input, { marginTop: 8, marginBottom: 8 }]}
-              value={courseSearch}
-              onChangeText={setCourseSearch}
-              placeholder="Search courses"
-              placeholderTextColor={colors.subtle}
-              autoCapitalize="none"
-              autoCorrect={false}
-              clearButtonMode="while-editing"
-            />
-            <View style={styles.courseList}>
-              {courseChoices.map((c) => {
-                const on = tournamentCourseId === c.id;
-                return (
-                  <Pressable
-                    key={c.id}
-                    style={[styles.courseRow, on && styles.courseRowOn]}
-                    onPress={() => setTournamentCourseId(c.id)}
-                  >
-                    <Text style={[styles.memberName, on && styles.dayDnOn]}>{c.name}</Text>
-                    {c.location ? <Text style={styles.helper}>{c.location}</Text> : null}
-                  </Pressable>
-                );
-              })}
-            </View>
+            <Modal
+              visible={coursePickerOpen}
+              animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+              transparent
+              onRequestClose={() => setCoursePickerOpen(false)}
+            >
+              <View style={styles.modalRoot}>
+                <Pressable
+                  style={styles.modalBackdropPress}
+                  onPress={() => setCoursePickerOpen(false)}
+                />
+                <View style={[styles.modalSheet, styles.modalSheetTall]}>
+                  <Text style={styles.modalTitle}>Course</Text>
+                  <TextInput
+                    style={styles.courseSearchInput}
+                    value={courseSearch}
+                    onChangeText={setCourseSearch}
+                    placeholder="Search courses"
+                    placeholderTextColor={colors.subtle}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    clearButtonMode="while-editing"
+                  />
+                  <FlatList
+                    data={courseChoices}
+                    keyExtractor={(c) => c.id}
+                    keyboardShouldPersistTaps="handled"
+                    style={styles.courseSearchList}
+                    ListEmptyComponent={
+                      <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+                    }
+                    renderItem={({ item: c }) => {
+                      const on = tournamentCourseId === c.id;
+                      return (
+                        <Pressable
+                          style={styles.modalRow}
+                          onPress={() => {
+                            setTournamentCourseId(c.id);
+                            setCourseSearch('');
+                            setCoursePickerOpen(false);
+                          }}
+                        >
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.memberName}>{c.name}</Text>
+                            {c.location ? <Text style={styles.helper}>{c.location}</Text> : null}
+                          </View>
+                          {on ? <Text style={styles.courseChange}>✓</Text> : null}
+                        </Pressable>
+                      );
+                    }}
+                  />
+                </View>
+              </View>
+            </Modal>
             <DatePlayedField
               label="Start date"
               hint={null}
@@ -1716,7 +1836,56 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: colors.border,
   },
-  courseList: { maxHeight: 220 },
+  courseList: { maxHeight: 220, flexGrow: 0, overflow: 'hidden' },
+  courseSelectedRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  courseChange: { fontSize: 14, fontWeight: '700', color: colors.sage },
+  courseOpenBtn: {
+    alignSelf: 'flex-start',
+    marginTop: 8,
+    marginBottom: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  courseOpenBtnTxt: { fontSize: 15, fontWeight: '700', color: colors.ink },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdropPress: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  modalSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  modalSheetTall: { maxHeight: '70%' },
+  modalTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  courseSearchInput: {
+    borderWidth: 0.5,
+    borderColor: colors.pillBorder,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 16,
+    color: colors.ink,
+    marginBottom: 8,
+  },
+  courseSearchList: { flexGrow: 0, maxHeight: 360 },
+  courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
+  modalRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
   courseRow: {
     paddingVertical: 8,
     borderTopWidth: StyleSheet.hairlineWidth,
