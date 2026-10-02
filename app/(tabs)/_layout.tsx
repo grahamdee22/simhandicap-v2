@@ -234,6 +234,22 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="season/[id]"
+        options={{
+          href: null,
+          title: 'Season',
+          headerRight: HeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
+        name="season-create/[groupId]"
+        options={{
+          href: null,
+          title: 'Start season',
+          headerRight: HeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
         name="league-create/[groupId]"
         options={{
           href: null,

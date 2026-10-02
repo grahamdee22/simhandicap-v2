@@ -22,6 +22,8 @@ import {
 } from '../lib/matchPlayTournamentPairings';
 import { fetchTeamHoleScoresForLeague } from '../lib/tournamentTeamScores';
 import { getCourseById } from '../lib/courses';
+import { formatSeasonDateRange } from '../lib/seasonPoints';
+import { fetchSeasonsForGroup, type DbLeagueSeasonRow } from '../lib/seasons';
 import {
   socialPageSectionTitleStyles,
   socialSectionHeaderStyles,
@@ -188,13 +190,19 @@ export function GroupTournamentsSection({
   const [matchPreviewLine, setMatchPreviewLine] = useState<string | null>(null);
   const [scrambleTeamLine, setScrambleTeamLine] = useState<string | null>(null);
   const [bestBallTeamLine, setBestBallTeamLine] = useState<string | null>(null);
+  const [seasons, setSeasons] = useState<DbLeagueSeasonRow[]>([]);
+  const [pastSeasonsOpen, setPastSeasonsOpen] = useState(false);
   const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const load = useCallback(async () => {
     const cached = getTournamentSectionCache(group.id);
     if (!cached) setLoading(true);
     const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
-    const res = await fetchLeaguesForGroup(group.id, accessToken);
+    const [res, seasonRes] = await Promise.all([
+      fetchLeaguesForGroup(group.id, accessToken),
+      fetchSeasonsForGroup(group.id, accessToken),
+    ]);
+    setSeasons(seasonRes.data ?? []);
     const synced = await syncLeagueStatuses(res.data ?? [], accessToken);
     const active = synced.find((l) => l.status === 'active' && isLeagueActive(l));
     let top3: { name: string; rank: number }[] = [];
@@ -289,6 +297,14 @@ export function GroupTournamentsSection({
   const pastLeagues = useMemo(
     () => leagues.filter((l) => l.status === 'completed' || l.status === 'archived'),
     [leagues]
+  );
+  const activeSeason = useMemo(
+    () => seasons.find((s) => s.status === 'active') ?? null,
+    [seasons]
+  );
+  const pastSeasons = useMemo(
+    () => seasons.filter((s) => s.status !== 'active'),
+    [seasons]
   );
 
   useEffect(() => {
@@ -406,6 +422,7 @@ export function GroupTournamentsSection({
 
   const showLoadingSpinner = loading && !hasCache && !activeLeague;
   const showCreateBtn = !activeLeague && managerCheck !== 'pending' && showCreatorUi;
+  const showStartSeason = !activeSeason && managerCheck !== 'pending' && showCreatorUi;
 
   return (
     <View style={{ marginTop: 16 }}>
@@ -427,6 +444,25 @@ export function GroupTournamentsSection({
       </View>
 
       <View style={[styles.sectionBody, { marginHorizontal: gutter, marginTop: 8 }]}>
+        {activeSeason ? (
+          <Pressable
+            onPress={() => router.push(`/(tabs)/season/${activeSeason.id}` as never)}
+            style={({ pressed }) => [styles.seasonCard, pressed && styles.pressed]}
+            accessibilityRole="button"
+            accessibilityLabel={`Season ${activeSeason.name}`}
+          >
+            <Text style={styles.pastMeta}>Season · Active</Text>
+            <Text style={styles.tournamentName}>{activeSeason.name}</Text>
+            <Text style={styles.matchPreview}>
+              {formatSeasonDateRange(activeSeason.start_date, activeSeason.end_date)}
+              {' · '}
+              {activeSeason.events_that_count == null
+                ? 'Every event counts'
+                : `Best ${activeSeason.events_that_count} events`}
+            </Text>
+            <Text style={styles.seeAll}>Season standings →</Text>
+          </Pressable>
+        ) : null}
         {showLoadingSpinner ? (
           <ActivityIndicator color={colors.header} style={{ marginVertical: 16 }} />
         ) : activeLeague ? (
@@ -492,6 +528,17 @@ export function GroupTournamentsSection({
           <Text style={styles.emptyMuted}>No active tournament</Text>
         ) : null}
 
+        {showStartSeason ? (
+          <Pressable
+            style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
+            onPress={() => router.push(`/(tabs)/season-create/${group.id}` as never)}
+            accessibilityRole="button"
+            accessibilityLabel="Start season"
+          >
+            <Text style={styles.createBtnTxt}>Start season</Text>
+          </Pressable>
+        ) : null}
+
         {showCreateBtn ? (
           <Pressable
             style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
@@ -516,6 +563,33 @@ export function GroupTournamentsSection({
                 : 'DEV ONLY · Show creator view (test Create Tournament)'}
             </Text>
           </Pressable>
+        ) : null}
+
+        {pastSeasons.length > 0 ? (
+          <View style={styles.pastCard}>
+            <Pressable
+              onPress={() => setPastSeasonsOpen((o) => !o)}
+              style={styles.pastToggle}
+              accessibilityRole="button"
+            >
+              <Text style={styles.pastToggleTxt}>Past seasons ({pastSeasons.length})</Text>
+              <Text style={styles.pastChev}>{pastSeasonsOpen ? '▾' : '▸'}</Text>
+            </Pressable>
+            {pastSeasonsOpen
+              ? pastSeasons.map((s) => (
+                  <Pressable
+                    key={s.id}
+                    onPress={() => router.push(`/(tabs)/season/${s.id}` as never)}
+                    style={styles.pastRow}
+                  >
+                    <Text style={styles.pastName}>{s.name}</Text>
+                    <Text style={styles.pastMeta}>
+                      {s.status} · {formatSeasonDateRange(s.start_date, s.end_date)}
+                    </Text>
+                  </Pressable>
+                ))
+              : null}
+          </View>
         ) : null}
 
         {pastLeagues.length > 0 ? (
@@ -568,6 +642,13 @@ export function GroupTournamentsSection({
 
 const styles = StyleSheet.create({
   sectionBody: { gap: 12 },
+  seasonCard: {
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: 14,
+  },
   activeCardWrap: {
     backgroundColor: '#f0f7f3',
     borderRadius: 12,

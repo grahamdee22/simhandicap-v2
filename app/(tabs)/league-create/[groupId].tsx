@@ -27,6 +27,7 @@ import { getCourseById } from '../../../src/lib/courses';
 import { curatedPickerCourses } from '../../../src/lib/communityCourses';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, syncLeagueStatuses, type LeagueFormat } from '../../../src/lib/leagues';
+import { fetchActiveSeasonForGroup, type DbLeagueSeasonRow } from '../../../src/lib/seasons';
 import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
 import {
   getMatchPlayFormatDisabledMessage,
@@ -149,6 +150,8 @@ export default function LeagueCreateScreen() {
     fromTeamId: string;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+  const [activeSeason, setActiveSeason] = useState<DbLeagueSeasonRow | null>(null);
+  const [joinSeason, setJoinSeason] = useState(true);
   const handicapTouchedRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
   const notesSectionYRef = useRef(0);
@@ -183,6 +186,7 @@ export default function LeagueCreateScreen() {
     setSelectedMemberId(null);
     setAssignedMemberAction(null);
     setBusy(false);
+    setJoinSeason(true);
     const roster = groups.find((g) => g.id === groupId)?.members ?? [];
     const next: Record<string, boolean> = {};
     for (const m of roster) {
@@ -206,6 +210,18 @@ export default function LeagueCreateScreen() {
       setUseHandicap(DEFAULT_USE_HANDICAP);
     }
   }, [step]);
+
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const res = await fetchActiveSeasonForGroup(groupId, googleOAuthAccessToken ?? undefined);
+      if (!alive) return;
+      setActiveSeason(res.data);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [groupId]);
 
   useEffect(() => {
     if (format !== 'match_play') {
@@ -618,6 +634,7 @@ export default function LeagueCreateScreen() {
         holesPerRound,
         matchPlayNine: isMatchPlay && holesPerRound === '9' ? matchPlayNine : null,
         courseId: tournamentCourseId,
+        seasonId: activeSeason && joinSeason ? activeSeason.id : null,
         matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
         scrambleHandicapOverride: isScramble
           ? scrambleHandicapOverride.trim()
@@ -1176,6 +1193,21 @@ export default function LeagueCreateScreen() {
                 </Text>
               </>
             ) : null}
+            {activeSeason ? (
+              <View style={styles.toggleRow}>
+                <Text style={styles.toggleLbl}>Part of {activeSeason.name}?</Text>
+                <View style={styles.toggleRight}>
+                  <Text style={styles.toggleVal}>{joinSeason ? 'Yes' : 'No'}</Text>
+                  <Switch
+                    value={joinSeason}
+                    onValueChange={setJoinSeason}
+                    trackColor={{ false: colors.pillBorder, true: colors.sage }}
+                    thumbColor={Platform.OS === 'android' ? colors.surface : undefined}
+                    ios_backgroundColor={colors.pillBorder}
+                  />
+                </View>
+              </View>
+            ) : null}
             <View
               onLayout={(e) => {
                 notesSectionYRef.current = e.nativeEvent.layout.y;
@@ -1400,6 +1432,11 @@ export default function LeagueCreateScreen() {
               </Text>
               {notes.trim() ? (
                 <Text style={styles.summaryMeta}>Notes: {notes.trim()}</Text>
+              ) : null}
+              {activeSeason ? (
+                <Text style={styles.summaryMeta}>
+                  {joinSeason ? `Season: ${activeSeason.name}` : 'Not part of the season'}
+                </Text>
               ) : null}
               {needsTeams ? (
                 <Text style={styles.summaryMeta}>

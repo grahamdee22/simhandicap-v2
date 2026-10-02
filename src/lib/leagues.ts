@@ -51,6 +51,7 @@ export type DbLeagueRow = {
   holes_per_round: HolesPerRound;
   match_play_nine: 'front' | 'back' | null;
   course_id: string | null;
+  season_id?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -476,6 +477,7 @@ export type CreateLeagueInput = {
   holesPerRound?: HolesPerRound;
   matchPlayNine?: 'front' | 'back' | null;
   courseId?: string | null;
+  seasonId?: string | null;
 };
 
 export async function createLeague(
@@ -504,6 +506,7 @@ export async function createLeague(
     match_play_nine:
       input.format === 'match_play' ? (input.matchPlayNine ?? null) : null,
     course_id: input.courseId ?? null,
+    season_id: input.seasonId ?? null,
   };
 
   let league: DbLeagueRow | null = null;
