@@ -148,6 +148,52 @@ describe('match play gross comparison', () => {
     assert.equal(summary.losses, 0);
     assert.equal(summary.halved, 0);
   });
+
+  it('gives strokes to the higher course handicap and halves a tied net', async () => {
+    const { compareMatchPlayGrossHoles } = await import('../matchPlayGrossCompare');
+    const snap = {
+      courseRating: 72,
+      slope: 113,
+      coursePar: 72,
+      strokeIndexByHole: null,
+    };
+    const mine = Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, gross_score: 4 }));
+    const theirs = Array.from({ length: 18 }, (_, i) => ({
+      hole_number: i + 1,
+      gross_score: i === 6 ? 5 : 4,
+    }));
+    const { results, strokesNote } = compareMatchPlayGrossHoles(mine, theirs, 18, {
+      enabled: true,
+      nine: null,
+      me: { ...snap, index: 2 },
+      opponent: { ...snap, index: 4 },
+    });
+    assert.match(strokesNote ?? '', /Opponent gets 2 strokes on holes 7, 16/);
+    assert.equal(results[6], 'H');
+    assert.equal(results[15], 'L');
+  });
+
+  it('stays scratch when handicap is off or an index is missing', async () => {
+    const { compareMatchPlayGrossHoles } = await import('../matchPlayGrossCompare');
+    const mine = Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, gross_score: 4 }));
+    const theirs = Array.from({ length: 18 }, (_, i) => ({ hole_number: i + 1, gross_score: 5 }));
+    const off = compareMatchPlayGrossHoles(mine, theirs, 18, {
+      enabled: false,
+      nine: null,
+      me: { index: 2, courseRating: 72, slope: 113, coursePar: 72 },
+      opponent: { index: 20, courseRating: 72, slope: 113, coursePar: 72 },
+    });
+    assert.equal(off.summary.wins, 18);
+    assert.equal(off.strokesNote, null);
+    const missing = compareMatchPlayGrossHoles(mine, theirs, 18, {
+      enabled: true,
+      nine: null,
+      me: { index: null, courseRating: 72, slope: 113, coursePar: 72 },
+      opponent: { index: 20, courseRating: 72, slope: 113, coursePar: 72 },
+    });
+    assert.equal(missing.summary.wins, 18);
+    assert.equal(missing.strokesNote, null);
+  });
 });
 
 describe('9-hole tournament eligibility', () => {

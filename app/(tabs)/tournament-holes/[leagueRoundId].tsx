@@ -22,7 +22,7 @@ import { formatLeagueFormatLabel } from '../../../src/lib/leagueStandings';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { restSelect } from '../../../src/lib/tournamentApi';
 import { formatBestBallPartialNote } from '../../../src/lib/bestBallTournament';
-import { invokeCalculateMatchPlayResult } from '../../../src/lib/matchPlayTournament';
+import { invokeCalculateMatchPlayResult, type MatchPlayCompareHandicap } from '../../../src/lib/matchPlayTournament';
 import {
   fetchLeagueMatchPairings,
   opponentEntryIdForPairing,
@@ -104,6 +104,7 @@ export default function TournamentHolesScreen() {
   const [roundNine, setRoundNine] = useState<'front' | 'back' | null>(null);
   const [holes, setHoles] = useState<TournamentHoleInput[]>(() => emptyTournamentHoleDraft());
   const [opponentHoles, setOpponentHoles] = useState<TournamentHoleInput[] | null>(null);
+  const [matchHandicap, setMatchHandicap] = useState<MatchPlayCompareHandicap | null>(null);
   const [scrambleBlocked, setScrambleBlocked] = useState<string | null>(null);
 
   const course = useMemo(() => getCourseById(courseId), [courseId]);
@@ -169,6 +170,8 @@ export default function TournamentHolesScreen() {
     }
 
     setOpponentHoles(null);
+    setMatchHandicap(null);
+    let opponentRoundId: string | null = null;
     if (bundle?.league.format === 'match_play' && user?.id && leagueId) {
       const entry = bundle.entries.find((e) => e.user_id === user.id);
       const pr = await fetchLeagueMatchPairings(leagueId, token);
@@ -184,11 +187,50 @@ export default function TournamentHolesScreen() {
           (r) => r.user_id === oppEntry?.user_id && r.hole_entry_status === 'complete'
         );
         if (oppRound) {
+          opponentRoundId = oppRound.round_id;
           const oppScores = await fetchTournamentHoleScores(oppRound.id, token);
           if (oppScores.data?.length) {
             setOpponentHoles(rowsToHoleDraft(oppScores.data, cardHoles));
           }
         }
+      }
+    }
+
+    if (bundle?.league.format === 'match_play' && bundle.league.use_handicap) {
+      const mine = bundle.rounds.find((r) => r.id === leagueRoundId);
+      const roundIds = [mine?.round_id, opponentRoundId].filter((id): id is string => !!id);
+      if (roundIds.length > 0) {
+        const snaps = await restSelect<{
+          id: string;
+          course_rating: number | null;
+          slope: number | null;
+          course_par: number | null;
+          simcap_index_at_time: number | null;
+          stroke_index_by_hole: number[] | null;
+        }>(
+          `rounds?id=in.(${roundIds.join(',')})&select=id,course_rating,slope,course_par,simcap_index_at_time,stroke_index_by_hole`,
+          token
+        );
+        const byId = new Map((snaps.data ?? []).map((row) => [row.id, row]));
+        const toSnap = (roundId: string | null | undefined) => {
+          const row = roundId ? byId.get(roundId) : undefined;
+          return {
+            index: row?.simcap_index_at_time ?? null,
+            courseRating: row?.course_rating ?? null,
+            slope: row?.slope ?? null,
+            coursePar: row?.course_par ?? null,
+            strokeIndexByHole: row?.stroke_index_by_hole ?? null,
+          };
+        };
+        const nine =
+          bundle.league.match_play_nine ??
+          (played === 'front' || played === 'back' ? played : null);
+        setMatchHandicap({
+          enabled: true,
+          nine,
+          me: toSnap(mine?.round_id),
+          opponent: toSnap(opponentRoundId),
+        });
       }
     }
 
@@ -349,6 +391,7 @@ export default function TournamentHolesScreen() {
           onChangeHole={onChangeHole}
           holeCount={holeCount}
           nine={matchPlayNine ?? roundNine}
+          handicap={format === 'match_play' ? matchHandicap : null}
           opponentHoles={format === 'match_play' ? opponentHoles : undefined}
           teamScoreLabel={
             format === 'scramble'

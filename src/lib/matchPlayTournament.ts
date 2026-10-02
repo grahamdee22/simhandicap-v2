@@ -14,6 +14,7 @@ import type { MatchPlayHoleResult } from './tournamentTypes';
 
 export type { MatchPlayRoundSummary } from './matchPlayGrossCompare';
 export { compareMatchPlayGrossHoles, countComparedMatchPlayHoles, formatMatchPlayStatus };
+export type { MatchPlayCompareHandicap, MatchPlayHandicapSnap } from './matchPlayGrossCompare';
 
 export type CalculateMatchPlayResultResponse = {
   ok: boolean;

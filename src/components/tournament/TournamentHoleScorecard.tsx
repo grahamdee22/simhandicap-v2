@@ -10,6 +10,7 @@ import {
   computeMatchPlayRunningScore,
   countComparedMatchPlayHoles,
   formatMatchPlayStatus,
+  type MatchPlayCompareHandicap,
 } from '../../lib/matchPlayTournament';
 
 type Props = {
@@ -24,6 +25,8 @@ type Props = {
   holeCount?: number;
   /** Match Play 9-hole only: which physical nine the card represents. */
   nine?: 'front' | 'back' | null;
+  /** When set, live W/L/H uses the same stroke math as recalculate_match_play_pairing. */
+  handicap?: MatchPlayCompareHandicap | null;
 };
 
 function cellColors(gross: number | null | undefined, par: number): { bg: string; border: string } {
@@ -140,14 +143,15 @@ export function TournamentHoleScorecard({
   opponentHoles,
   holeCount = 18,
   nine = null,
+  handicap = null,
 }: Props) {
   const grandTotal = sumGrossFromHoles(holes);
   const nineLabel = nine === 'back' ? 'Back 9' : 'Front 9';
 
   const matchComparison = useMemo(() => {
     if (format !== 'match_play' || !opponentHoles?.length) return null;
-    return compareMatchPlayGrossHoles(holes, opponentHoles, holeCount);
-  }, [format, holes, opponentHoles, holeCount]);
+    return compareMatchPlayGrossHoles(holes, opponentHoles, holeCount, handicap);
+  }, [format, holes, opponentHoles, holeCount, handicap]);
 
   const matchSummary = useMemo(() => {
     if (format !== 'match_play') return null;
@@ -182,6 +186,9 @@ export function TournamentHoleScorecard({
   return (
     <View style={styles.card}>
       {matchStatusText ? <Text style={styles.matchStatus}>{matchStatusText}</Text> : null}
+      {matchComparison?.strokesNote ? (
+        <Text style={styles.strokesNote}>{matchComparison.strokesNote}</Text>
+      ) : null}
       {holeCount === 9 ? (
         <HoleRow
           label={nineLabel}
@@ -243,6 +250,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '700',
     color: colors.header,
+    textAlign: 'center',
+  },
+  strokesNote: {
+    fontSize: 12,
+    color: colors.muted,
     textAlign: 'center',
   },
   rowWrap: { gap: 8 },
