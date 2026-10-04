@@ -17,6 +17,11 @@ import { clearGoogleOAuthAccessToken, googleOAuthAccessToken } from '../lib/goog
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { mapEmailPasswordSignInError } from '../lib/emailPasswordSignInErrors';
 import { shouldPromptOauthDisplayName } from '../lib/oauthDisplayNameGate';
+import {
+  identifyPurchasesUser,
+  initPurchasesIfConfigured,
+  resetPurchasesUser,
+} from '../lib/purchases';
 import { rebindPersistToUser, useAppStore } from '../store/useAppStore';
 
 /** Set by `AuthProvider`; used after native OAuth writes session to AsyncStorage so the guard sees a session immediately. */
@@ -168,6 +173,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    initPurchasesIfConfigured();
+
     let cancelled = false;
     const isCancelled = () => cancelled;
 
@@ -218,6 +225,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         void (async () => {
           await rebindPersistToUser(userId ?? null);
           if (cancelled) return;
+          if (userId) {
+            void identifyPurchasesUser(userId);
+          } else {
+            void resetPurchasesUser();
+          }
           if (syncProfile && userId) {
             await hydrateSignedInUserData(userId, accessToken, isCancelled);
           } else if (!userId) {
