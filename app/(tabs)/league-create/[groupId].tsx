@@ -158,6 +158,7 @@ export default function LeagueCreateScreen() {
   const [busy, setBusy] = useState(false);
   const [activeSeason, setActiveSeason] = useState<DbLeagueSeasonRow | null>(null);
   const [joinSeason, setJoinSeason] = useState(true);
+  const [infoSheet, setInfoSheet] = useState<'season' | 'scorer' | null>(null);
   const handicapTouchedRef = useRef(false);
   const launchInFlightRef = useRef(false);
   const scrollRef = useRef<ScrollView>(null);
@@ -1310,7 +1311,18 @@ export default function LeagueCreateScreen() {
             ) : null}
             {activeSeason ? (
               <View style={styles.toggleRow}>
-                <Text style={styles.toggleLbl}>Part of {activeSeason.name}?</Text>
+                <View style={styles.toggleLblRow}>
+                  <Text style={styles.toggleLbl}>Part of {activeSeason.name}?</Text>
+                  <Pressable
+                    style={styles.infoBtn}
+                    onPress={() => setInfoSheet('season')}
+                    hitSlop={6}
+                    accessibilityRole="button"
+                    accessibilityLabel="About joining the season"
+                  >
+                    <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                  </Pressable>
+                </View>
                 <View style={styles.toggleRight}>
                   <Text style={styles.toggleVal}>{joinSeason ? 'Yes' : 'No'}</Text>
                   <Switch
@@ -1470,7 +1482,18 @@ export default function LeagueCreateScreen() {
                 </View>
                 {isScramble && t.memberIds.length >= 2 ? (
                   <View style={styles.scorerBlock}>
-                    <Text style={styles.scorerLbl}>Designated scorer</Text>
+                    <View style={styles.scorerLblRow}>
+                      <Text style={styles.scorerLbl}>Designated scorer</Text>
+                      <Pressable
+                        style={styles.infoBtn}
+                        onPress={() => setInfoSheet('scorer')}
+                        hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel="About designated scorer"
+                      >
+                        <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                      </Pressable>
+                    </View>
                     <View style={styles.scorerRow}>
                       {t.memberIds.map((uid) => {
                         const m = playingMembers.find((x) => x.userId === uid);
@@ -1597,6 +1620,38 @@ export default function LeagueCreateScreen() {
         ) : null}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <Modal
+        visible={infoSheet != null}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setInfoSheet(null)}
+      >
+        <View style={styles.infoExplainRoot}>
+          <Pressable style={styles.infoExplainBackdrop} onPress={() => setInfoSheet(null)} />
+          <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
+            {infoSheet === 'season' ? (
+              <>
+                <Text style={styles.infoExplainTitle}>Part of the season?</Text>
+                <Text style={styles.infoExplainBody}>
+                  When this is on, this tournament&apos;s results count toward the season&apos;s standings. Turn it
+                  off for a one-off event you don&apos;t want affecting the season.
+                </Text>
+              </>
+            ) : null}
+            {infoSheet === 'scorer' ? (
+              <>
+                <Text style={styles.infoExplainTitle}>Designated scorer</Text>
+                <Text style={styles.infoExplainBody}>
+                  Your team plays one ball, so there&apos;s only one score per hole. Only the Designated scorer can
+                  open the team&apos;s scorecard and enter scores — make sure it&apos;s whoever&apos;s actually
+                  keeping score for your group, or your team&apos;s results won&apos;t get entered.
+                </Text>
+              </>
+            ) : null}
+          </View>
+        </View>
+      </Modal>
     </ContentWidth>
   );
 }
@@ -1701,8 +1756,48 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   toggleRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  toggleLbl: { fontSize: 15, fontWeight: '600', color: colors.ink, flex: 1, paddingRight: 8 },
+  toggleLblRow: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingRight: 8,
+  },
+  toggleLbl: { fontSize: 15, fontWeight: '600', color: colors.ink, flexShrink: 1 },
   toggleVal: { fontSize: 15, fontWeight: '700', color: colors.sage, minWidth: 28 },
+  infoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#7aa390',
+    backgroundColor: '#e8f2ed',
+  },
+  infoBtnTxt: { fontSize: 11, fontWeight: '700', color: '#1a3d2b', lineHeight: 12 },
+  infoExplainRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  infoExplainBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  infoExplainSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  infoExplainTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  infoExplainBody: { fontSize: 14, lineHeight: 21, color: colors.ink },
+  scorerLblRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
   dayRow: { flexDirection: 'row', gap: 8, marginBottom: 8 },
   dayBtn: {
     flex: 1,
@@ -1890,7 +1985,7 @@ const styles = StyleSheet.create({
   summaryLine: { fontSize: 18, fontWeight: '700', color: colors.ink },
   summaryMeta: { fontSize: 13, color: colors.muted, marginTop: 6 },
   scorerBlock: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  scorerLbl: { fontSize: 11, fontWeight: '700', color: colors.muted, textTransform: 'uppercase', marginBottom: 8 },
+  scorerLbl: { fontSize: 11, fontWeight: '700', color: colors.muted, textTransform: 'uppercase' },
   scorerRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   scorerChip: {
     paddingHorizontal: 10,

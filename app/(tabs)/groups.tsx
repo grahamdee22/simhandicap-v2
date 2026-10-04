@@ -67,7 +67,7 @@ const SOCIAL_SECTION_INFO_COPY: Record<
   tournaments: {
     title: 'Tournaments',
     body:
-      'Run a tournament for your crew. The group creator or admins can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards.',
+      'Run a tournament for your crew. The group creator or admins can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards. Want to tie several tournaments together into one points race? Start a season — it tracks placement points across every tournament in it, with its own standings.',
   },
   net: {
     title: 'Crew Match Calculator',

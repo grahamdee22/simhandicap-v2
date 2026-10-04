@@ -6,11 +6,14 @@ import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { confirmDestructive, showAppAlert } from '../lib/alertCompat';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
@@ -231,10 +234,12 @@ export function MatchPlayHub({
   onMatchPlayInfoPress,
 }: Props) {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const [myMatches, setMyMatches] = useState<DbMatchRow[]>([]);
   const [openFeed, setOpenFeed] = useState<DbMatchRow[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
+  const [awaitingOpponentInfoOpen, setAwaitingOpponentInfoOpen] = useState(false);
   const [fetchError, setFetchError] = useState(false);
   const [declineBusyId, setDeclineBusyId] = useState<string | null>(null);
   const [cancelOpenBusyId, setCancelOpenBusyId] = useState<string | null>(null);
@@ -856,9 +861,10 @@ export function MatchPlayHub({
           ? m.player_1_platform.trim()
           : null
         : null;
+    const status = listKind === 'hub' ? null : statusLabel(m, uid);
+    const awaitingOpponentStatus = status === 'Awaiting opponent';
     const metaLine = (() => {
       if (listKind === 'hub') return `${formatHoles(m)} · Stroke play`;
-      const status = statusLabel(m, uid);
       const holes = formatHoles(m);
       if (listKind === 'openFeed' || listKind === 'openFeedScheduled') {
         const cs = challengeLifecycle(m);
@@ -868,36 +874,53 @@ export function MatchPlayHub({
             ? `${when.whenLabel} · ${when.countdownLabel} · ${holes} · ${openFeedPlatform}`
             : `${when.whenLabel} · ${when.countdownLabel} · ${holes}`;
         }
+        if (awaitingOpponentStatus) {
+          return openFeedPlatform ? ` · ${holes} · ${openFeedPlatform}` : ` · ${holes}`;
+        }
         return openFeedPlatform ? `${status} · ${holes} · ${openFeedPlatform}` : `${status} · ${holes}`;
       }
+      if (awaitingOpponentStatus) return ` · ${holes} · Stroke play`;
       return `${status} · ${holes} · Stroke play`;
     })();
 
     const cardInner = (
       <>
         {hubBadge ? (
-          <View
-            style={[
-              styles.cardStatusBadge,
-              hubBadge.tone === 'incoming'
-                ? styles.cardStatusBadgeIncoming
-                : hubBadge.tone === 'yours'
-                  ? styles.cardStatusBadgeYours
-                  : styles.cardStatusBadgeMuted,
-            ]}
-          >
-            <Text
-              style={
-                hubBadge.tone === 'incoming'
-                  ? styles.cardStatusBadgeTxtIncoming
-                  : hubBadge.tone === 'yours'
-                    ? styles.cardStatusBadgeTxtYours
-                    : styles.cardStatusBadgeTxtMuted
-              }
+          hubBadge.text === 'Awaiting opponent' ? (
+            <Pressable
+              style={[styles.cardStatusBadge, styles.cardStatusBadgeMuted, styles.awaitingOpponentBadge]}
+              onPress={() => setAwaitingOpponentInfoOpen(true)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="About awaiting opponent"
             >
-              {hubBadge.text}
-            </Text>
-          </View>
+              <Text style={styles.cardStatusBadgeTxtMuted}>{hubBadge.text}</Text>
+              <Text style={styles.infoBtnTxt}>ⓘ</Text>
+            </Pressable>
+          ) : (
+            <View
+              style={[
+                styles.cardStatusBadge,
+                hubBadge.tone === 'incoming'
+                  ? styles.cardStatusBadgeIncoming
+                  : hubBadge.tone === 'yours'
+                    ? styles.cardStatusBadgeYours
+                    : styles.cardStatusBadgeMuted,
+              ]}
+            >
+              <Text
+                style={
+                  hubBadge.tone === 'incoming'
+                    ? styles.cardStatusBadgeTxtIncoming
+                    : hubBadge.tone === 'yours'
+                      ? styles.cardStatusBadgeTxtYours
+                      : styles.cardStatusBadgeTxtMuted
+                }
+              >
+                {hubBadge.text}
+              </Text>
+            </View>
+          )
         ) : null}
         {m.verification_required &&
         (m.status === 'active' || m.status === 'waiting') &&
@@ -909,7 +932,23 @@ export function MatchPlayHub({
         <Text style={styles.cardTitle} numberOfLines={1}>
           {m.course_name}
         </Text>
-        <Text style={styles.cardMeta}>{metaLine}</Text>
+        {awaitingOpponentStatus ? (
+          <View style={styles.awaitingOpponentMetaRow}>
+            <Pressable
+              style={styles.awaitingOpponentMetaPress}
+              onPress={() => setAwaitingOpponentInfoOpen(true)}
+              hitSlop={6}
+              accessibilityRole="button"
+              accessibilityLabel="About awaiting opponent"
+            >
+              <Text style={styles.cardMeta}>Awaiting opponent</Text>
+              <Text style={styles.infoBtnTxt}>ⓘ</Text>
+            </Pressable>
+            <Text style={styles.cardMeta}>{metaLine}</Text>
+          </View>
+        ) : (
+          <Text style={styles.cardMeta}>{metaLine}</Text>
+        )}
         <Text style={styles.cardPeople} numberOfLines={2}>
           {peopleLine}
         </Text>
@@ -1182,6 +1221,28 @@ export function MatchPlayHub({
       ) : (
         completed.map((m) => renderCard(m, userId, 'recentHistory'))
       )}
+
+      <Modal
+        visible={awaitingOpponentInfoOpen}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setAwaitingOpponentInfoOpen(false)}
+      >
+        <View style={styles.infoExplainRoot}>
+          <Pressable
+            style={styles.infoExplainBackdrop}
+            onPress={() => setAwaitingOpponentInfoOpen(false)}
+          />
+          <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.infoExplainTitle}>Awaiting opponent</Text>
+            <Text style={styles.infoExplainBody}>
+              Match Play doesn&apos;t use a shared scorecard — you and your opponent each enter your own hole-by-hole
+              scores separately. This just means they haven&apos;t finished entering theirs yet. Nothing&apos;s broken
+              and there&apos;s nothing for you to do.
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -1205,6 +1266,37 @@ const styles = StyleSheet.create({
     backgroundColor: '#e8f2ed',
   },
   infoBtnTxt: { fontSize: 11, fontWeight: '700', color: '#1a3d2b', lineHeight: 12 },
+  awaitingOpponentBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  awaitingOpponentMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+  },
+  awaitingOpponentMetaPress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  infoExplainRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  infoExplainBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  infoExplainSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  infoExplainTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  infoExplainBody: { fontSize: 14, lineHeight: 21, color: colors.ink },
   sectionTitle: { fontSize: 13, fontWeight: '700', color: colors.ink, marginTop: 4 },
   sectionSub: { fontSize: 11, color: colors.muted, marginTop: 3, marginBottom: 8, lineHeight: 16 },
   sectionSpaced: { marginTop: 18 },

@@ -1,7 +1,16 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
@@ -28,6 +37,7 @@ export default function SeasonScreen() {
   const [loading, setLoading] = useState(true);
   const [missing, setMissing] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [standingsInfoOpen, setStandingsInfoOpen] = useState(false);
 
   const group = useMemo(
     () => groups.find((g) => g.id === board?.season.group_id),
@@ -133,7 +143,18 @@ export default function SeasonScreen() {
             : `Best ${season.events_that_count} events count`}
         </Text>
 
-        <Text style={styles.section}>Standings</Text>
+        <View style={styles.sectionRow}>
+          <Text style={[styles.section, styles.sectionInRow]}>Standings</Text>
+          <Pressable
+            style={styles.infoBtn}
+            onPress={() => setStandingsInfoOpen(true)}
+            hitSlop={6}
+            accessibilityRole="button"
+            accessibilityLabel="About season standings"
+          >
+            <Text style={styles.infoBtnTxt}>ⓘ</Text>
+          </Pressable>
+        </View>
         {standings.length === 0 ? (
           <Text style={styles.empty}>No finished events yet. Points show up after a tournament ends.</Text>
         ) : (
@@ -179,6 +200,26 @@ export default function SeasonScreen() {
           </Pressable>
         ) : null}
       </ScrollView>
+
+      <Modal
+        visible={standingsInfoOpen}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setStandingsInfoOpen(false)}
+      >
+        <View style={styles.infoExplainRoot}>
+          <Pressable style={styles.infoExplainBackdrop} onPress={() => setStandingsInfoOpen(false)} />
+          <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.infoExplainTitle}>Season standings</Text>
+            <Text style={styles.infoExplainBody}>
+              Each finished tournament in this season awards placement points — 1st through 8th place score 10, 8, 6,
+              5, 4, 3, 2, 1, and anything below that scores 0. If this season only counts your best N events, a
+              tournament you skip just isn&apos;t counted toward your total — it&apos;s left out, not scored as a
+              zero.
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </ContentWidth>
   );
 }
@@ -194,6 +235,13 @@ const styles = StyleSheet.create({
   pillTxt: { fontSize: 11, fontWeight: '700', color: colors.accentDark },
   title: { fontSize: 24, fontWeight: '700', color: colors.ink },
   meta: { fontSize: 13, color: colors.muted, marginTop: 4 },
+  sectionRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 22,
+    marginBottom: 8,
+  },
   section: {
     marginTop: 22,
     marginBottom: 8,
@@ -202,6 +250,34 @@ const styles = StyleSheet.create({
     color: colors.muted,
     textTransform: 'uppercase',
   },
+  sectionInRow: { marginTop: 0, marginBottom: 0 },
+  infoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#7aa390',
+    backgroundColor: '#e8f2ed',
+  },
+  infoBtnTxt: { fontSize: 11, fontWeight: '700', color: '#1a3d2b', lineHeight: 12 },
+  infoExplainRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  infoExplainBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  infoExplainSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  infoExplainTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  infoExplainBody: { fontSize: 14, lineHeight: 21, color: colors.ink },
   empty: { fontSize: 14, color: colors.muted, lineHeight: 20 },
   row: {
     flexDirection: 'row',
