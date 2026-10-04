@@ -1234,12 +1234,13 @@ const styles = StyleSheet.create({
   inlineLoader: { alignItems: 'center', marginBottom: 16 },
   membersEmpty: { fontSize: 13, color: colors.muted, lineHeight: 19 },
   modalBtnDisabled: { opacity: 0.7 },
-  socialMatchPlaySection: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: colors.border,
-    paddingBottom: 18,
-    marginBottom: 12,
-  },
+socialMatchPlaySection: {
+  borderBottomWidth: StyleSheet.hairlineWidth,
+  borderBottomColor: colors.border,
+  marginTop: 16,
+  paddingBottom: 18,
+  marginBottom: 12,
+},
   myGroupsHeader: {
     paddingTop: 4,
     paddingBottom: 10,
