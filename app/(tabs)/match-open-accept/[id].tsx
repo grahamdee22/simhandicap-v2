@@ -85,7 +85,7 @@ function conditionsSummary(m: DbMatchRow): string {
   );
   const w = WIND_OPTS.find((x) => x.key === m.wind)?.dn ?? m.wind;
   const mu = mulliganDisplayLabel(m.mulligans);
-  return `${p} putting · ${pin} pins · ${w} wind · ${mu} mulligans`;
+  return `${p} putting · ${pin} pins · ${w} wind · ${mu}`;
 }
 
 function findCourseByMatchName(name: string): CourseSeed | undefined {

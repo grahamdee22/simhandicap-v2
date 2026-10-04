@@ -700,25 +700,20 @@ export default function LeagueCreateScreen() {
         showAppAlert('Could not create tournament', res.error ?? 'Unknown error');
         return;
       }
+      let successMessage = 'Members will see it in their group.';
       if (isMatchPlay) {
         const bracket = await generateMatchPlayBracket(
           res.data.id,
           seededUserIds,
           googleOAuthAccessToken ?? undefined
         );
-        if (bracket.error) {
-          showAppAlert(
-            'Tournament created',
-            `Bracket could not be generated: ${bracket.error}. Use Manage tournament to try again.`
-          );
-        } else {
-          showAppAlert('Tournament created', 'Bracket is ready — lowest index is the #1 seed.');
-        }
-      } else {
-        showAppAlert('Tournament created', 'Members will see it in their group.');
+        successMessage = bracket.error
+          ? `Bracket could not be generated: ${bracket.error}. Use Manage tournament to try again.`
+          : 'Bracket is ready — lowest index is the #1 seed.';
       }
       clearTournamentSectionCache(groupId);
       router.replace('/(tabs)/groups' as never);
+      showAppAlert('Tournament created', successMessage);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
       showAppAlert('Could not create tournament', message);

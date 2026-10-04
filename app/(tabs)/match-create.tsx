@@ -203,6 +203,7 @@ export default function MatchCreateScreen() {
   const [courseOpen, setCourseOpen] = useState(false);
   const [courseSearchQuery, setCourseSearchQuery] = useState('');
   const [submitBusy, setSubmitBusy] = useState(false);
+  const [continueBusy, setContinueBusy] = useState(false);
   const [libraryPermissionBlocked, setLibraryPermissionBlocked] = useState(false);
   const [devSkipSettingsPhoto, setDevSkipSettingsPhoto] = useState(false);
   const [devFutureTwoMinuteMode, setDevFutureTwoMinuteMode] = useState(false);
@@ -241,6 +242,7 @@ export default function MatchCreateScreen() {
     setCourseOpen(false);
     setCourseSearchQuery('');
     setSubmitBusy(false);
+    setContinueBusy(false);
     setLibraryPermissionBlocked(false);
     setDevSkipSettingsPhoto(false);
     setDevFutureTwoMinuteMode(false);
@@ -699,30 +701,61 @@ export default function MatchCreateScreen() {
   );
 
   const goNext = useCallback(async () => {
-    if (!canContinue) return;
+    if (!canContinue || continueBusy) return;
     if (challengeKind === 'direct' && opponent && screenStep === 1 && user?.id) {
-      const res = await listMyMatches(user.id, googleOAuthAccessToken ?? undefined);
-      if (res.error || res.data == null) {
-        showAppAlert('Could not verify your matches', res.error ?? 'Something went wrong.');
-        return;
-      }
-      if (countActiveDirectMatchesForUser(res.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
-        showAppAlert(
-          'Challenge limit',
-          `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a new one.`
-        );
-        return;
-      }
-      if (hasBlockingDirectMatchWithOpponent(res.data, user.id, opponent.userId)) {
-        showAppAlert(
-          'Match already in progress',
-          `You already have a match with ${opponent.displayName} that is pending, active, or waiting. Finish or resolve that match before sending a new challenge.`
-        );
-        return;
+      setContinueBusy(true);
+      try {
+        const timeoutMs = 12_000;
+        const res = await Promise.race([
+          listMyMatches(user.id, googleOAuthAccessToken ?? undefined),
+          new Promise<{ data: null; error: string }>((resolve) => {
+            setTimeout(
+              () =>
+                resolve({
+                  data: null,
+                  error: 'Could not verify your matches — check your connection and try again.',
+                }),
+              timeoutMs
+            );
+          }),
+        ]);
+        if (res.error || res.data == null) {
+          showAppAlert(
+            'Could not verify your matches',
+            res.error ?? 'Could not verify your matches — check your connection and try again.'
+          );
+          return;
+        }
+        if (countActiveDirectMatchesForUser(res.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
+          showAppAlert(
+            'Challenge limit',
+            `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a new one.`
+          );
+          return;
+        }
+        if (hasBlockingDirectMatchWithOpponent(res.data, user.id, opponent.userId)) {
+          showAppAlert(
+            'Match already in progress',
+            `You already have a match with ${opponent.displayName} that is pending, active, or waiting. Finish or resolve that match before sending a new challenge.`
+          );
+          return;
+        }
+      } finally {
+        setContinueBusy(false);
       }
     }
     if (stepIdx < totalSteps - 1) setStepIdx((s) => s + 1);
-  }, [canContinue, stepIdx, totalSteps, challengeKind, opponent, screenStep, user?.id, googleOAuthAccessToken]);
+  }, [
+    canContinue,
+    continueBusy,
+    stepIdx,
+    totalSteps,
+    challengeKind,
+    opponent,
+    screenStep,
+    user?.id,
+    googleOAuthAccessToken,
+  ]);
 
   const goBackStep = useCallback(() => {
     if (stepIdx > 0) setStepIdx((s) => s - 1);
@@ -1400,11 +1433,18 @@ export default function MatchCreateScreen() {
               )}
               {stepIdx < totalSteps - 1 ? (
                 <Pressable
-                  style={[styles.primaryBtn, !canContinue && styles.primaryBtnDisabled]}
+                  style={[
+                    styles.primaryBtn,
+                    (!canContinue || continueBusy) && styles.primaryBtnDisabled,
+                  ]}
                   onPress={() => void goNext()}
-                  disabled={!canContinue}
+                  disabled={!canContinue || continueBusy}
                 >
-                  <Text style={styles.primaryBtnTxt}>Continue</Text>
+                  {continueBusy ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <Text style={styles.primaryBtnTxt}>Continue</Text>
+                  )}
                 </Pressable>
               ) : (
                 <View style={styles.navSpacer} />
