@@ -649,16 +649,6 @@ export default function GroupsScreen() {
               {inboundInviteCards.length > 0 ? (
                 <View style={[styles.inboundCardsWrap, { marginHorizontal: gutter }]}>{inboundInviteCards}</View>
               ) : null}
-              <View style={styles.socialMatchPlaySection}>
-                <MatchPlayHub
-                  gutter={gutter}
-                  userId={user?.id}
-                  supabaseOn={supabaseOn}
-                  onIncomingDirectCount={onIncomingDirectMatchCount}
-                  onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
-                  onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
-                />
-              </View>
               <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
                 <View style={styles.sectionHeaderRow}>
                   <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
@@ -691,6 +681,16 @@ export default function GroupsScreen() {
                 <IconPlus size={18} color="#fff" />
                 <Text style={styles.emptyCtaTxt}>Create your first group</Text>
               </Pressable>
+              <View style={styles.socialMatchPlaySection}>
+                <MatchPlayHub
+                  gutter={gutter}
+                  userId={user?.id}
+                  supabaseOn={supabaseOn}
+                  onIncomingDirectCount={onIncomingDirectMatchCount}
+                  onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
+                  onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
+                />
+              </View>
             </ScrollView>
 
             {createGroupModal}
@@ -732,17 +732,6 @@ export default function GroupsScreen() {
             {inboundInviteCards.length > 0 ? (
               <View style={[styles.inboundCardsWrap, { marginHorizontal: gutter }]}>{inboundInviteCards}</View>
             ) : null}
-
-            <View style={styles.socialMatchPlaySection}>
-              <MatchPlayHub
-                gutter={gutter}
-                userId={user?.id}
-                supabaseOn={supabaseOn}
-                onIncomingDirectCount={onIncomingDirectMatchCount}
-                onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
-                onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
-              />
-            </View>
 
             <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
               <View style={styles.sectionHeaderRow}>
@@ -970,6 +959,17 @@ export default function GroupsScreen() {
                 onInfoPress={() => setSocialSectionInfo('tournaments')}
               />
             ) : null}
+
+            <View style={styles.socialMatchPlaySection}>
+              <MatchPlayHub
+                gutter={gutter}
+                userId={user?.id}
+                supabaseOn={supabaseOn}
+                onIncomingDirectCount={onIncomingDirectMatchCount}
+                onOutgoingAcceptedUnseenCount={onOutgoingAcceptedUnseenCount}
+                onMatchPlayInfoPress={() => setSocialSectionInfo('match')}
+              />
+            </View>
 
             <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter, marginTop: 16 }]}>
               <View style={styles.sectionHeaderRow}>
