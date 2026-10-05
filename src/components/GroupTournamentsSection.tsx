@@ -2,6 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { todayLocalYmd } from '../lib/dates';
 import { colors } from '../lib/constants';
 import {
   fetchLeaguesForGroup,
@@ -294,6 +295,12 @@ export function GroupTournamentsSection({
     () => leagues.find((l) => l.status === 'active' && isLeagueActive(l)) ?? null,
     [leagues]
   );
+  const scheduledLeagues = useMemo(() => {
+    const today = todayLocalYmd();
+    return leagues
+      .filter((l) => l.status === 'active' && l.start_date > today)
+      .sort((a, b) => a.start_date.localeCompare(b.start_date));
+  }, [leagues]);
   const pastLeagues = useMemo(
     () => leagues.filter((l) => l.status === 'completed' || l.status === 'archived'),
     [leagues]
@@ -421,7 +428,7 @@ export function GroupTournamentsSection({
   }, [pastOpen, pastLeagues, pastSummaries, displayNames]);
 
   const showLoadingSpinner = loading && !hasCache && !activeLeague;
-  const showCreateBtn = !activeLeague && managerCheck !== 'pending' && showCreatorUi;
+  const showCreateBtn = managerCheck !== 'pending' && showCreatorUi;
   const showStartSeason = !activeSeason && managerCheck !== 'pending' && showCreatorUi;
 
   return (
@@ -524,8 +531,34 @@ export function GroupTournamentsSection({
             accessibilityLabel="Loading tournament options"
             accessibilityRole="progressbar"
           />
-        ) : !showCreateBtn ? (
+        ) : !activeLeague && scheduledLeagues.length === 0 && !showCreateBtn ? (
           <Text style={styles.emptyMuted}>No active tournament</Text>
+        ) : null}
+
+        {scheduledLeagues.length > 0 ? (
+          <View style={styles.comingUpWrap}>
+            <Text style={styles.comingUpTitle}>Coming up</Text>
+            {scheduledLeagues.map((league) => (
+              <Pressable
+                key={league.id}
+                onPress={() => router.push(`/(tabs)/league/${league.id}` as never)}
+                style={({ pressed }) => [styles.comingUpRow, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel={`Scheduled tournament ${league.name}`}
+              >
+                <Text style={styles.pastMeta}>
+                  {formatLeagueFormatLabel(league.format)} ·{' '}
+                  {formatLeagueDateRange(league.start_date, league.end_date)}
+                </Text>
+                <Text style={styles.tournamentName}>{league.name}</Text>
+                {league.course_id ? (
+                  <Text style={styles.matchPreview}>
+                    📍 {getCourseById(league.course_id)?.name ?? league.course_id}
+                  </Text>
+                ) : null}
+              </Pressable>
+            ))}
+          </View>
         ) : null}
 
         {showStartSeason ? (
@@ -544,9 +577,11 @@ export function GroupTournamentsSection({
             style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
             onPress={() => router.push(`/(tabs)/league-create/${group.id}` as never)}
             accessibilityRole="button"
-            accessibilityLabel="Create tournament"
+            accessibilityLabel={activeLeague ? 'Schedule next tournament' : 'Create tournament'}
           >
-            <Text style={styles.createBtnTxt}>Create Tournament</Text>
+            <Text style={styles.createBtnTxt}>
+              {activeLeague ? 'Schedule next tournament' : 'Create Tournament'}
+            </Text>
           </Pressable>
         ) : null}
 
@@ -657,6 +692,23 @@ const styles = StyleSheet.create({
     padding: 14,
   },
   pastCard: {
+    backgroundColor: colors.bg,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    padding: 14,
+  },
+  comingUpWrap: {
+    gap: 8,
+  },
+  comingUpTitle: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: colors.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  comingUpRow: {
     backgroundColor: colors.bg,
     borderRadius: 12,
     borderWidth: StyleSheet.hairlineWidth,

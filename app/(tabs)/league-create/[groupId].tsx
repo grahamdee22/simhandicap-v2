@@ -28,8 +28,8 @@ import { colors } from '../../../src/lib/constants';
 import { getCourseById } from '../../../src/lib/courses';
 import { curatedPickerCourses } from '../../../src/lib/communityCourses';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
-import { createLeague, fetchLeaguesForGroup, syncLeagueStatuses, type LeagueFormat } from '../../../src/lib/leagues';
-import { isLeagueActive } from '../../../src/lib/leagueStandings';
+import { createLeague, fetchLeaguesForGroup, type DbLeagueRow, type LeagueFormat } from '../../../src/lib/leagues';
+import { dateRangesOverlap, formatLeagueDateRange, isLeagueActive } from '../../../src/lib/leagueStandings';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { fetchActiveSeasonForGroup, type DbLeagueSeasonRow } from '../../../src/lib/seasons';
 import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
@@ -109,6 +109,27 @@ function defaultEndDateYmd(): string {
   return ymdFromParts(d.getFullYear(), d.getMonth() + 1, d.getDate());
 }
 
+function dayAfterYmd(ymd: string): string {
+  const d = dateFromYmdLocal(ymd);
+  d.setDate(d.getDate() + 1);
+  return ymdFromParts(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+function endDateFromStartYmd(startYmd: string, daySpan = 28): string {
+  const d = dateFromYmdLocal(startYmd);
+  d.setDate(d.getDate() + daySpan);
+  return ymdFromParts(d.getFullYear(), d.getMonth() + 1, d.getDate());
+}
+
+function suggestedDatesFromActiveLeagues(leagues: DbLeagueRow[]): { start: string; end: string } {
+  const running = leagues.find((l) => l.status === 'active' && isLeagueActive(l));
+  if (running) {
+    const start = dayAfterYmd(running.end_date);
+    return { start, end: endDateFromStartYmd(start) };
+  }
+  return { start: todayLocalYmd(), end: defaultEndDateYmd() };
+}
+
 const DEFAULT_USE_HANDICAP = true;
 const DEFAULT_PLAYERS_PER_TEAM = 2;
 
@@ -135,7 +156,10 @@ export default function LeagueCreateScreen() {
   const [tournamentCourseId, setTournamentCourseId] = useState<string | null>(null);
   const [coursePickerOpen, setCoursePickerOpen] = useState(false);
   const [courseSearch, setCourseSearch] = useState('');
-  const [createGate, setCreateGate] = useState<'pending' | 'ready' | 'blocked'>('pending');
+  const [createGate, setCreateGate] = useState<'pending' | 'ready'>('pending');
+  const [groupActiveLeagues, setGroupActiveLeagues] = useState<DbLeagueRow[]>([]);
+  const groupActiveLeaguesRef = useRef<DbLeagueRow[]>([]);
+  const [dateError, setDateError] = useState<string | null>(null);
   const [selectedPlayerIds, setSelectedPlayerIds] = useState<Record<string, boolean>>({});
   const [playerSearch, setPlayerSearch] = useState('');
   const [startDateYmd, setStartDateYmd] = useState(todayLocalYmd);
@@ -181,8 +205,10 @@ export default function LeagueCreateScreen() {
     setCoursePickerOpen(false);
     setCourseSearch('');
     setPlayerSearch('');
-    setStartDateYmd(todayLocalYmd());
-    setEndDateYmd(defaultEndDateYmd());
+    const suggested = suggestedDatesFromActiveLeagues(groupActiveLeaguesRef.current);
+    setStartDateYmd(suggested.start);
+    setEndDateYmd(suggested.end);
+    setDateError(null);
     setRoundsThatCount(4);
     setScrambleHandicapOverride('');
     setUseHandicap(DEFAULT_USE_HANDICAP);
@@ -241,24 +267,23 @@ export default function LeagueCreateScreen() {
         googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
       const existing = await fetchLeaguesForGroup(groupId, token);
       if (!alive) return;
-      const blocked = (existing.data ?? []).some(
-        (league) => league.status === 'active' && isLeagueActive(league)
-      );
-      if (blocked) {
-        setCreateGate('blocked');
-        showAppAlert(
-          'Active tournament',
-          'This crew already has an active tournament. End it before creating another.'
-        );
-        router.replace('/(tabs)/groups' as never);
-        return;
-      }
+      const activeStatus = (existing.data ?? []).filter((league) => league.status === 'active');
+      groupActiveLeaguesRef.current = activeStatus;
+      setGroupActiveLeagues(activeStatus);
+      const suggested = suggestedDatesFromActiveLeagues(activeStatus);
+      setStartDateYmd(suggested.start);
+      setEndDateYmd(suggested.end);
+      setDateError(null);
       setCreateGate('ready');
     })();
     return () => {
       alive = false;
     };
-  }, [groupId, router]);
+  }, [groupId]);
+
+  useEffect(() => {
+    groupActiveLeaguesRef.current = groupActiveLeagues;
+  }, [groupActiveLeagues]);
 
   useEffect(() => {
     if (format !== 'match_play') {
@@ -268,8 +293,23 @@ export default function LeagueCreateScreen() {
 
   const nineSelectionIncomplete =
     format === 'match_play' && holesPerRound === '9' && matchPlayNine == null;
-  const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId;
+  const dateRangeError = useMemo(() => {
+    if (startDateYmd > endDateYmd) {
+      return 'End date must be on or after the start date.';
+    }
+    for (const other of groupActiveLeagues) {
+      if (dateRangesOverlap(startDateYmd, endDateYmd, other.start_date, other.end_date)) {
+        return `These dates overlap “${other.name}” (${formatLeagueDateRange(other.start_date, other.end_date)}). Pick dates that don’t overlap another tournament for this crew.`;
+      }
+    }
+    return null;
+  }, [startDateYmd, endDateYmd, groupActiveLeagues]);
+  const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId || !!dateRangeError;
   const courseChoices = useMemo(() => curatedPickerCourses(courseSearch), [courseSearch]);
+
+  useEffect(() => {
+    setDateError(null);
+  }, [startDateYmd, endDateYmd]);
 
   /** Keep selection keys aligned with the group roster (new joins default on). */
   useEffect(() => {
@@ -650,18 +690,10 @@ export default function LeagueCreateScreen() {
     }
     launchInFlightRef.current = true;
     setBusy(true);
+    setDateError(null);
     try {
-      const existing = await fetchLeaguesForGroup(groupId, googleOAuthAccessToken ?? undefined);
-      const synced = await syncLeagueStatuses(
-        existing.data ?? [],
-        googleOAuthAccessToken ?? undefined
-      );
-      if (synced.some((l) => l.status === 'active')) {
-        showAppAlert(
-          'Active tournament',
-          'This crew already has an active tournament. End it before creating another.'
-        );
-        router.replace('/(tabs)/groups' as never);
+      if (dateRangeError) {
+        setDateError(dateRangeError);
         return;
       }
       const res = await createLeague(
@@ -698,7 +730,12 @@ export default function LeagueCreateScreen() {
         googleOAuthAccessToken ?? undefined
       );
       if (res.error || !res.data) {
-        showAppAlert('Could not create tournament', res.error ?? 'Unknown error');
+        const msg = res.error ?? 'Unknown error';
+        if (/overlap/i.test(msg)) {
+          setDateError(msg);
+          return;
+        }
+        showAppAlert('Could not create tournament', msg);
         return;
       }
       let successMessage = 'Members will see it in their group.';
@@ -738,13 +775,7 @@ export default function LeagueCreateScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={{ padding: gutter, paddingTop: 24 }}>
-          {createGate === 'blocked' ? (
-            <Text style={styles.helper}>
-              This crew already has an active tournament. End it before creating another.
-            </Text>
-          ) : (
-            <ActivityIndicator color={colors.header} />
-          )}
+          <ActivityIndicator color={colors.header} />
         </View>
       </ContentWidth>
     );
@@ -1204,6 +1235,11 @@ export default function LeagueCreateScreen() {
               value={endDateYmd}
               onChange={setEndDateYmd}
             />
+            {dateError || dateRangeError ? (
+              <Text style={[styles.helper, { color: colors.danger, fontWeight: '600' }]}>
+                {dateError ?? dateRangeError}
+              </Text>
+            ) : null}
             {isMatchPlay ? (
               <View style={styles.bracketInfo}>
                 <Text style={styles.bracketInfoTitle}>Single-elimination bracket</Text>
@@ -1556,6 +1592,11 @@ export default function LeagueCreateScreen() {
               <Text style={styles.summaryMeta}>
                 {format.replace('_', ' ')} · {formatYmdDisplay(startDateYmd)} – {formatYmdDisplay(endDateYmd)}
               </Text>
+              {dateError || dateRangeError ? (
+                <Text style={[styles.helper, { color: colors.danger, fontWeight: '600' }]}>
+                  {dateError ?? dateRangeError}
+                </Text>
+              ) : null}
               <Text style={styles.summaryMeta}>
                 {isMatchPlay
                   ? `Bracket · ${playingMembers.length} players · Handicap ${useHandicap ? 'on' : 'off'}`
@@ -1613,7 +1654,11 @@ export default function LeagueCreateScreen() {
                   })
                 : null}
             </View>
-            <Pressable style={styles.primaryBtn} disabled={busy} onPress={() => void onLaunch()}>
+            <Pressable
+              style={[styles.primaryBtn, (busy || !!dateRangeError || !!dateError) && styles.btnDisabled]}
+              disabled={busy || !!dateRangeError || !!dateError}
+              onPress={() => void onLaunch()}
+            >
               {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>Launch Tournament</Text>}
             </Pressable>
           </>

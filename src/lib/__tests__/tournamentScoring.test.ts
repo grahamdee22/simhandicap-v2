@@ -28,6 +28,7 @@ import {
 } from '../tournamentTeamCount';
 import { reconcileGrossWithHoles } from '../tournamentReconciliation';
 import { computeLeagueStandings } from '../computeLeagueStandings';
+import { dateRangesOverlap } from '../leagueStandings';
 import { netScoreForLeagueRound } from '../netHandicap';
 import type { DbTournamentTeamHoleScoreRow } from '../tournamentTypes';
 
@@ -509,6 +510,15 @@ describe('tournament players per team', () => {
       { randomizeMissingHandicap: true }
     );
     assert.equal(withRandom.flatMap((t) => t.memberIds).length, 4);
+  });
+});
+
+describe('dateRangesOverlap', () => {
+  it('detects inclusive overlap and adjacent non-overlap', () => {
+    assert.equal(dateRangesOverlap('2026-06-01', '2026-06-15', '2026-06-10', '2026-06-20'), true);
+    assert.equal(dateRangesOverlap('2026-06-01', '2026-06-15', '2026-06-15', '2026-06-20'), true);
+    assert.equal(dateRangesOverlap('2026-06-01', '2026-06-15', '2026-06-16', '2026-06-30'), false);
+    assert.equal(dateRangesOverlap('2026-07-01', '2026-07-10', '2026-06-01', '2026-06-15'), false);
   });
 });
 

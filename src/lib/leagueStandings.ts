@@ -41,6 +41,11 @@ export function isLeagueActive(league: DbLeagueRow): boolean {
   return today >= league.start_date && today <= league.end_date;
 }
 
+/** True if [aStart, aEnd] and [bStart, bEnd] (YYYY-MM-DD strings, inclusive) overlap at all. */
+export function dateRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
 /** e.g. May 18 – Jun 15, 2026 */
 export function formatLeagueDateRange(startYmd: string, endYmd: string): string {
   const start = new Date(`${startYmd}T12:00:00`);

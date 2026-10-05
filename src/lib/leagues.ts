@@ -8,6 +8,7 @@ import { supabase } from './supabase';
 import { currentIndexFromRounds, type GroupMember, type SimRound } from '../store/useAppStore';
 import { resolveEffectiveHandicap } from './effectiveHandicap';
 import { isLeagueReadyToAutoComplete } from './leagueCompletion';
+import { dateRangesOverlap } from './leagueStandings';
 import { fetchLeagueMatchPairings } from './matchPlayTournamentPairings';
 import { isUserDesignatedScorerForTeam } from './scrambleTournament';
 import { fetchTeamHoleScoresForLeague } from './tournamentTeamScores';
@@ -490,6 +491,18 @@ export async function createLeague(
   input: CreateLeagueInput,
   accessToken?: string
 ): Promise<{ data: DbLeagueRow | null; error: string | null }> {
+  const existing = await fetchLeaguesForGroup(input.groupId, accessToken);
+  if (existing.error) return { data: null, error: existing.error };
+  const activeLeagues = (existing.data ?? []).filter((l) => l.status === 'active');
+  for (const other of activeLeagues) {
+    if (dateRangesOverlap(input.startDate, input.endDate, other.start_date, other.end_date)) {
+      return {
+        data: null,
+        error: `Those dates overlap an existing tournament (“${other.name}”). Pick a start and end that don’t overlap another tournament for this crew.`,
+      };
+    }
+  }
+
   const payload = {
     group_id: input.groupId,
     name: input.name.trim(),
