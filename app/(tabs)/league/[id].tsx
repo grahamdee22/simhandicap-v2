@@ -1,7 +1,16 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
@@ -50,6 +59,7 @@ export default function LeagueDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [pairings, setPairings] = useState<DbLeagueMatchPairingRow[]>([]);
   const [teamHoleScores, setTeamHoleScores] = useState<DbTournamentTeamHoleScoreRow[]>([]);
+  const [lowNetInfoOpen, setLowNetInfoOpen] = useState(false);
 
   const group = useMemo(
     () => groups.find((g) => g.id === bundle?.league.group_id),
@@ -456,10 +466,32 @@ export default function LeagueDetailScreen() {
                 {league.format === 'scramble' || league.format === 'best_ball' ? (
                   <>
                     <Text style={[styles.th, styles.colGross]}>Gross</Text>
-                    <Text style={[styles.th, styles.colScore]}>Low net</Text>
+                    <View style={[styles.colScore, styles.thLowNetRow]}>
+                      <Text style={styles.th}>Low net</Text>
+                      <Pressable
+                        style={styles.infoBtn}
+                        onPress={() => setLowNetInfoOpen(true)}
+                        hitSlop={6}
+                        accessibilityRole="button"
+                        accessibilityLabel="About Low net"
+                      >
+                        <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                      </Pressable>
+                    </View>
                   </>
                 ) : (
-                  <Text style={[styles.th, styles.colScore]}>Low net</Text>
+                  <View style={[styles.colScore, styles.thLowNetRow]}>
+                    <Text style={styles.th}>Low net</Text>
+                    <Pressable
+                      style={styles.infoBtn}
+                      onPress={() => setLowNetInfoOpen(true)}
+                      hitSlop={6}
+                      accessibilityRole="button"
+                      accessibilityLabel="About Low net"
+                    >
+                      <Text style={styles.infoBtnTxt}>ⓘ</Text>
+                    </Pressable>
+                  </View>
                 )}
               </View>
               {standings.map((s) => (
@@ -580,6 +612,24 @@ export default function LeagueDetailScreen() {
           </Pressable>
         ) : null}
       </ScrollView>
+
+      <Modal
+        visible={lowNetInfoOpen}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setLowNetInfoOpen(false)}
+      >
+        <View style={styles.infoExplainRoot}>
+          <Pressable style={styles.infoExplainBackdrop} onPress={() => setLowNetInfoOpen(false)} />
+          <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.infoExplainTitle}>Low net</Text>
+            <Text style={styles.infoExplainBody}>
+              Net applies a player&apos;s handicap once they have at least 3 counted rounds, or a linked GHIN
+              index. Until then, Low Net shows their gross score — that&apos;s expected, not a bug.
+            </Text>
+          </View>
+        </View>
+      </Modal>
     </ContentWidth>
   );
 }
@@ -680,8 +730,41 @@ const styles = StyleSheet.create({
   colR: { width: 36, textAlign: 'center' },
   colMp: { width: 28, textAlign: 'center', fontSize: 12 },
   colPts: { width: 32, textAlign: 'right', fontSize: 12 },
-  colScore: { width: 56, textAlign: 'right' },
+  colScore: { width: 72, textAlign: 'right' },
   colGross: { width: 48, textAlign: 'right' },
+  thLowNetRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    gap: 4,
+  },
+  infoBtn: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#7aa390',
+    backgroundColor: '#e8f2ed',
+  },
+  infoBtnTxt: { fontSize: 11, fontWeight: '700', color: '#1a3d2b', lineHeight: 12 },
+  infoExplainRoot: {
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  infoExplainBackdrop: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  infoExplainSheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: 16,
+    borderTopRightRadius: 16,
+    padding: 16,
+  },
+  infoExplainTitle: { fontSize: 16, fontWeight: '600', marginBottom: 12, color: colors.ink },
+  infoExplainBody: { fontSize: 14, lineHeight: 21, color: colors.ink },
   nameCol: { paddingRight: 8 },
   pairingsCard: {
     backgroundColor: colors.bg,
