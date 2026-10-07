@@ -764,11 +764,17 @@ export async function recordOptedInLeagueRounds(params: {
     }
 
     const needsHoles = isHoleByHoleLeagueFormat(league.format);
-    const net = netScoreForLeagueRound(params.grossScore, league.use_handicap, params.simIndex, {
-      courseRating: params.courseRating,
-      slope: params.slope,
-      coursePar: params.coursePar,
-    });
+    const net = netScoreForLeagueRound(
+      params.grossScore,
+      league.use_handicap,
+      params.simIndex,
+      {
+        courseRating: params.courseRating,
+        slope: params.slope,
+        coursePar: params.coursePar,
+      },
+      holesPlayed
+    );
     const row = {
       league_id: league.id,
       user_id: params.userId,

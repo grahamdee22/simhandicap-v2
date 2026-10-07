@@ -110,6 +110,12 @@ function whsCourseHandicapFromIndex(
   return Math.round(base);
 }
 
+/** WHS 9-hole rule: halve index, round to nearest tenth. No-op for 18. Mirrors src/lib/netHandicap.ts. */
+function indexForCourseHandicap(handicapIndex: number, expectedHoles: number): number {
+  if (expectedHoles !== 9) return handicapIndex;
+  return Math.round(handicapIndex * 5) / 10;
+}
+
 /** Hole numbers (1–18) where strokes are applied, hardest SI first (laps if >18). */
 function holesForStrokes(strokeCount: number, strokeIndexByHole: number[]): number[] {
   if (strokeCount <= 0) return [];
@@ -381,7 +387,7 @@ Deno.serve(async (req) => {
 
         if (teamIndex != null && Number.isFinite(teamIndex)) {
           courseHandicap = whsCourseHandicapFromIndex(
-            teamIndex,
+            indexForCourseHandicap(teamIndex, expectedHoles),
             Number(scorerRound.course_rating),
             Number(scorerRound.slope),
             roundPar
@@ -529,7 +535,7 @@ Deno.serve(async (req) => {
         const idx = memberIndexes.get(tr.user_id);
         if (idx != null) {
           courseHandicap = whsCourseHandicapFromIndex(
-            idx,
+            indexForCourseHandicap(idx, expectedHoles),
             Number(tr.rounds.course_rating),
             Number(tr.rounds.slope),
             courseParFromRound(tr.rounds, expectedHoles)

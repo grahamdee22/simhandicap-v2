@@ -7,6 +7,7 @@ import type { CourseSeed } from './courses';
 import { COURSE_SEEDS } from './courses';
 import {
   holesForStrokes,
+  indexForCourseHandicap,
   strokeGiftBetweenPlayers,
   strokeIndexForCourse,
   whsCourseHandicapFromIndex,
@@ -75,15 +76,19 @@ export function buildMatchStrokeContext(
 ): MatchStrokeContext {
   const holeNums = matchHoleNumbers(match);
   const parPlayed = matchCourseParPlayed(course, holeNums);
+  const holesPlayed: '18' | 'front' | 'back' =
+    match.holes === 18 ? '18' : match.nine_selection === 'front' ? 'front' : 'back';
+  const idx1 = indexForCourseHandicap(handicapIndexP1, holesPlayed);
+  const idx2 = indexForCourseHandicap(handicapIndexP2, holesPlayed);
 
   const ph1 = whsCourseHandicapFromIndex(
-    handicapIndexP1,
+    idx1,
     match.player_1_course_rating,
     match.player_1_course_slope,
     parPlayed
   );
   const ph2 = whsCourseHandicapFromIndex(
-    handicapIndexP2,
+    idx2,
     match.player_2_course_rating ?? match.player_1_course_rating,
     match.player_2_course_slope ?? match.player_1_course_slope,
     parPlayed

@@ -1,6 +1,7 @@
 import {
   DEFAULT_STROKE_INDEX_BY_HOLE,
   holesForStrokes,
+  indexForCourseHandicap,
   strokeGiftBetweenPlayers,
   whsCourseHandicapFromIndex,
 } from './netHandicap';
@@ -79,9 +80,15 @@ export function matchPlayStrokeAllocation(handicap: MatchPlayCompareHandicap | n
     return empty;
   }
 
-  const myCourse = whsCourseHandicapFromIndex(me.index, me.courseRating, me.slope, me.coursePar);
+  const holesPlayed: '18' | 'front' | 'back' = handicap.nine != null ? handicap.nine : '18';
+  const myCourse = whsCourseHandicapFromIndex(
+    indexForCourseHandicap(me.index, holesPlayed),
+    me.courseRating,
+    me.slope,
+    me.coursePar
+  );
   const oppCourse = whsCourseHandicapFromIndex(
-    opponent.index,
+    indexForCourseHandicap(opponent.index, holesPlayed),
     opponent.courseRating,
     opponent.slope,
     opponent.coursePar

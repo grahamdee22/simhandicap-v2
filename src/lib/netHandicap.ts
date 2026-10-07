@@ -42,6 +42,19 @@ export function whsCourseHandicapFromIndex(
   return Math.round(base);
 }
 
+/**
+ * WHS 9-hole rule: halve the Handicap Index, round to nearest tenth (traditional rounding),
+ * before it goes into the Course Handicap formula. No-op (returns index unchanged) for 18 holes.
+ * USGA example: 8.7 → 4.35 → 4.4.
+ */
+export function indexForCourseHandicap(
+  handicapIndex: number,
+  holesPlayed: '18' | 'front' | 'back'
+): number {
+  if (holesPlayed === '18') return handicapIndex;
+  return Math.round(handicapIndex * 5) / 10;
+}
+
 export type TournamentNetCourseSnap = {
   courseRating?: number | null;
   slope?: number | null;
@@ -53,7 +66,8 @@ export function netScoreForLeagueRound(
   gross: number,
   useHandicap: boolean,
   simIndex: number | null,
-  course?: TournamentNetCourseSnap | null
+  course?: TournamentNetCourseSnap | null,
+  holesPlayed: '18' | 'front' | 'back' = '18'
 ): number {
   if (!useHandicap || simIndex == null || !Number.isFinite(simIndex)) return gross;
   const rating = course?.courseRating;
@@ -67,9 +81,10 @@ export function netScoreForLeagueRound(
     slope !== 0 &&
     par != null &&
     Number.isFinite(par);
+  const indexForCh = indexForCourseHandicap(simIndex, holesPlayed);
   const strokes = hasCourse
-    ? whsCourseHandicapFromIndex(simIndex, rating, slope, par)
-    : Math.round(simIndex);
+    ? whsCourseHandicapFromIndex(indexForCh, rating, slope, par)
+    : Math.round(indexForCh);
   return Math.max(1, gross - strokes);
 }
 
