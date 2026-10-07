@@ -29,6 +29,7 @@ import { pinOptionsForPlatform, isGsProPlatform } from '../../../src/lib/pinPlac
 import { isoToLocalYmd, localYmdToIso, todayLocalYmd } from '../../../src/lib/dates';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
+import { roundsForLeagueRecordingAfterSave } from '../../../src/lib/effectiveHandicap';
 import {
   effectiveHandicapForLeagueRecording,
   fetchActiveTournamentsForUser,
@@ -913,14 +914,17 @@ export default function LogRoundScreen() {
             const saveAccessToken =
               googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
             const snapshot = courseSnapshot(saved.courseId, saved.holesPlayed);
+            // Read store after addRound — render-time `rounds` can lag when the user logs
+            // several rounds quickly without a remount (stale closure → net falls back to gross).
+            const storeAfterSave = useAppStore.getState();
             const leagueResults = await recordOptedInLeagueRounds({
               userId: user.id,
               roundId: saved.id,
               grossScore: saved.grossScore,
               playedAt: saved.playedAt,
               simIndex: effectiveHandicapForLeagueRecording(
-                rounds.concat(saved),
-                latestGhinIndex(ghinSnapshots)
+                roundsForLeagueRecordingAfterSave(storeAfterSave.rounds, saved),
+                latestGhinIndex(storeAfterSave.ghinSnapshots)
               ),
               selections: activeTournaments.map((t) => ({
                 leagueId: t.leagueId,

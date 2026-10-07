@@ -78,3 +78,17 @@ export function countMembersMissingHandicap(
 ): number {
   return members.filter((m) => m.index == null).length;
 }
+
+/**
+ * Rounds to use for tournament net handicap right after `addRound`.
+ * Prefer the store snapshot (already includes `saved`); fall back to prepending
+ * `saved` if a caller passes a pre-add snapshot. Avoids log-screen render closures
+ * that can lag behind rapid sequential saves.
+ */
+export function roundsForLeagueRecordingAfterSave(
+  storeRounds: SimRound[],
+  saved: SimRound
+): SimRound[] {
+  if (storeRounds.some((r) => r.id === saved.id)) return storeRounds;
+  return [saved, ...storeRounds];
+}
