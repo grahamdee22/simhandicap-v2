@@ -25,6 +25,7 @@ export default function SignUpScreen() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
+  const [referralCode, setReferralCode] = useState('');
   const [busy, setBusy] = useState(false);
 
   const onSubmit = async () => {
@@ -37,7 +38,7 @@ export default function SignUpScreen() {
       return;
     }
     setBusy(true);
-    const { error, sessionCreated } = await signUp(email, password, displayName);
+    const { error, sessionCreated } = await signUp(email, password, displayName, referralCode);
     setBusy(false);
     if (error) {
       showAppAlert('Create account', error);
@@ -111,6 +112,17 @@ export default function SignUpScreen() {
           textContentType="newPassword"
         />
         <Text style={styles.passwordNote}>Use a simple password — just don't make it 1234.</Text>
+
+        <Text style={styles.lbl}>Referral code (optional)</Text>
+        <TextInput
+          style={styles.input}
+          value={referralCode}
+          onChangeText={setReferralCode}
+          placeholder="If someone gave you one"
+          placeholderTextColor={colors.subtle}
+          autoCapitalize="none"
+          autoCorrect={false}
+        />
 
         <Pressable
           onPress={onSubmit}

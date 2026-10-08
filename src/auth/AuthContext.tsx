@@ -17,6 +17,7 @@ import { clearGoogleOAuthAccessToken, googleOAuthAccessToken } from '../lib/goog
 import { isSupabaseConfigured, supabase } from '../lib/supabase';
 import { mapEmailPasswordSignInError } from '../lib/emailPasswordSignInErrors';
 import { shouldPromptOauthDisplayName } from '../lib/oauthDisplayNameGate';
+import { buildSignUpUserMetadata } from '../lib/signUpMetadata';
 import {
   identifyPurchasesUser,
   initPurchasesIfConfigured,
@@ -40,7 +41,8 @@ type AuthContextValue = {
   signUp: (
     email: string,
     password: string,
-    displayName: string
+    displayName: string,
+    referralCode?: string
   ) => Promise<{ error?: string; sessionCreated?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -340,17 +342,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return error ? { error: mapEmailPasswordSignInError(error) } : {};
   }, []);
 
-  const signUp = useCallback(async (email: string, password: string, displayName: string) => {
-    if (!supabase) return { error: 'Supabase is not configured' };
-    const dn = displayName.trim() || 'Golfer';
-    const { data, error } = await supabase.auth.signUp({
-      email: email.trim(),
-      password,
-      options: { data: { display_name: dn } },
-    });
-    if (error) return { error: error.message };
-    return { sessionCreated: !!data.session };
-  }, []);
+  const signUp = useCallback(
+    async (email: string, password: string, displayName: string, referralCode?: string) => {
+      if (!supabase) return { error: 'Supabase is not configured' };
+      const { data, error } = await supabase.auth.signUp({
+        email: email.trim(),
+        password,
+        options: { data: buildSignUpUserMetadata(displayName, referralCode) },
+      });
+      if (error) return { error: error.message };
+      return { sessionCreated: !!data.session };
+    },
+    []
+  );
 
   const signOut = useCallback(async () => {
     const userId = session?.user?.id;
