@@ -17,6 +17,7 @@ import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
 import { OAuthSignInButtons } from '@/src/components/OAuthSignInButtons';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
+import { REFERRAL_CODE_FIELD_ENABLED } from '@/src/lib/featureFlags';
 
 export default function SignUpScreen() {
   const insets = useSafeAreaInsets();
@@ -113,16 +114,20 @@ export default function SignUpScreen() {
         />
         <Text style={styles.passwordNote}>Use a simple password — just don't make it 1234.</Text>
 
-        <Text style={styles.lbl}>Referral code (optional)</Text>
-        <TextInput
-          style={styles.input}
-          value={referralCode}
-          onChangeText={setReferralCode}
-          placeholder="If someone gave you one"
-          placeholderTextColor={colors.subtle}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
+        {REFERRAL_CODE_FIELD_ENABLED && (
+          <>
+            <Text style={styles.lbl}>Referral code (optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={referralCode}
+              onChangeText={setReferralCode}
+              placeholder="If someone gave you one"
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </>
+        )}
 
         <Pressable
           onPress={onSubmit}
