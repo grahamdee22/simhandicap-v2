@@ -10,9 +10,11 @@ import { DualIndexChart } from '../../src/components/DualIndexChart';
 import { IconAddCircleOutline, IconCheckmark, IconChevronForward } from '../../src/components/SvgUiIcons';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
+import { PAYWALL_ENABLED } from '../../src/lib/featureFlags';
 import { formatDifferentialDisplay, formatHandicapIndexDisplay } from '../../src/lib/handicap';
 import { applyProfileRowToStore, fetchMyProfile, upsertMyProfile } from '../../src/lib/profiles';
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
+import { getIsProEntitled } from '../../src/lib/purchases';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useResponsive } from '../../src/lib/responsive';
 import {
@@ -55,6 +57,7 @@ export default function ProfileScreen() {
     draws: number;
     forfeits: number;
   } | null>(null);
+  const [isProEntitled, setIsProEntitled] = useState(false);
 
   const simIndex = useMemo(() => currentIndexFromRounds(rounds), [rounds]);
   const ghinLatest = useMemo(() => latestGhinIndex(ghinSnapshots), [ghinSnapshots]);
@@ -109,6 +112,20 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (!signedIn) setSimcapId(null);
   }, [signedIn]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!PAYWALL_ENABLED) return;
+      let cancelled = false;
+      void (async () => {
+        const entitled = await getIsProEntitled();
+        if (!cancelled) setIsProEntitled(entitled);
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [])
+  );
 
   const chartGeom = useMemo(
     () => buildDualIndexChartPoints(rounds, ghinSnapshots),
@@ -292,6 +309,30 @@ export default function ProfileScreen() {
               )}
             </Pressable>
           </View>
+        ) : null}
+
+        {PAYWALL_ENABLED ? (
+          <Pressable
+            style={({ pressed }) => [styles.card, pressed && styles.matchRecordCardPressed]}
+            onPress={() => router.push('/paywall' as never)}
+            accessibilityRole="button"
+            accessibilityLabel="SimCap Pro subscription"
+          >
+            <Text style={styles.lbl}>SimCap Pro</Text>
+            <View style={styles.matchRecordRow}>
+              <View style={styles.matchRecordTextCol}>
+                <Text style={styles.cardLead}>{isProEntitled ? 'Pro' : 'Free'}</Text>
+                <Text style={styles.meta}>
+                  {isProEntitled
+                    ? 'Your SimCap Pro subscription is active.'
+                    : 'View plans and manage your subscription.'}
+                </Text>
+              </View>
+              <View style={styles.matchRecordChevron}>
+                <IconChevronForward size={20} color={colors.subtle} />
+              </View>
+            </View>
+          </Pressable>
         ) : null}
 
         {signedIn && matchPlayRecord ? (

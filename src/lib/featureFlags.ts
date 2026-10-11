@@ -7,3 +7,6 @@ export const PRACTICE_ANALYZER_ENABLED = false;
 
 /** Referral code field at signup (partner attribution, e.g. Kevin). Off = field hidden; signUp still accepts/stores a code if passed programmatically. */
 export const REFERRAL_CODE_FIELD_ENABLED = false;
+
+/** SimCap Pro paywall + purchase flow. Off = no entry points; screen/route unreachable. */
+export const PAYWALL_ENABLED = false;
