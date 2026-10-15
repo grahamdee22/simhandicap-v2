@@ -259,14 +259,26 @@ async function main() {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const { data: existingRows, error: existingErr } = await admin
-    .from('courses')
-    .select('name_normalized');
-  if (existingErr) {
-    console.error('Could not read existing courses:', existingErr.message);
-    process.exit(1);
+  // PostgREST caps rows per request (~1000); page so refresh can't miss existing names.
+  const existingNorm = new Set<string>();
+  const EXISTING_PAGE = 1000;
+  for (let offset = 0; ; offset += EXISTING_PAGE) {
+    const { data: existingRows, error: existingErr } = await admin
+      .from('courses')
+      .select('name_normalized')
+      .order('name_normalized', { ascending: true })
+      .range(offset, offset + EXISTING_PAGE - 1);
+    if (existingErr) {
+      console.error('Could not read existing courses:', existingErr.message);
+      process.exit(1);
+    }
+    const page = existingRows ?? [];
+    for (const r of page) {
+      if (r.name_normalized) existingNorm.add(r.name_normalized as string);
+    }
+    if (page.length < EXISTING_PAGE) break;
   }
-  const existingNorm = new Set((existingRows ?? []).map((r) => r.name_normalized as string));
+  console.log(`Loaded ${existingNorm.size} existing course name(s) from DB.`);
 
   const toInsert: {
     name: string;

@@ -6,10 +6,22 @@ type Props = {
   compact?: boolean;
   enrichmentTier?: number | null;
   enrichmentSource?: string | null;
+  /** Curated low-confidence seeds get a distinct label (not community GSPro attribution). */
+  source?: 'curated' | 'community';
+  confident?: boolean;
 };
 
-export function UnverifiedCourseBadge({ compact, enrichmentTier, enrichmentSource }: Props) {
-  const label = communityCourseAttributionLabel(enrichmentTier, enrichmentSource);
+export function UnverifiedCourseBadge({
+  compact,
+  enrichmentTier,
+  enrichmentSource,
+  source,
+  confident,
+}: Props) {
+  const label =
+    source === 'curated' && confident === false
+      ? 'Estimated rating'
+      : communityCourseAttributionLabel(enrichmentTier, enrichmentSource);
 
   return (
     <View style={[styles.badge, compact && styles.badgeCompact]}>

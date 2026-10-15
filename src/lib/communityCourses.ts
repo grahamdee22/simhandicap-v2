@@ -66,7 +66,7 @@ export type ResolvedLogCourse = {
 };
 
 export function curatedPickerCourses(query: string): PickerCourseItem[] {
-  return COURSE_SEEDS.filter((c) => c.confident !== false && courseMatchesSearch(c, query))
+  return COURSE_SEEDS.filter((c) => courseMatchesSearch(c, query))
     .map((c) => ({
       id: c.id,
       name: c.name,

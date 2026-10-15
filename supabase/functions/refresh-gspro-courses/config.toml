@@ -1,0 +1,4 @@
+# Intended cadence (Mon/Wed/Fri 08:00 UTC). Live schedule is pg_cron job
+# `refresh-gspro-courses-mwf` (same pattern daily-report uses config.toml for).
+[functions.refresh-gspro-courses]
+schedule = "0 8 * * 1,3,5"

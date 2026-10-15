@@ -21,6 +21,7 @@ import { ContentWidth } from '../../../src/components/ContentWidth';
 import { DatePlayedField } from '../../../src/components/DatePlayedField';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { HandicapSourceBadge } from '../../../src/components/HandicapSourceBadge';
+import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
 import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
 import { dateFromYmdLocal, todayLocalYmd, ymdFromParts } from '../../../src/lib/dates';
 import { countMembersMissingHandicap } from '../../../src/lib/effectiveHandicap';
@@ -1212,6 +1213,12 @@ export default function LeagueCreateScreen() {
                           <View style={{ flex: 1 }}>
                             <Text style={styles.memberName}>{c.name}</Text>
                             {c.location ? <Text style={styles.helper}>{c.location}</Text> : null}
+                            {c.source === 'curated' && !c.confident ? (
+                              <UnverifiedCourseBadge
+                                source={c.source}
+                                confident={c.confident}
+                              />
+                            ) : null}
                           </View>
                           {on ? <Text style={styles.courseChange}>✓</Text> : null}
                         </Pressable>

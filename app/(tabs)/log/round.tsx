@@ -307,11 +307,6 @@ export default function LogRoundScreen() {
     );
   }, [groups, user?.id]);
 
-  const optedInTournaments = useMemo(
-    () => activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false),
-    [activeTournaments, tournamentApply]
-  );
-
   const loadCommunityCourses = useCallback(async () => {
     const needsCommunity =
       hasExpandedCourseList || (courseId.length > 0 && isCommunityCourseId(courseId));
@@ -655,7 +650,8 @@ export default function LogRoundScreen() {
     resolvedCourse?.source === 'curated' && resolvedCourse.confident !== false;
   const showYardageInput = resolvedCourse?.source === 'community';
 
-  const showCommunityInPicker = hasExpandedCourseList && optedInTournaments.length === 0;
+  // Course list is independent of tournament state — apply-to-tournament matching is per-round via leagueAcceptsLoggedHoles.
+  const showCommunityInPicker = hasExpandedCourseList;
 
   const coursesForPicker = useMemo(() => {
     const curated = curatedPickerCourses(courseSearchQuery);
@@ -1034,6 +1030,8 @@ export default function LogRoundScreen() {
                   {resolvedCourse?.handicapSource === 'unverified' ? (
                     <UnverifiedCourseBadge
                       compact
+                      source={resolvedCourse.source}
+                      confident={resolvedCourse.confident}
                       enrichmentTier={resolvedCourse.enrichmentTier}
                       enrichmentSource={resolvedCourse.enrichmentSource}
                     />
@@ -1586,9 +1584,11 @@ export default function LogRoundScreen() {
                 >
                   <View style={styles.modalRowCourse}>
                     <Text style={styles.modalRowTxt}>{c.name}</Text>
-                    {c.source === 'community' ? (
+                    {c.source === 'community' || (c.source === 'curated' && !c.confident) ? (
                       <UnverifiedCourseBadge
                         compact
+                        source={c.source}
+                        confident={c.confident}
                         enrichmentTier={c.enrichmentTier}
                         enrichmentSource={c.enrichmentSource}
                       />

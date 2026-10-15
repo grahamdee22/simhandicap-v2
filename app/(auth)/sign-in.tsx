@@ -99,6 +99,7 @@ export default function SignInScreen() {
           autoCorrect={false}
           keyboardType="email-address"
           textContentType="emailAddress"
+          accessibilityLabel="Email"
         />
 
         <Text style={styles.lbl}>Password</Text>
@@ -110,6 +111,7 @@ export default function SignInScreen() {
           placeholderTextColor={colors.subtle}
           secureTextEntry
           textContentType="password"
+          accessibilityLabel="Password"
         />
 
         <Pressable
