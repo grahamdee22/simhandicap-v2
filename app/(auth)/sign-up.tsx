@@ -150,7 +150,7 @@ export default function SignUpScreen() {
 
         <Text style={styles.lbl}>{t('common.password')}</Text>
         <TextInput
-          style={styles.inputTightBottom}
+          style={styles.input}
           value={password}
           onChangeText={setPassword}
           placeholder={t('common.passwordMinPlaceholder')}
@@ -158,7 +158,6 @@ export default function SignUpScreen() {
           secureTextEntry
           textContentType="newPassword"
         />
-        <Text style={styles.passwordNote}>{t('auth.signUp.passwordNote')}</Text>
 
         <Pressable
           onPress={onSubmit}
@@ -220,23 +219,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: colors.ink,
     marginBottom: 16,
-  },
-  inputTightBottom: {
-    borderWidth: 0.5,
-    borderColor: colors.pillBorder,
-    borderRadius: 10,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    color: colors.ink,
-    marginBottom: 10,
-  },
-  passwordNote: {
-    fontSize: 13,
-    lineHeight: 19,
-    color: colors.muted,
-    fontStyle: 'italic',
-    marginBottom: 18,
   },
   primary: {
     backgroundColor: colors.header,

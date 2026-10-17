@@ -45,7 +45,6 @@
       "orCreateWithEmail": "or create with email",
       "displayName": "Display name",
       "displayNamePlaceholder": "e.g. Jordan P.",
-      "passwordNote": "Use a simple password — just don't make it 1234.",
       "referralCode": "Referral code (optional)",
       "referralPlaceholder": "If someone gave you one",
       "alreadyHaveAccount": "Already have an account?",
@@ -140,7 +139,7 @@
     }
   },
   "contact": {
-    "intro": "SimCap is in beta and we want to hear from you — whether it's a bug, a feature idea, or just feedback on how the handicap math feels.",
+    "intro": "We'd love to hear from you — whether it's a bug, a feature idea, or just feedback on how the handicap math feels.",
     "email": "Email",
     "emailA11y": "Email SimCap",
     "emailHint": "Opens your email app",

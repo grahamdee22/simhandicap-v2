@@ -89,6 +89,11 @@ void i18n.use(initReactI18next).init({
     // React Native already escapes; i18next must not double-escape.
     escapeValue: false,
   },
+  // RN / Expo: avoid Suspense-on-translate (default true). Keeps screens rendering
+  // with a ready flag instead of throwing mid-tree during init / language changes.
+  react: {
+    useSuspense: false,
+  },
 });
 
 // Hydrate AsyncStorage override after first paint (override wins over device).

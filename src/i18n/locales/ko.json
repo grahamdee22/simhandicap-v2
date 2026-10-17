@@ -45,7 +45,6 @@
       "orCreateWithEmail": "또는 이메일로 만들기",
       "displayName": "표시 이름",
       "displayNamePlaceholder": "예: Jordan P.",
-      "passwordNote": "간단한 비밀번호도 괜찮지만, 1234만은 피해 주세요.",
       "referralCode": "추천 코드 (선택)",
       "referralPlaceholder": "받은 코드가 있다면 입력해 주세요",
       "alreadyHaveAccount": "이미 계정이 있으신가요?",
@@ -140,7 +139,7 @@
     }
   },
   "contact": {
-    "intro": "SimCap은 베타 서비스예요. 버그든, 기능 아이디어든, 핸디캡 계산에 대한 느낌이든 의견을 들려주세요.",
+    "intro": "의견을 들려주세요 — 버그든, 기능 아이디어든, 핸디캡 계산에 대한 느낌이든 환영해요.",
     "email": "이메일",
     "emailA11y": "SimCap에 이메일 보내기",
     "emailHint": "이메일 앱이 열려요",

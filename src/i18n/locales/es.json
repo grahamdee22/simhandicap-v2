@@ -45,7 +45,6 @@
       "orCreateWithEmail": "o crea tu cuenta con correo",
       "displayName": "Nombre visible",
       "displayNamePlaceholder": "p. ej., Jordan P.",
-      "passwordNote": "Usa una contraseña sencilla, pero que no sea 1234.",
       "referralCode": "Código de referido (opcional)",
       "referralPlaceholder": "Si alguien te dio uno",
       "alreadyHaveAccount": "¿Ya tienes una cuenta?",
@@ -140,7 +139,7 @@
     }
   },
   "contact": {
-    "intro": "SimCap está en beta y queremos saber de ti, ya sea un error, una idea para una función o simplemente tu opinión sobre cómo se siente el cálculo del hándicap.",
+    "intro": "Nos encantaría saber de ti, ya sea un error, una idea para una función o simplemente tu opinión sobre cómo se siente el cálculo del hándicap.",
     "email": "Correo electrónico",
     "emailA11y": "Enviar correo a SimCap",
     "emailHint": "Abre tu app de correo",

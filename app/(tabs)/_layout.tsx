@@ -10,6 +10,16 @@ import { colors } from '../../src/lib/constants';
 /** Mock: compact icons sitting in the upper half of the bar with labels beneath. */
 const TAB_ICON_SIZE = 22;
 
+/**
+ * React Navigation's Header *calls* `headerRight` as a function (render prop).
+ * Passing a hook-using component reference directly attributes those hooks to Header;
+ * screens that later `setOptions({ headerRight: () => <Cancel /> })` then crash with
+ * "Rendered fewer hooks than expected". Always return an element instead.
+ */
+function renderHeaderInstagramAndSimCap() {
+  return <HeaderInstagramAndSimCap />;
+}
+
 function TabIcon({ name, color }: { name: TabBarSvgName; color: string }) {
   return (
     <View style={styles.iconSlot}>
@@ -132,7 +142,7 @@ export default function TabLayout() {
         name="analyze"
         options={{
           title: t('tabs.analyze.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.analyze.label'),
           tabBarIcon: ({ color }) => <TabIcon name="analytics" color={color} />,
         }}
@@ -141,7 +151,7 @@ export default function TabLayout() {
         name="groups"
         options={{
           title: t('tabs.groups.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.groups.label'),
           tabBarIcon: ({ color }) => <TabIcon name="people" color={color} />,
         }}
@@ -151,7 +161,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchCreate.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchCreate.label'),
         }}
       />
@@ -160,7 +170,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchAccept.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchAccept.label'),
         }}
       />
@@ -169,7 +179,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchOpenAccept.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchOpenAccept.label'),
         }}
       />
@@ -178,7 +188,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchScore.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchScore.label'),
         }}
       />
@@ -187,7 +197,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchResults.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchResults.label'),
         }}
       />
@@ -196,7 +206,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchHistory.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchHistory.label'),
         }}
       />
@@ -204,7 +214,7 @@ export default function TabLayout() {
         name="profile"
         options={{
           title: t('tabs.profile.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.profile.label'),
           tabBarIcon: ({ color }) => <TabIcon name="person" color={color} />,
         }}
@@ -222,7 +232,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.netCalculator.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.netCalculator.label'),
         }}
       />
@@ -231,7 +241,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.contact.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.contact.label'),
         }}
       />
@@ -240,7 +250,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.season.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
       <Tabs.Screen
@@ -248,7 +258,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.seasonCreate.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
       <Tabs.Screen
@@ -256,7 +266,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.leagueCreate.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
       <Tabs.Screen
@@ -264,7 +274,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.league.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
       <Tabs.Screen
@@ -272,7 +282,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.leagueManage.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
       <Tabs.Screen
@@ -280,7 +290,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.tournamentHoles.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
       <Tabs.Screen
@@ -288,7 +298,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.leagueMatch.title'),
-          headerRight: HeaderInstagramAndSimCap,
+          headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
       <Tabs.Screen
