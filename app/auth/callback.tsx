@@ -8,6 +8,7 @@ import {
   parseOAuthCallbackUrl,
   parseOAuthImplicitSessionFromUrl,
 } from '@/src/lib/oauthSignIn';
+import { applyPendingReferralCodeIfNeeded } from '@/src/lib/pendingReferralCode';
 import { fetchMyProfile } from '@/src/lib/profiles';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
 
@@ -72,7 +73,7 @@ export default function AuthOAuthCallbackScreen() {
       if (implicit.access_token && implicit.refresh_token) {
         inFlight.current = true;
         console.log('[callback] calling setSession (implicit)...');
-        const { error: sessionErr } = await client.auth.setSession({
+        const { data: sessionData, error: sessionErr } = await client.auth.setSession({
           access_token: implicit.access_token,
           refresh_token: implicit.refresh_token,
         });
@@ -86,6 +87,10 @@ export default function AuthOAuthCallbackScreen() {
         }
 
         finished.current = true;
+        const sess = sessionData.session;
+        if (sess?.user?.id && sess.access_token) {
+          await applyPendingReferralCodeIfNeeded(sess.user.id, sess.access_token);
+        }
         const profile = await fetchMyProfile();
         if (profile) {
           router.replace('/(tabs)' as Href);
@@ -101,7 +106,8 @@ export default function AuthOAuthCallbackScreen() {
 
       inFlight.current = true;
       console.log('[callback] calling exchangeCodeForSession...');
-      const { error: exchangeErr } = await client.auth.exchangeCodeForSession(parsed.code);
+      const { data: exchangeData, error: exchangeErr } =
+        await client.auth.exchangeCodeForSession(parsed.code);
       console.log('[callback] exchange result - error:', exchangeErr);
       inFlight.current = false;
 
@@ -112,6 +118,10 @@ export default function AuthOAuthCallbackScreen() {
       }
 
       finished.current = true;
+      const sess = exchangeData.session;
+      if (sess?.user?.id && sess.access_token) {
+        await applyPendingReferralCodeIfNeeded(sess.user.id, sess.access_token);
+      }
       const profile = await fetchMyProfile();
       if (profile) {
         router.replace('/(tabs)' as Href);

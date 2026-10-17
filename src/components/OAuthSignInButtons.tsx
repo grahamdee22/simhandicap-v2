@@ -5,19 +5,33 @@ import { useTranslation } from '@/src/i18n';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 import { signInWithApple, signInWithOAuthProvider } from '@/src/lib/oauthSignIn';
+import { setPendingReferralCode } from '@/src/lib/pendingReferralCode';
 
 type Props = {
   /** Shown in the divider between OAuth and email/password (e.g. "or use email"). */
   dividerLabel: string;
+  /**
+   * Optional referral code from the sign-up screen input. Stashed before OAuth redirect so it
+   * can be written to profiles.referral_code after the session is live (OAuth cannot pass
+   * signup metadata into handle_new_user the way email signUp does).
+   */
+  referralCode?: string;
 };
 
-export function OAuthSignInButtons({ dividerLabel }: Props) {
+export function OAuthSignInButtons({ dividerLabel, referralCode }: Props) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<'apple' | 'google' | null>(null);
 
+  const stashReferralThen = async (run: () => Promise<{ error?: string }>) => {
+    if (referralCode?.trim()) {
+      await setPendingReferralCode(referralCode);
+    }
+    return run();
+  };
+
   const runApple = async () => {
     setBusy('apple');
-    const { error } = await signInWithApple();
+    const { error } = await stashReferralThen(() => signInWithApple());
     setBusy(null);
     if (error) {
       showAppAlert(t('auth.oauth.alertTitle'), error);
@@ -26,7 +40,7 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
 
   const runGoogle = async () => {
     setBusy('google');
-    const { error } = await signInWithOAuthProvider('google');
+    const { error } = await stashReferralThen(() => signInWithOAuthProvider('google'));
     setBusy(null);
     if (error) {
       showAppAlert(t('auth.oauth.alertTitle'), error);

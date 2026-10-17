@@ -2,6 +2,7 @@ import 'react-native-gesture-handler';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { PlayfairDisplay_900Black } from '@expo-google-fonts/playfair-display';
 import { useFonts } from 'expo-font';
+import * as Linking from 'expo-linking';
 import { Stack } from 'expo-router';
 import Head from 'expo-router/head';
 import * as SplashScreen from 'expo-splash-screen';
@@ -15,6 +16,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
 import { BrandedSplashGate } from '@/src/components/BrandedSplashGate';
 import { colors } from '@/src/lib/constants';
+import { captureReferralCodeFromUrl } from '@/src/lib/pendingReferralCode';
 /** Side-effect: initialize i18next before any screen calls useTranslation. */
 import '@/src/i18n';
 
@@ -51,6 +53,26 @@ export default function RootLayout() {
       SplashScreen.hideAsync();
     }
   }, [loaded]);
+
+  // Capture ?ref= from cold-start / inbound deep links before signup (OAuth or email).
+  useEffect(() => {
+    let alive = true;
+    void (async () => {
+      const initial = await Linking.getInitialURL();
+      if (!alive) return;
+      if (initial) await captureReferralCodeFromUrl(initial);
+      else if (Platform.OS === 'web' && typeof window !== 'undefined') {
+        await captureReferralCodeFromUrl(window.location.href);
+      }
+    })();
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      void captureReferralCodeFromUrl(url);
+    });
+    return () => {
+      alive = false;
+      sub.remove();
+    };
+  }, []);
 
   if (!loaded) {
     return null;

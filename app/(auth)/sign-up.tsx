@@ -1,5 +1,5 @@
-import { Link, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -19,17 +19,47 @@ import { useTranslation } from '@/src/i18n';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 import { REFERRAL_CODE_FIELD_ENABLED } from '@/src/lib/featureFlags';
+import {
+  getPendingReferralCode,
+  normalizeReferralCode,
+  setPendingReferralCode,
+} from '@/src/lib/pendingReferralCode';
+
+function firstParam(v: string | string[] | undefined): string | undefined {
+  return Array.isArray(v) ? v[0] : v;
+}
 
 export default function SignUpScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ ref?: string | string[]; referral?: string | string[] }>();
   const { signUp } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [referralCode, setReferralCode] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Prefill from deep-link ?ref= / pending stash so OAuth (and the visible field) see the code.
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const fromParams = normalizeReferralCode(
+        firstParam(params.ref) ?? firstParam(params.referral)
+      );
+      if (fromParams) {
+        await setPendingReferralCode(fromParams);
+        if (!cancelled) setReferralCode(fromParams);
+        return;
+      }
+      const pending = await getPendingReferralCode();
+      if (!cancelled && pending) setReferralCode(pending);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [params.ref, params.referral]);
 
   const onSubmit = async () => {
     if (!email.trim() || !password) {
@@ -74,7 +104,26 @@ export default function SignUpScreen() {
           <Text style={styles.contextTxt}>{t('auth.signUp.context')}</Text>
         </View>
 
-        <OAuthSignInButtons dividerLabel={t('auth.signUp.orCreateWithEmail')} />
+        {/* Shared above OAuth + email so a typed (or deep-linked) code is present when OAuth is tapped. */}
+        {REFERRAL_CODE_FIELD_ENABLED && (
+          <>
+            <Text style={styles.lbl}>{t('auth.signUp.referralCode')}</Text>
+            <TextInput
+              style={styles.input}
+              value={referralCode}
+              onChangeText={setReferralCode}
+              placeholder={t('auth.signUp.referralPlaceholder')}
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </>
+        )}
+
+        <OAuthSignInButtons
+          dividerLabel={t('auth.signUp.orCreateWithEmail')}
+          referralCode={referralCode}
+        />
 
         <Text style={styles.lbl}>{t('auth.signUp.displayName')}</Text>
         <TextInput
@@ -110,21 +159,6 @@ export default function SignUpScreen() {
           textContentType="newPassword"
         />
         <Text style={styles.passwordNote}>{t('auth.signUp.passwordNote')}</Text>
-
-        {REFERRAL_CODE_FIELD_ENABLED && (
-          <>
-            <Text style={styles.lbl}>{t('auth.signUp.referralCode')}</Text>
-            <TextInput
-              style={styles.input}
-              value={referralCode}
-              onChangeText={setReferralCode}
-              placeholder={t('auth.signUp.referralPlaceholder')}
-              placeholderTextColor={colors.subtle}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </>
-        )}
 
         <Pressable
           onPress={onSubmit}

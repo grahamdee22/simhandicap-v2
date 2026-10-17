@@ -3,6 +3,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { usePathname, useRootNavigationState, useRouter, useSegments, type Href } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
+import { applyPendingReferralCodeIfNeeded } from '../lib/pendingReferralCode';
 import { applyProfileRowToStore, fetchMyProfile } from '../lib/profiles';
 import { fetchMyRoundsForUser } from '../lib/rounds';
 import {
@@ -78,6 +79,11 @@ async function hydrateSignedInUserData(
   }
   await syncProfileIntoStore(userId, token);
   if (isCancelled?.()) return;
+  // Web OAuth (and any path that skips native persist) — null-only write of pending referral.
+  if (token) {
+    await applyPendingReferralCodeIfNeeded(userId, token);
+    if (isCancelled?.()) return;
+  }
   // Prefer the session JWT; only fall back to getSession outside the auth-lock callback.
   const groupsToken =
     token ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
