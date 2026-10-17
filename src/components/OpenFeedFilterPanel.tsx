@@ -8,6 +8,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useTranslation } from '../i18n';
 import { colors, PLATFORMS, type PlatformId } from '../lib/constants';
 import {
   OPEN_FEED_HANDICAP_RANGE_ORDER,
@@ -53,6 +54,7 @@ export function OpenFeedFilterPanel({
   onRemoveCourseChip,
   onClearPlatformsChip,
 }: Props) {
+  const { t } = useTranslation();
   const [courseModalOpen, setCourseModalOpen] = useState(false);
   const [courseSearch, setCourseSearch] = useState('');
 
@@ -64,26 +66,26 @@ export function OpenFeedFilterPanel({
       const labels = [...ordered, ...rest].map((id) => openFeedHandicapRangeLabel(id));
       out.push({
         key: 'hcap',
-        label: `Handicap · ${labels.join(', ')}`,
+        label: t('openFeedFilter.chipHandicap', { labels: labels.join(', ') }),
         onRemove: onRemoveHandicapChip,
       });
     }
     if (applied.courseName) {
       out.push({
         key: 'course',
-        label: `Course · ${applied.courseName}`,
+        label: t('openFeedFilter.chipCourse', { course: applied.courseName }),
         onRemove: onRemoveCourseChip,
       });
     }
     if (applied.platforms.length > 0) {
       out.push({
         key: 'plat',
-        label: `Simulator · ${applied.platforms.join(', ')}`,
+        label: t('openFeedFilter.chipSimulator', { platforms: applied.platforms.join(', ') }),
         onRemove: onClearPlatformsChip,
       });
     }
     return out;
-  }, [applied, onRemoveHandicapChip, onRemoveCourseChip, onClearPlatformsChip]);
+  }, [applied, onRemoveHandicapChip, onRemoveCourseChip, onClearPlatformsChip, t]);
 
   const filteredCourseList = useMemo(() => {
     const q = courseSearch.trim().toLowerCase();
@@ -135,7 +137,7 @@ export function OpenFeedFilterPanel({
                 onPress={c.onRemove}
                 hitSlop={8}
                 accessibilityRole="button"
-                accessibilityLabel={`Remove ${c.label}`}
+                accessibilityLabel={t('openFeedFilter.removeA11y', { label: c.label })}
               >
                 <Text style={styles.appliedChipX}>×</Text>
               </Pressable>
@@ -147,10 +149,10 @@ export function OpenFeedFilterPanel({
               hitSlop={8}
               style={styles.addFilterBtn}
               accessibilityRole="button"
-              accessibilityLabel="Add filter"
+              accessibilityLabel={t('openFeedFilter.addFilterA11y')}
               accessibilityState={{ expanded }}
             >
-              <Text style={styles.addFilterBtnTxt}>+ Add filter</Text>
+              <Text style={styles.addFilterBtnTxt}>{t('openFeedFilter.addFilter')}</Text>
             </Pressable>
           ) : null}
         </View>
@@ -159,17 +161,15 @@ export function OpenFeedFilterPanel({
       {expanded ? (
         <View style={styles.filterExpanded}>
           <View style={styles.filterExpandedTop}>
-            <Text style={styles.filterExpandedTitle}>Filters</Text>
+            <Text style={styles.filterExpandedTitle}>{t('openFeedFilter.filters')}</Text>
             <Pressable onPress={onResetAll} hitSlop={8}>
-              <Text style={styles.resetAllTxt}>Clear filters</Text>
+              <Text style={styles.resetAllTxt}>{t('openFeedFilter.clearFilters')}</Text>
             </Pressable>
           </View>
-          <Text style={styles.filterHint}>
-            Applies only to the open challenge feed. Incoming and active matches are unchanged.
-          </Text>
+          <Text style={styles.filterHint}>{t('openFeedFilter.hint')}</Text>
 
-          <Text style={[styles.fCatLabel, styles.fCatFirst]}>Handicap range</Text>
-          <Text style={styles.subHint}>Tap to include; leave none selected for all handicaps.</Text>
+          <Text style={[styles.fCatLabel, styles.fCatFirst]}>{t('openFeedFilter.handicapRange')}</Text>
+          <Text style={styles.subHint}>{t('openFeedFilter.handicapSubHint')}</Text>
           <View style={styles.fPillRow}>
             {OPEN_FEED_HANDICAP_RANGE_ORDER.map((id) => {
               const sel = draft.handicapRanges.includes(id);
@@ -189,7 +189,7 @@ export function OpenFeedFilterPanel({
             })}
           </View>
 
-          <Text style={styles.fCatLabel}>Course</Text>
+          <Text style={styles.fCatLabel}>{t('openFeedFilter.course')}</Text>
           <Pressable
             style={styles.coursePickBtn}
             onPress={() => {
@@ -197,16 +197,16 @@ export function OpenFeedFilterPanel({
               setCourseModalOpen(true);
             }}
             accessibilityRole="button"
-            accessibilityLabel="Choose course filter"
+            accessibilityLabel={t('openFeedFilter.chooseCourseA11y')}
           >
             <Text style={styles.coursePickBtnTxt} numberOfLines={1}>
-              {draft.courseName ?? 'All courses'}
+              {draft.courseName ?? t('openFeedFilter.allCourses')}
             </Text>
             <Text style={styles.coursePickChev}>▾</Text>
           </Pressable>
 
-          <Text style={styles.fCatLabel}>Simulator platform</Text>
-          <Text style={styles.subHint}>Tap to include; leave none selected for all platforms.</Text>
+          <Text style={styles.fCatLabel}>{t('openFeedFilter.simulatorPlatform')}</Text>
+          <Text style={styles.subHint}>{t('openFeedFilter.platformSubHint')}</Text>
           <View style={styles.fPillRow}>
             {PLATFORMS.map((p) => {
               const sel = draft.platforms.includes(p);
@@ -227,7 +227,7 @@ export function OpenFeedFilterPanel({
           </View>
 
           <Pressable onPress={onApply} style={styles.applyFiltersBtn}>
-            <Text style={styles.applyFiltersBtnTxt}>Apply filters</Text>
+            <Text style={styles.applyFiltersBtnTxt}>{t('openFeedFilter.applyFilters')}</Text>
           </Pressable>
         </View>
       ) : null}
@@ -236,17 +236,17 @@ export function OpenFeedFilterPanel({
         <View style={styles.modalRoot}>
           <Pressable style={styles.modalBackdrop} onPress={() => setCourseModalOpen(false)} />
           <View style={[styles.modalSheet, { marginHorizontal: gutter }]}>
-            <Text style={styles.modalTitle}>Course</Text>
+            <Text style={styles.modalTitle}>{t('openFeedFilter.course')}</Text>
             <TextInput
               style={styles.courseSearch}
               value={courseSearch}
               onChangeText={setCourseSearch}
-              placeholder="Search courses…"
+              placeholder={t('openFeedFilter.searchCourses')}
               placeholderTextColor={colors.subtle}
             />
             <ScrollView style={styles.courseList} keyboardShouldPersistTaps="handled">
               <Pressable style={styles.courseRow} onPress={() => selectCourse(null)}>
-                <Text style={styles.courseRowTxt}>All courses</Text>
+                <Text style={styles.courseRowTxt}>{t('openFeedFilter.allCourses')}</Text>
               </Pressable>
               {filteredCourseList.map((c) => (
                 <Pressable key={c} style={styles.courseRow} onPress={() => selectCourse(c)}>
@@ -257,7 +257,7 @@ export function OpenFeedFilterPanel({
               ))}
             </ScrollView>
             <Pressable style={styles.modalClose} onPress={() => setCourseModalOpen(false)}>
-              <Text style={styles.modalCloseTxt}>Close</Text>
+              <Text style={styles.modalCloseTxt}>{t('openFeedFilter.close')}</Text>
             </Pressable>
           </View>
         </View>

@@ -11,6 +11,7 @@ import {
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { SimCapMark } from './SimCapMark';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
 import type { NetPickerGolfer } from '../lib/netPickerGolfer';
@@ -41,6 +42,7 @@ export function GolferPickerModal({
   onEnterManually,
   allowManualEntry = true,
 }: Props) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
 
@@ -67,7 +69,7 @@ export function GolferPickerModal({
             style={styles.search}
             value={query}
             onChangeText={setQuery}
-            placeholder="Search by name"
+            placeholder={t('golferPicker.searchPlaceholder')}
             placeholderTextColor={colors.subtle}
             autoCorrect={false}
             autoCapitalize="words"
@@ -107,9 +109,9 @@ export function GolferPickerModal({
               <Text style={styles.empty}>
                 {golfers.length === 0
                   ? allowManualEntry
-                    ? 'No one in this crew yet. Use Enter manually or invite friends in Social.'
-                    : 'No one in this crew yet. Invite friends in Social.'
-                  : `No golfers match “${query.trim()}”.`}
+                    ? t('golferPicker.emptyCrewManual')
+                    : t('golferPicker.emptyCrew')
+                  : t('golferPicker.noMatch', { query: query.trim() })}
               </Text>
             }
           />
@@ -121,7 +123,7 @@ export function GolferPickerModal({
                 onClose();
               }}
             >
-              <Text style={styles.manualBtnTxt}>Enter manually</Text>
+              <Text style={styles.manualBtnTxt}>{t('golferPicker.enterManually')}</Text>
             </Pressable>
           ) : null}
         </View>

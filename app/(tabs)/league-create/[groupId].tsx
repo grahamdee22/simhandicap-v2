@@ -22,6 +22,7 @@ import { DatePlayedField } from '../../../src/components/DatePlayedField';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { HandicapSourceBadge } from '../../../src/components/HandicapSourceBadge';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
+import { useTranslation } from '../../../src/i18n';
 import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
 import { dateFromYmdLocal, todayLocalYmd, ymdFromParts } from '../../../src/lib/dates';
 import { countMembersMissingHandicap } from '../../../src/lib/effectiveHandicap';
@@ -75,21 +76,28 @@ function isTeamFormat(key: LeagueFormat): boolean {
 
 function playersStepValidationMessage(
   format: LeagueFormat,
-  selectedCount: number
+  selectedCount: number,
+  t: (key: string, opts?: Record<string, unknown>) => string
 ): string | null {
-  if (selectedCount < 1) return 'Select at least one player.';
+  if (selectedCount < 1) return t('league.create.selectAtLeastOne');
   if (format === 'match_play') {
     if (selectedCount > MATCH_PLAY_MAX_PLAYERS) return MATCH_PLAY_TOO_MANY_PLAYERS_ERROR;
     if (selectedCount < MATCH_PLAY_MIN_PLAYERS) {
-      return `Match Play needs at least ${MATCH_PLAY_MIN_PLAYERS} players (currently ${selectedCount}).`;
+      return t('league.create.matchPlayNeedsMin', {
+        min: MATCH_PLAY_MIN_PLAYERS,
+        count: selectedCount,
+      });
     }
     if (selectedCount % 2 !== 0) {
-      return `Match Play needs an even number of players (currently ${selectedCount}).`;
+      return t('league.create.matchPlayNeedsEven', { count: selectedCount });
     }
     return null;
   }
   if (isTeamFormat(format) && selectedCount < MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS) {
-    return `Requires at least ${MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS} players (currently ${selectedCount}).`;
+    return t('league.create.requiresAtLeastPlayers', {
+      min: MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS,
+      count: selectedCount,
+    });
   }
   return null;
 }
@@ -135,6 +143,7 @@ const DEFAULT_USE_HANDICAP = true;
 const DEFAULT_PLAYERS_PER_TEAM = 2;
 
 export default function LeagueCreateScreen() {
+  const { t } = useTranslation();
   const { groupId: rawGroupId } = useLocalSearchParams<{ groupId: string | string[] }>();
   const groupId = typeof rawGroupId === 'string' ? rawGroupId : rawGroupId?.[0] ?? '';
   const router = useRouter();
@@ -296,15 +305,18 @@ export default function LeagueCreateScreen() {
     format === 'match_play' && holesPerRound === '9' && matchPlayNine == null;
   const dateRangeError = useMemo(() => {
     if (startDateYmd > endDateYmd) {
-      return 'End date must be on or after the start date.';
+      return t('league.create.endDateAfterStart');
     }
     for (const other of groupActiveLeagues) {
       if (dateRangesOverlap(startDateYmd, endDateYmd, other.start_date, other.end_date)) {
-        return `These dates overlap “${other.name}” (${formatLeagueDateRange(other.start_date, other.end_date)}). Pick dates that don’t overlap another tournament for this crew.`;
+        return t('league.create.datesOverlap', {
+          name: other.name,
+          range: formatLeagueDateRange(other.start_date, other.end_date),
+        });
       }
     }
     return null;
-  }, [startDateYmd, endDateYmd, groupActiveLeagues]);
+  }, [startDateYmd, endDateYmd, groupActiveLeagues, t]);
   const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId || !!dateRangeError;
   const courseChoices = useMemo(() => curatedPickerCourses(courseSearch), [courseSearch]);
 
@@ -392,7 +404,7 @@ export default function LeagueCreateScreen() {
     playersPerTeam,
   ]);
   const matchPlayDisabledMessage = getMatchPlayFormatDisabledMessage(playerCount);
-  const playersStepError = playersStepValidationMessage(format, playerCount);
+  const playersStepError = playersStepValidationMessage(format, playerCount, t);
 
   const seededUserIds = useMemo(
     () =>
@@ -600,9 +612,12 @@ export default function LeagueCreateScreen() {
     const missing = countMembersMissingHandicap(playingMembers);
     if (missing > 0) {
       void confirmAppChoice(
-        'Missing handicap',
-        `${missing} player${missing === 1 ? '' : 's'} have no handicap index. They will be assigned randomly. You can ask them to enter their GHIN on their profile, or proceed anyway.`,
-        { cancelText: 'Go back', confirmText: 'Proceed anyway' }
+        t('league.create.missingHandicapTitle'),
+        t('league.create.missingHandicapBody', { count: missing }),
+        {
+          cancelText: t('match.create.goBack'),
+          confirmText: t('league.create.proceedAnyway'),
+        }
       ).then((choice) => {
         if (choice === 'confirm') runAutoAssignTeams(true);
       });
@@ -651,41 +666,41 @@ export default function LeagueCreateScreen() {
 
   const onLaunch = async () => {
     if (!user?.id || !group) {
-      showAppAlert('Could not create tournament', 'Sign in again, then open this from your crew.');
+      showAppAlert(t('league.create.couldNotCreate'), t('league.create.signInAgain'));
       return;
     }
     if (needsTeams && !teamsStepCanContinue) {
-      showAppAlert('Invalid teams', 'Assign every player to a team with at least 2 per team.');
+      showAppAlert(t('league.create.invalidTeamsTitle'), t('league.create.assignEveryPlayer'));
       return;
     }
     if (isMatchPlay && matchPlayDisabledMessage) {
-      showAppAlert('Invalid field', matchPlayDisabledMessage);
+      showAppAlert(t('league.create.invalidFieldTitle'), matchPlayDisabledMessage);
       return;
     }
     if (isMatchPlay && holesPerRound === '9' && !matchPlayNine) {
-      showAppAlert('Which nine?', 'Choose Front 9 or Back 9 for this Match Play tournament.');
+      showAppAlert(t('league.create.whichNineAlertTitle'), t('league.create.whichNineAlertBody'));
       return;
     }
     if (!tournamentCourseId) {
-      showAppAlert('Course', 'Choose the course this tournament is played at.');
+      showAppAlert(t('league.create.courseAlertTitle'), t('league.create.courseAlertBody'));
       return;
     }
     if (isScramble) {
       const sizeErr = validateScrambleTeamSizes(teams);
       if (sizeErr) {
-        showAppAlert('Invalid teams', sizeErr);
+        showAppAlert(t('league.create.invalidTeamsTitle'), sizeErr);
         return;
       }
       const scorerErr = validateScrambleDesignatedScorers(teams);
       if (scorerErr) {
-        showAppAlert('Designated scorer', scorerErr);
+        showAppAlert(t('league.create.designatedScorerAlertTitle'), scorerErr);
         return;
       }
     }
     if (isBestBall) {
       const bbErr = validateBestBallTeamSizes(teams);
       if (bbErr) {
-        showAppAlert('Invalid teams', bbErr);
+        showAppAlert(t('league.create.invalidTeamsTitle'), bbErr);
         return;
       }
     }
@@ -731,15 +746,15 @@ export default function LeagueCreateScreen() {
         googleOAuthAccessToken ?? undefined
       );
       if (res.error || !res.data) {
-        const msg = res.error ?? 'Unknown error';
+        const msg = res.error ?? t('match.create.alerts.unknownError');
         if (/overlap/i.test(msg)) {
           setDateError(msg);
           return;
         }
-        showAppAlert('Could not create tournament', msg);
+        showAppAlert(t('league.create.couldNotCreate'), msg);
         return;
       }
-      let successMessage = 'Members will see it in their group.';
+      let successMessage = t('league.create.membersWillSee');
       if (isMatchPlay) {
         const bracket = await generateMatchPlayBracket(
           res.data.id,
@@ -747,15 +762,16 @@ export default function LeagueCreateScreen() {
           googleOAuthAccessToken ?? undefined
         );
         successMessage = bracket.error
-          ? `Bracket could not be generated: ${bracket.error}. Use Manage tournament to try again.`
-          : 'Bracket is ready — lowest index is the #1 seed.';
+          ? t('league.create.bracketCouldNotGenerate', { error: bracket.error })
+          : t('league.create.bracketReady');
       }
       clearTournamentSectionCache(groupId);
       router.replace('/(tabs)/groups' as never);
-      showAppAlert('Tournament created', successMessage);
+      showAppAlert(t('league.create.tournamentCreated'), successMessage);
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown error';
-      showAppAlert('Could not create tournament', message);
+      const message =
+        err instanceof Error ? err.message : t('match.create.alerts.unknownError');
+      showAppAlert(t('league.create.couldNotCreate'), message);
     } finally {
       launchInFlightRef.current = false;
       setBusy(false);
@@ -766,7 +782,7 @@ export default function LeagueCreateScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={{ padding: gutter }}>
-          <Text>Group not found.</Text>
+          <Text>{t('league.create.groupNotFound')}</Text>
         </View>
       </ContentWidth>
     );
@@ -799,21 +815,21 @@ export default function LeagueCreateScreen() {
           }}
         >
         <Text style={styles.stepProg}>
-          Step {stepNumber} of {totalSteps}
+          {t('match.create.stepOf', { current: stepNumber, total: totalSteps })}
         </Text>
 
         {step === 'basic' ? (
           <>
-            <Text style={styles.head}>Basic info</Text>
-            <Text style={styles.lbl}>Tournament name</Text>
+            <Text style={styles.head}>{t('league.create.basicInfo')}</Text>
+            <Text style={styles.lbl}>{t('league.create.tournamentName')}</Text>
             <TextInput
               style={styles.input}
               value={name}
               onChangeText={setName}
-              placeholder="Spring League"
+              placeholder={t('league.create.namePlaceholder')}
               placeholderTextColor={colors.subtle}
             />
-            <Text style={[styles.lbl, { marginTop: 16 }]}>Format</Text>
+            <Text style={[styles.lbl, { marginTop: 16 }]}>{t('league.create.format')}</Text>
             {TOURNAMENT_FORMAT_COPY.map((f) => {
               const on = format === f.key;
               const needsFour = isTeamFormat(f.key) && teamFormatsDisabled;
@@ -832,17 +848,23 @@ export default function LeagueCreateScreen() {
                 >
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.formatTitle, disabled && styles.formatTitleDisabled]}>
-                      {f.title}
+                      {t(`league.create.formats.${f.key}.title`)}
                     </Text>
-                    <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>{f.sub}</Text>
+                    <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>
+                      {t(`league.create.formats.${f.key}.sub`)}
+                    </Text>
                     {needsFour ? (
                       <Text style={styles.formatDisabledNote}>
-                        Requires at least {MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS} group members.
+                        {t('league.create.requiresMinGroupMembers', {
+                          count: MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS,
+                        })}
                       </Text>
                     ) : null}
                     {needsMatchPlayMin ? (
                       <Text style={styles.formatDisabledNote}>
-                        Requires at least {MATCH_PLAY_MIN_PLAYERS} group members.
+                        {t('league.create.requiresMinGroupMembers', {
+                          count: MATCH_PLAY_MIN_PLAYERS,
+                        })}
                       </Text>
                     ) : null}
                   </View>
@@ -855,37 +877,40 @@ export default function LeagueCreateScreen() {
               disabled={!name.trim()}
               onPress={() => goToStep('players')}
             >
-              <Text style={styles.primaryBtnTxt}>Continue</Text>
+              <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
             </Pressable>
           </>
         ) : null}
 
         {step === 'players' ? (
           <>
-            <Text style={styles.head}>Who's playing?</Text>
-            <Text style={styles.helper}>
-              Everyone in the group is included by default. Uncheck anyone who's sitting this one
-              out.
-            </Text>
+            <Text style={styles.head}>{t('league.create.whosPlaying')}</Text>
+            <Text style={styles.helper}>{t('league.create.playersHelper')}</Text>
             <View style={styles.selectAllRow}>
               <Pressable
                 onPress={() => (allPlayersSelected ? deselectAllPlayers() : selectAllPlayers())}
                 accessibilityRole="button"
-                accessibilityLabel={allPlayersSelected ? 'Deselect all' : 'Select all'}
+                accessibilityLabel={
+                  allPlayersSelected
+                    ? t('league.create.deselectAll')
+                    : t('league.create.selectAll')
+                }
               >
                 <Text style={styles.selectAllTxt}>
-                  {allPlayersSelected ? 'Deselect all' : 'Select all'}
+                  {allPlayersSelected
+                    ? t('league.create.deselectAll')
+                    : t('league.create.selectAll')}
                 </Text>
               </Pressable>
             </View>
             {groupMembers.length >= PLAYER_ROSTER_SEARCH_MIN ? (
               <>
-                <Text style={styles.lbl}>Search</Text>
+                <Text style={styles.lbl}>{t('league.create.search')}</Text>
                 <TextInput
                   style={[styles.input, { marginBottom: 10 }]}
                   value={playerSearch}
                   onChangeText={setPlayerSearch}
-                  placeholder="Filter by name"
+                  placeholder={t('league.create.filterByName')}
                   placeholderTextColor={colors.subtle}
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -921,7 +946,7 @@ export default function LeagueCreateScreen() {
               );
             })}
             <Text style={styles.selectedCount}>
-              {playerCount} selected.
+              {t('league.create.selectedCount', { count: playerCount })}
             </Text>
             {playersStepError ? (
               <Text style={styles.formatDisabledNote}>{playersStepError}</Text>
@@ -938,17 +963,16 @@ export default function LeagueCreateScreen() {
                 }
               }}
             >
-              <Text style={styles.primaryBtnTxt}>Continue</Text>
+              <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
             </Pressable>
           </>
         ) : null}
 
         {step === 'teamCount' && needsTeams && teamFormat && teamSizeSuggestion ? (
           <>
-            <Text style={styles.head}>Players per team</Text>
+            <Text style={styles.head}>{t('league.create.playersPerTeam')}</Text>
             <Text style={styles.helper}>
-              {playerCount} players selected. Choose how many players are on each team — SimCap will
-              create the teams. You can assign players on the next step.
+              {t('league.create.teamCountHelper', { count: playerCount })}
             </Text>
             {PRESET_PLAYERS_PER_TEAM_OPTIONS.map((pp) => {
               const on = playersPerTeamMode === 'preset' && playersPerTeam === pp;
@@ -980,7 +1004,9 @@ export default function LeagueCreateScreen() {
                       {sub}
                     </Text>
                     {isSuggested ? (
-                      <Text style={styles.formatSuggestedNote}>Suggested</Text>
+                      <Text style={styles.formatSuggestedNote}>
+                        {t('league.create.suggested')}
+                      </Text>
                     ) : null}
                   </View>
                   {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
@@ -999,17 +1025,21 @@ export default function LeagueCreateScreen() {
                   }
                 >
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.formatTitle}>Custom</Text>
+                    <Text style={styles.formatTitle}>{t('log.round.custom')}</Text>
                     <Text style={styles.formatSub}>
-                      {CUSTOM_PLAYERS_PER_TEAM_MIN}–{maxPlayersPerTeam(playingMembers.length)} players per
-                      team
+                      {t('league.create.customPlayersPerTeamRange', {
+                        min: CUSTOM_PLAYERS_PER_TEAM_MIN,
+                        max: maxPlayersPerTeam(playingMembers.length),
+                      })}
                     </Text>
                     {teamSizeSuggestion.suggestedPlayersPerTeam >= CUSTOM_PLAYERS_PER_TEAM_MIN &&
                     (teamSizeSuggestion.validPreset.length === 0 ||
                       !PRESET_PLAYERS_PER_TEAM_OPTIONS.includes(
                         teamSizeSuggestion.suggestedPlayersPerTeam as (typeof PRESET_PLAYERS_PER_TEAM_OPTIONS)[number]
                       )) ? (
-                      <Text style={styles.formatSuggestedNote}>Suggested</Text>
+                      <Text style={styles.formatSuggestedNote}>
+                        {t('league.create.suggested')}
+                      </Text>
                     ) : null}
                   </View>
                   {playersPerTeamMode === 'custom' && !customPlayersPerTeamError ? (
@@ -1018,7 +1048,7 @@ export default function LeagueCreateScreen() {
                 </Pressable>
                 {customPlayersPerTeamExpanded && playersPerTeamMode === 'custom' ? (
                   <View style={styles.customTeamInputBlock}>
-                    <Text style={styles.lbl}>Players per team</Text>
+                    <Text style={styles.lbl}>{t('league.create.playersPerTeam')}</Text>
                     <TextInput
                       style={styles.input}
                       value={customPlayersPerTeamInput}
@@ -1045,7 +1075,9 @@ export default function LeagueCreateScreen() {
                       </Text>
                     ) : (
                       <Text style={styles.helper}>
-                        Enter players per team (min {CUSTOM_PLAYERS_PER_TEAM_MIN}).
+                        {t('league.create.enterPlayersPerTeamMin', {
+                          min: CUSTOM_PLAYERS_PER_TEAM_MIN,
+                        })}
                       </Text>
                     )}
                   </View>
@@ -1058,30 +1090,35 @@ export default function LeagueCreateScreen() {
               </Text>
             ) : null}
             {!teamSizeSuggestion.hasAnyValid ? (
-              <Text style={styles.helper}>
-                This player count cannot be split evenly into teams with at least 2 players each. Try
-                selecting a different number of players to enable team options.
-              </Text>
+              <Text style={styles.helper}>{t('league.create.unevenTeamSplit')}</Text>
             ) : null}
             <Pressable
               style={[styles.primaryBtn, !teamSizeValid && styles.btnDisabled]}
               disabled={!teamSizeValid}
               onPress={() => goToStep('settings')}
             >
-              <Text style={styles.primaryBtnTxt}>Continue</Text>
+              <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
             </Pressable>
           </>
         ) : null}
 
         {step === 'settings' ? (
           <>
-            <Text style={styles.head}>Settings</Text>
-            <Text style={styles.lbl}>Holes per round</Text>
+            <Text style={styles.head}>{t('league.create.settings')}</Text>
+            <Text style={styles.lbl}>{t('league.create.holesPerRound')}</Text>
                 <View style={styles.dayRow}>
                   {(
                     [
-                      { key: '18' as const, title: '18 holes', sub: 'Full round' },
-                      { key: '9' as const, title: '9 holes', sub: 'Front or Back' },
+                      {
+                        key: '18' as const,
+                        title: t('log.round.holes18'),
+                        sub: t('log.round.holes18Sub'),
+                      },
+                      {
+                        key: '9' as const,
+                        title: t('league.create.holes9'),
+                        sub: t('league.create.holes9Sub'),
+                      },
                     ] as const
                   ).map((opt) => {
                     const on = holesPerRound === opt.key;
@@ -1102,15 +1139,23 @@ export default function LeagueCreateScreen() {
                 </View>
                 {isMatchPlay && holesPerRound === '9' ? (
                   <>
-                    <Text style={[styles.lbl, { marginTop: 12 }]}>Which nine?</Text>
-                    <Text style={styles.helper}>
-                      Everyone in the bracket plays the same nine so hole scores line up.
+                    <Text style={[styles.lbl, { marginTop: 12 }]}>
+                      {t('league.create.whichNine')}
                     </Text>
+                    <Text style={styles.helper}>{t('league.create.whichNineHelper')}</Text>
                     <View style={styles.dayRow}>
                       {(
                         [
-                          { key: 'front' as const, title: 'Front 9', sub: 'Holes 1–9' },
-                          { key: 'back' as const, title: 'Back 9', sub: 'Holes 10–18' },
+                          {
+                            key: 'front' as const,
+                            title: t('home.latestFront9'),
+                            sub: t('log.round.front9Sub'),
+                          },
+                          {
+                            key: 'back' as const,
+                            title: t('home.latestBack9'),
+                            sub: t('log.round.back9Sub'),
+                          },
                         ] as const
                       ).map((opt) => {
                         const on = matchPlayNine === opt.key;
@@ -1127,18 +1172,19 @@ export default function LeagueCreateScreen() {
                       })}
                     </View>
                     {nineSelectionIncomplete ? (
-                      <Text style={styles.formatDisabledNote}>Choose Front 9 or Back 9.</Text>
+                      <Text style={styles.formatDisabledNote}>
+                        {t('league.create.chooseFrontOrBack')}
+                      </Text>
                     ) : null}
                   </>
                 ) : null}
-            <Text style={[styles.lbl, { marginTop: 12 }]}>Course</Text>
-            <Text style={styles.helper}>
-              Everyone logs this tournament at the same verified course.
-            </Text>
+            <Text style={[styles.lbl, { marginTop: 12 }]}>{t('log.round.course')}</Text>
+            <Text style={styles.helper}>{t('league.create.courseHelper')}</Text>
             {tournamentCourseId ? (
               <View style={styles.courseSelectedRow}>
                 <Text style={styles.summaryLine}>
-                  📍 {getCourseById(tournamentCourseId)?.name ?? 'Selected course'}
+                  📍{' '}
+                  {getCourseById(tournamentCourseId)?.name ?? t('league.create.selectedCourse')}
                 </Text>
                 <Pressable
                   onPress={() => {
@@ -1147,14 +1193,16 @@ export default function LeagueCreateScreen() {
                   }}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel="Change course"
+                  accessibilityLabel={t('league.create.changeCourseA11y')}
                 >
-                  <Text style={styles.courseChange}>Change</Text>
+                  <Text style={styles.courseChange}>{t('league.create.change')}</Text>
                 </Pressable>
               </View>
             ) : (
               <>
-                <Text style={styles.formatDisabledNote}>Choose a course to continue.</Text>
+                <Text style={styles.formatDisabledNote}>
+                  {t('league.create.chooseCourseToContinue')}
+                </Text>
                 <Pressable
                   style={styles.courseOpenBtn}
                   onPress={() => {
@@ -1162,9 +1210,9 @@ export default function LeagueCreateScreen() {
                     setCoursePickerOpen(true);
                   }}
                   accessibilityRole="button"
-                  accessibilityLabel="Choose course"
+                  accessibilityLabel={t('league.create.chooseCourseA11y')}
                 >
-                  <Text style={styles.courseOpenBtnTxt}>Choose course</Text>
+                  <Text style={styles.courseOpenBtnTxt}>{t('league.create.chooseCourse')}</Text>
                 </Pressable>
               </>
             )}
@@ -1180,12 +1228,12 @@ export default function LeagueCreateScreen() {
                   onPress={() => setCoursePickerOpen(false)}
                 />
                 <View style={[styles.modalSheet, styles.modalSheetTall]}>
-                  <Text style={styles.modalTitle}>Course</Text>
+                  <Text style={styles.modalTitle}>{t('log.round.course')}</Text>
                   <TextInput
                     style={styles.courseSearchInput}
                     value={courseSearch}
                     onChangeText={setCourseSearch}
-                    placeholder="Search courses"
+                    placeholder={t('league.create.searchCourses')}
                     placeholderTextColor={colors.subtle}
                     autoCapitalize="none"
                     autoCorrect={false}
@@ -1197,7 +1245,9 @@ export default function LeagueCreateScreen() {
                     keyboardShouldPersistTaps="handled"
                     style={styles.courseSearchList}
                     ListEmptyComponent={
-                      <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+                      <Text style={styles.courseSearchEmpty}>
+                        {t('log.round.noCoursesMatch')}
+                      </Text>
                     }
                     renderItem={({ item: c }) => {
                       const on = tournamentCourseId === c.id;
@@ -1229,14 +1279,14 @@ export default function LeagueCreateScreen() {
               </View>
             </Modal>
             <DatePlayedField
-              label="Start date"
+              label={t('season.create.startDate')}
               hint={null}
               large
               value={startDateYmd}
               onChange={setStartDateYmd}
             />
             <DatePlayedField
-              label="End date"
+              label={t('season.create.endDate')}
               hint={null}
               large
               value={endDateYmd}
@@ -1249,13 +1299,9 @@ export default function LeagueCreateScreen() {
             ) : null}
             {isMatchPlay ? (
               <View style={styles.bracketInfo}>
-                <Text style={styles.bracketInfoTitle}>Single-elimination bracket</Text>
-                <Text style={styles.helper}>
-                  Players are seeded by handicap (#1 = lowest). SimCap index is used when
-                  established (3+ rounds); otherwise GHIN from their profile. The bracket is
-                  generated automatically when you launch.
-                </Text>
-                <Text style={styles.sectionLbl}>Players</Text>
+                <Text style={styles.bracketInfoTitle}>{t('league.create.bracketTitle')}</Text>
+                <Text style={styles.helper}>{t('league.create.bracketHelper')}</Text>
+                <Text style={styles.sectionLbl}>{t('league.create.players')}</Text>
                 {seededUserIds.map((uid, i) => {
                   const m = playingMembers.find((x) => x.userId === uid);
                   return (
@@ -1265,7 +1311,7 @@ export default function LeagueCreateScreen() {
                         <Text style={styles.memberAvTxt}>{m?.initials ?? '?'}</Text>
                       </View>
                       <Text style={[styles.memberName, { flex: 1 }]}>
-                        {m?.displayName ?? 'Player'}
+                        {m?.displayName ?? t('league.create.playerFallback')}
                       </Text>
                       <Text style={styles.memberIdx}>
                         {m?.index != null ? m.index.toFixed(1) : '—'}
@@ -1277,7 +1323,9 @@ export default function LeagueCreateScreen() {
               </View>
             ) : (
               <>
-                <Text style={[styles.lbl, { marginTop: 10 }]}>Rounds that count toward standings</Text>
+                <Text style={[styles.lbl, { marginTop: 10 }]}>
+                  {t('league.create.roundsThatCount')}
+                </Text>
                 <View style={styles.stepperRow}>
                   <Pressable
                     style={styles.stepperBtn}
@@ -1293,13 +1341,17 @@ export default function LeagueCreateScreen() {
                     <Text style={styles.stepperBtnTxt}>+</Text>
                   </Pressable>
                 </View>
-                <Text style={styles.helper}>e.g. best {roundsThatCount} of 6 rounds count</Text>
+                <Text style={styles.helper}>
+                  {t('league.create.bestOfRoundsHelper', { count: roundsThatCount })}
+                </Text>
               </>
             )}
             <View style={styles.toggleRow}>
-              <Text style={styles.toggleLbl}>Use SimCap handicap</Text>
+              <Text style={styles.toggleLbl}>{t('league.create.useHandicap')}</Text>
               <View style={styles.toggleRight}>
-                <Text style={styles.toggleVal}>{useHandicap ? 'On' : 'Off'}</Text>
+                <Text style={styles.toggleVal}>
+                  {useHandicap ? t('league.create.on') : t('league.create.off')}
+                </Text>
                 <Switch
                   value={useHandicap}
                   onValueChange={(next) => {
@@ -1312,13 +1364,12 @@ export default function LeagueCreateScreen() {
                 />
               </View>
             </View>
-            <Text style={styles.helper}>
-              Adjusts scores using each player&apos;s effective handicap (SimCap index when
-              established, otherwise GHIN)
-            </Text>
+            <Text style={styles.helper}>{t('league.create.useHandicapHelper')}</Text>
             {!isMatchPlay && !needsTeams ? (
               <>
-                <Text style={[styles.sectionLbl, { marginTop: 12 }]}>Players</Text>
+                <Text style={[styles.sectionLbl, { marginTop: 12 }]}>
+                  {t('league.create.players')}
+                </Text>
                 {playingMembers.map((m) => (
                   <View key={m.userId} style={styles.memberRow}>
                     <View style={styles.memberAv}>
@@ -1336,38 +1387,39 @@ export default function LeagueCreateScreen() {
             {isScramble ? (
               <>
                 <Text style={[styles.lbl, { marginTop: 12 }]}>
-                  Override team handicap (optional)
+                  {t('league.create.overrideTeamHandicap')}
                 </Text>
                 <TextInput
                   style={styles.input}
                   value={scrambleHandicapOverride}
                   onChangeText={setScrambleHandicapOverride}
-                  placeholder="Leave blank for automatic calculation"
+                  placeholder={t('league.create.overrideHandicapPlaceholder')}
                   placeholderTextColor={colors.subtle}
                   keyboardType="decimal-pad"
                 />
-                <Text style={styles.helper}>
-                  SimCap calculates team handicap automatically using the 15%/85% formula. Only change
-                  this if your group uses a custom handicap.
-                </Text>
+                <Text style={styles.helper}>{t('league.create.overrideHandicapHelper')}</Text>
               </>
             ) : null}
             {activeSeason ? (
               <View style={styles.toggleRow}>
                 <View style={styles.toggleLblRow}>
-                  <Text style={styles.toggleLbl}>Part of {activeSeason.name}?</Text>
+                  <Text style={styles.toggleLbl}>
+                    {t('league.create.partOfSeason', { name: activeSeason.name })}
+                  </Text>
                   <Pressable
                     style={styles.infoBtn}
                     onPress={() => setInfoSheet('season')}
                     hitSlop={6}
                     accessibilityRole="button"
-                    accessibilityLabel="About joining the season"
+                    accessibilityLabel={t('league.create.aboutJoinSeasonA11y')}
                   >
                     <Text style={styles.infoBtnTxt}>ⓘ</Text>
                   </Pressable>
                 </View>
                 <View style={styles.toggleRight}>
-                  <Text style={styles.toggleVal}>{joinSeason ? 'Yes' : 'No'}</Text>
+                  <Text style={styles.toggleVal}>
+                    {joinSeason ? t('log.round.yes') : t('log.round.no')}
+                  </Text>
                   <Switch
                     value={joinSeason}
                     onValueChange={setJoinSeason}
@@ -1383,12 +1435,12 @@ export default function LeagueCreateScreen() {
                 notesSectionYRef.current = e.nativeEvent.layout.y;
               }}
             >
-              <Text style={styles.lbl}>Tournament notes (optional)</Text>
+              <Text style={styles.lbl}>{t('league.create.tournamentNotes')}</Text>
               <TextInput
                 style={styles.notesInput}
                 value={notes}
                 onChangeText={setNotes}
-                placeholder="e.g. Pebble Beach only, white tees, auto 2-putt"
+                placeholder={t('league.create.notesPlaceholder')}
                 placeholderTextColor={colors.subtle}
                 multiline
                 maxLength={500}
@@ -1407,28 +1459,28 @@ export default function LeagueCreateScreen() {
               disabled={settingsIncomplete}
               onPress={() => goToStep(needsTeams ? 'teams' : 'review')}
             >
-              <Text style={styles.primaryBtnTxt}>Continue</Text>
+              <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
             </Pressable>
           </>
         ) : null}
 
         {step === 'teams' && needsTeams ? (
           <>
-            <Text style={styles.head}>Assign Teams</Text>
+            <Text style={styles.head}>{t('league.create.assignTeams')}</Text>
             <Text style={styles.helper}>
               {isScramble
-                ? 'Assign every player to a team (at least 2 per team). Pick one designated scorer per team — only they log team rounds.'
+                ? t('league.create.assignTeamsScrambleHelper')
                 : isBestBall
-                  ? 'Each player logs their own round. The best score on each hole counts for the team. Standings update as teammates submit.'
-                  : 'Select an unassigned player, then add them to a team. Tap someone on a team to remove or move them.'}
+                  ? t('league.create.assignTeamsBestBallHelper')
+                  : t('league.create.assignTeamsDefaultHelper')}
             </Text>
             <Pressable style={styles.outlineBtn} onPress={onAutoAssignTeams}>
-              <Text style={styles.outlineBtnTxt}>Auto-assign teams</Text>
+              <Text style={styles.outlineBtnTxt}>{t('league.create.autoAssignTeams')}</Text>
             </Pressable>
 
-            <Text style={styles.sectionLbl}>Unassigned players</Text>
+            <Text style={styles.sectionLbl}>{t('league.create.unassignedPlayers')}</Text>
             {unassignedMembers.length === 0 ? (
-              <Text style={styles.helper}>Everyone is on a team.</Text>
+              <Text style={styles.helper}>{t('league.create.everyoneOnTeam')}</Text>
             ) : (
               unassignedMembers.map((m) => (
                 <Pressable
@@ -1448,44 +1500,48 @@ export default function LeagueCreateScreen() {
               ))
             )}
 
-            <Text style={[styles.sectionLbl, { marginTop: 16 }]}>Teams</Text>
-            {teams.map((t) => (
-              <View key={t.id} style={styles.teamBucket}>
+            <Text style={[styles.sectionLbl, { marginTop: 16 }]}>{t('league.create.teams')}</Text>
+            {teams.map((team) => (
+              <View key={team.id} style={styles.teamBucket}>
                 <View style={styles.teamBucketHead}>
                   <TextInput
                     style={[styles.teamNameInput, { flex: 1 }]}
-                    value={t.name}
+                    value={team.name}
                     onChangeText={(v) =>
-                      setTeams((prev) => prev.map((x) => (x.id === t.id ? { ...x, name: v } : x)))
+                      setTeams((prev) =>
+                        prev.map((x) => (x.id === team.id ? { ...x, name: v } : x))
+                      )
                     }
                   />
                 </View>
                 {selectedMemberId && unassignedMembers.some((m) => m.userId === selectedMemberId) ? (
                   <Pressable
                     style={styles.addToTeamBtn}
-                    onPress={() => assignMemberToTeam(selectedMemberId, t.id)}
+                    onPress={() => assignMemberToTeam(selectedMemberId, team.id)}
                   >
-                    <Text style={styles.addToTeamBtnTxt}>Add to {t.name}</Text>
+                    <Text style={styles.addToTeamBtnTxt}>
+                      {t('league.create.addToTeam', { name: team.name })}
+                    </Text>
                   </Pressable>
                 ) : null}
                 <View style={styles.teamMembersCol}>
-                  {t.memberIds.length === 0 ? (
-                    <Text style={styles.teamEmptyTxt}>No players yet</Text>
+                  {team.memberIds.length === 0 ? (
+                    <Text style={styles.teamEmptyTxt}>{t('league.create.noPlayersYet')}</Text>
                   ) : (
-                    t.memberIds.map((uid) => {
+                    team.memberIds.map((uid) => {
                       const m = playingMembers.find((x) => x.userId === uid);
                       const showActions =
                         assignedMemberAction?.userId === uid &&
-                        assignedMemberAction.fromTeamId === t.id;
+                        assignedMemberAction.fromTeamId === team.id;
                       return (
                         <View key={uid} style={styles.assignedMemberBlock}>
                           <Pressable
                             style={[styles.chip, showActions && styles.chipOn]}
                             onPress={() =>
                               setAssignedMemberAction((prev) =>
-                                prev?.userId === uid && prev.fromTeamId === t.id
+                                prev?.userId === uid && prev.fromTeamId === team.id
                                   ? null
-                                  : { userId: uid, fromTeamId: t.id }
+                                  : { userId: uid, fromTeamId: team.id }
                               )
                             }
                           >
@@ -1503,17 +1559,21 @@ export default function LeagueCreateScreen() {
                                 style={styles.memberActionBtn}
                                 onPress={() => removeMemberFromTeams(uid)}
                               >
-                                <Text style={styles.memberActionRemove}>Remove from team</Text>
+                                <Text style={styles.memberActionRemove}>
+                                  {t('league.create.removeFromTeam')}
+                                </Text>
                               </Pressable>
                               {teams
-                                .filter((other) => other.id !== t.id)
+                                .filter((other) => other.id !== team.id)
                                 .map((other) => (
                                   <Pressable
                                     key={other.id}
                                     style={styles.memberActionBtn}
                                     onPress={() => assignMemberToTeam(uid, other.id)}
                                   >
-                                    <Text style={styles.memberActionMove}>Move to {other.name}</Text>
+                                    <Text style={styles.memberActionMove}>
+                                      {t('league.create.moveToTeam', { name: other.name })}
+                                    </Text>
                                   </Pressable>
                                 ))}
                             </View>
@@ -1523,24 +1583,24 @@ export default function LeagueCreateScreen() {
                     })
                   )}
                 </View>
-                {isScramble && t.memberIds.length >= 2 ? (
+                {isScramble && team.memberIds.length >= 2 ? (
                   <View style={styles.scorerBlock}>
                     <View style={styles.scorerLblRow}>
-                      <Text style={styles.scorerLbl}>Designated scorer</Text>
+                      <Text style={styles.scorerLbl}>{t('league.create.designatedScorer')}</Text>
                       <Pressable
                         style={styles.infoBtn}
                         onPress={() => setInfoSheet('scorer')}
                         hitSlop={6}
                         accessibilityRole="button"
-                        accessibilityLabel="About designated scorer"
+                        accessibilityLabel={t('league.create.aboutScorerA11y')}
                       >
                         <Text style={styles.infoBtnTxt}>ⓘ</Text>
                       </Pressable>
                     </View>
                     <View style={styles.scorerRow}>
-                      {t.memberIds.map((uid) => {
+                      {team.memberIds.map((uid) => {
                         const m = playingMembers.find((x) => x.userId === uid);
-                        const on = t.designatedScorerUserId === uid;
+                        const on = team.designatedScorerUserId === uid;
                         return (
                           <Pressable
                             key={uid}
@@ -1548,25 +1608,27 @@ export default function LeagueCreateScreen() {
                             onPress={() =>
                               setTeams((prev) =>
                                 prev.map((x) =>
-                                  x.id === t.id ? { ...x, designatedScorerUserId: uid } : x
+                                  x.id === team.id ? { ...x, designatedScorerUserId: uid } : x
                                 )
                               )
                             }
                           >
                             <Text style={[styles.scorerChipTxt, on && styles.scorerChipTxtOn]}>
-                              {m?.displayName ?? 'Player'}
+                              {m?.displayName ?? t('league.create.playerFallback')}
                             </Text>
                           </Pressable>
                         );
                       })}
                     </View>
                     {(() => {
-                      const idxs = t.memberIds
+                      const idxs = team.memberIds
                         .map((uid) => playingMembers.find((m) => m.userId === uid)?.index)
                         .filter((v): v is number => v != null);
                       const teamIdx = computeScrambleTeamIndex(idxs);
                       return teamIdx != null ? (
-                        <Text style={styles.teamIdxLine}>Team index (15%/85%): {teamIdx.toFixed(1)}</Text>
+                        <Text style={styles.teamIdxLine}>
+                          {t('league.create.teamIndexLine', { index: teamIdx.toFixed(1) })}
+                        </Text>
                       ) : null;
                     })()}
                   </View>
@@ -1574,30 +1636,31 @@ export default function LeagueCreateScreen() {
               </View>
             ))}
             {!teamsStepCanContinue && allAssigned ? (
-              <Text style={styles.helper}>Each team needs at least 2 players.</Text>
+              <Text style={styles.helper}>{t('league.create.eachTeamNeedsTwo')}</Text>
             ) : null}
             <Pressable
               style={[styles.primaryBtn, !teamsStepCanContinue && styles.btnDisabled]}
               disabled={!teamsStepCanContinue}
               onPress={() => goToStep('review')}
             >
-              <Text style={styles.primaryBtnTxt}>Continue</Text>
+              <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
             </Pressable>
           </>
         ) : null}
 
         {step === 'review' ? (
           <>
-            <Text style={styles.head}>Review & Launch</Text>
+            <Text style={styles.head}>{t('league.create.reviewLaunch')}</Text>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLine}>{name}</Text>
               {tournamentCourseId ? (
                 <Text style={styles.summaryMeta}>
-                  📍 {getCourseById(tournamentCourseId)?.name ?? 'Course'}
+                  📍 {getCourseById(tournamentCourseId)?.name ?? t('log.round.course')}
                 </Text>
               ) : null}
               <Text style={styles.summaryMeta}>
-                {format.replace('_', ' ')} · {formatYmdDisplay(startDateYmd)} – {formatYmdDisplay(endDateYmd)}
+                {t(`league.create.formats.${format}.title`)} · {formatYmdDisplay(startDateYmd)} –{' '}
+                {formatYmdDisplay(endDateYmd)}
               </Text>
               {dateError || dateRangeError ? (
                 <Text style={[styles.helper, { color: colors.danger, fontWeight: '600' }]}>
@@ -1605,39 +1668,61 @@ export default function LeagueCreateScreen() {
                 </Text>
               ) : null}
               <Text style={styles.summaryMeta}>
-                {isMatchPlay
-                  ? `Bracket · ${playingMembers.length} players · Handicap ${useHandicap ? 'on' : 'off'}`
-                  : `Best ${roundsThatCount} rounds · Handicap ${useHandicap ? 'on' : 'off'}`}
-                {holesPerRound === '9'
-                  ? ` · 9 holes${
-                      isMatchPlay
-                        ? ` (${matchPlayNine === 'back' ? 'Back 9' : 'Front 9'})`
-                        : ''
-                    }`
-                  : ''}
+                {(isMatchPlay
+                  ? t('league.create.summaryBracket', {
+                      count: playingMembers.length,
+                      handicap: useHandicap ? t('league.create.on').toLowerCase() : t('league.create.off').toLowerCase(),
+                    })
+                  : t('league.create.summaryBestRounds', {
+                      count: roundsThatCount,
+                      handicap: useHandicap ? t('league.create.on').toLowerCase() : t('league.create.off').toLowerCase(),
+                    })) +
+                  (holesPerRound === '9'
+                    ? isMatchPlay
+                      ? t('league.create.summaryNineHolesNamed', {
+                          nine:
+                            matchPlayNine === 'back'
+                              ? t('home.latestBack9')
+                              : t('home.latestFront9'),
+                        })
+                      : t('league.create.summaryNineHoles')
+                    : '')}
               </Text>
               {notes.trim() ? (
-                <Text style={styles.summaryMeta}>Notes: {notes.trim()}</Text>
+                <Text style={styles.summaryMeta}>
+                  {t('league.create.notesPrefix', { notes: notes.trim() })}
+                </Text>
               ) : null}
               {activeSeason ? (
                 <Text style={styles.summaryMeta}>
-                  {joinSeason ? `Season: ${activeSeason.name}` : 'Not part of the season'}
+                  {joinSeason
+                    ? t('league.create.seasonPrefix', { name: activeSeason.name })
+                    : t('league.create.notPartOfSeason')}
                 </Text>
               ) : null}
               {needsTeams ? (
                 <Text style={styles.summaryMeta}>
-                  {formatTeamCountResult(playingMembers.length, playersPerTeam)} · {playingMembers.length}{' '}
-                  players
+                  {t('league.create.teamCountPlayers', {
+                    teamResult: formatTeamCountResult(playingMembers.length, playersPerTeam),
+                    count: playingMembers.length,
+                  })}
                 </Text>
               ) : null}
               {needsTeams
-                ? teams.map((t) => {
-                    const scorer = playingMembers.find((m) => m.userId === t.designatedScorerUserId);
+                ? teams.map((team) => {
+                    const scorer = playingMembers.find(
+                      (m) => m.userId === team.designatedScorerUserId
+                    );
                     return (
-                      <Text key={t.id} style={styles.summaryMeta}>
-                        {t.name}: {t.memberIds.length} players
+                      <Text key={team.id} style={styles.summaryMeta}>
+                        {t('league.create.teamPlayersLine', {
+                          name: team.name,
+                          count: team.memberIds.length,
+                        })}
                         {isScramble && scorer
-                          ? ` · scorer: ${scorer.displayName.replace(' (you)', '')}`
+                          ? t('league.create.teamScorerSuffix', {
+                              scorer: scorer.displayName.replace(' (you)', ''),
+                            })
                           : ''}
                       </Text>
                     );
@@ -1648,14 +1733,25 @@ export default function LeagueCreateScreen() {
                     const m = playingMembers.find((x) => x.userId === uid);
                     const src =
                       m?.handicapSource === 'simcap'
-                        ? 'SimCap'
+                        ? t('handicap.sourceSimcap')
                         : m?.handicapSource === 'ghin'
-                          ? 'GHIN'
-                          : 'No HCP';
+                          ? t('handicap.sourceGhin')
+                          : t('handicap.sourceNone');
+                    const display = m?.displayName ?? t('league.create.playerFallback');
                     return (
                       <Text key={uid} style={styles.summaryMeta}>
-                        Seed {i + 1}: {m?.displayName ?? 'Player'}
-                        {m?.index != null ? ` (${m.index.toFixed(1)})` : ''} · {src}
+                        {m?.index != null
+                          ? t('league.create.seedLineWithIndex', {
+                              seed: i + 1,
+                              name: display,
+                              index: m.index.toFixed(1),
+                              source: src,
+                            })
+                          : t('league.create.seedLineNoIndex', {
+                              seed: i + 1,
+                              name: display,
+                              source: src,
+                            })}
                       </Text>
                     );
                   })
@@ -1666,7 +1762,11 @@ export default function LeagueCreateScreen() {
               disabled={busy || !!dateRangeError || !!dateError}
               onPress={() => void onLaunch()}
             >
-              {busy ? <ActivityIndicator color="#fff" /> : <Text style={styles.primaryBtnTxt}>Launch Tournament</Text>}
+              {busy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.primaryBtnTxt}>{t('league.create.launchTournament')}</Text>
+              )}
             </Pressable>
           </>
         ) : null}
@@ -1684,21 +1784,14 @@ export default function LeagueCreateScreen() {
           <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
             {infoSheet === 'season' ? (
               <>
-                <Text style={styles.infoExplainTitle}>Part of the season?</Text>
-                <Text style={styles.infoExplainBody}>
-                  When this is on, this tournament&apos;s results count toward the season&apos;s standings. Turn it
-                  off for a one-off event you don&apos;t want affecting the season.
-                </Text>
+                <Text style={styles.infoExplainTitle}>{t('league.create.seasonInfoTitle')}</Text>
+                <Text style={styles.infoExplainBody}>{t('league.create.seasonInfoBody')}</Text>
               </>
             ) : null}
             {infoSheet === 'scorer' ? (
               <>
-                <Text style={styles.infoExplainTitle}>Designated scorer</Text>
-                <Text style={styles.infoExplainBody}>
-                  Your team plays one ball, so there&apos;s only one score per hole. Only the Designated scorer can
-                  open the team&apos;s scorecard and enter scores — make sure it&apos;s whoever&apos;s actually
-                  keeping score for your group, or your team&apos;s results won&apos;t get entered.
-                </Text>
+                <Text style={styles.infoExplainTitle}>{t('league.create.scorerInfoTitle')}</Text>
+                <Text style={styles.infoExplainBody}>{t('league.create.scorerInfoBody')}</Text>
               </>
             ) : null}
           </View>

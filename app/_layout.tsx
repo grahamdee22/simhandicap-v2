@@ -15,6 +15,8 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
 import { BrandedSplashGate } from '@/src/components/BrandedSplashGate';
 import { colors } from '@/src/lib/constants';
+/** Side-effect: initialize i18next before any screen calls useTranslation. */
+import '@/src/i18n';
 
 export { ErrorBoundary } from 'expo-router';
 

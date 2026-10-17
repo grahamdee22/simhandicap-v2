@@ -1,0 +1,82 @@
+appId: com.simcap.app
+tags:
+  - demo
+  - tournament
+---
+# Demo: create a Stroke Play tournament in Fairway Collective.
+- runFlow: shared/sign-in-jordan.yaml
+
+- waitForAnimationToEnd
+- tapOn: "Social, tab.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Fairway Collective"
+    timeout: 30000
+
+- tapOn: "Fairway Collective"
+- waitForAnimationToEnd
+- tapOn: "Create Tournament"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Basic info"
+    timeout: 30000
+- waitForAnimationToEnd
+
+- tapOn: "Spring League"
+- eraseText
+- inputText: "Coastal Scratch Cup"
+- waitForAnimationToEnd
+- tapOn: "Stroke Play"
+- waitForAnimationToEnd
+- tapOn: "Continue"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Who's playing\\?"
+    timeout: 20000
+- waitForAnimationToEnd
+- tapOn:
+    text: "Select all"
+    optional: true
+- waitForAnimationToEnd
+- tapOn: "Continue"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Choose course"
+    timeout: 20000
+- waitForAnimationToEnd
+- tapOn: "Choose course"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Search courses"
+    timeout: 15000
+- tapOn: "Search courses"
+- inputText: "Pebble"
+- waitForAnimationToEnd
+- tapOn: "Pebble Beach Golf Links"
+- waitForAnimationToEnd
+
+- swipe:
+    direction: UP
+    duration: 600
+- waitForAnimationToEnd
+- tapOn: "Continue"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Launch Tournament"
+    timeout: 60000
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd
+- tapOn: "Launch Tournament"
+
+- extendedWaitUntil:
+    visible: "Coastal Scratch Cup"
+    timeout: 45000
+- waitForAnimationToEnd
+- waitForAnimationToEnd

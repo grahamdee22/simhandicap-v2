@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '@/src/i18n';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 import { signInWithApple, signInWithOAuthProvider } from '@/src/lib/oauthSignIn';
@@ -11,6 +12,7 @@ type Props = {
 };
 
 export function OAuthSignInButtons({ dividerLabel }: Props) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState<'apple' | 'google' | null>(null);
 
   const runApple = async () => {
@@ -18,7 +20,7 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
     const { error } = await signInWithApple();
     setBusy(null);
     if (error) {
-      showAppAlert('Sign in', error);
+      showAppAlert(t('auth.oauth.alertTitle'), error);
     }
   };
 
@@ -27,7 +29,7 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
     const { error } = await signInWithOAuthProvider('google');
     setBusy(null);
     if (error) {
-      showAppAlert('Sign in', error);
+      showAppAlert(t('auth.oauth.alertTitle'), error);
     }
   };
 
@@ -36,7 +38,7 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
       {Platform.OS === 'ios' ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Continue with Apple"
+          accessibilityLabel={t('auth.oauth.continueWithApple')}
           disabled={busy !== null}
           onPress={() => void runApple()}
           style={({ pressed }) => [
@@ -50,7 +52,7 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
           ) : (
             <>
               <Ionicons name="logo-apple" size={22} color="#fff" style={styles.icon} />
-              <Text style={styles.oauthTxt}>Continue with Apple</Text>
+              <Text style={styles.oauthTxt}>{t('auth.oauth.continueWithApple')}</Text>
             </>
           )}
         </Pressable>
@@ -58,7 +60,7 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Continue with Google"
+        accessibilityLabel={t('auth.oauth.continueWithGoogle')}
         disabled={busy !== null}
         onPress={() => void runGoogle()}
         style={({ pressed }) => [
@@ -72,7 +74,7 @@ export function OAuthSignInButtons({ dividerLabel }: Props) {
         ) : (
           <>
             <Ionicons name="logo-google" size={20} color="#fff" style={styles.icon} />
-            <Text style={styles.oauthTxt}>Continue with Google</Text>
+            <Text style={styles.oauthTxt}>{t('auth.oauth.continueWithGoogle')}</Text>
           </>
         )}
       </Pressable>

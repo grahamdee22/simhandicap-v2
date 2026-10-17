@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
+import { useTranslation } from '../../../src/i18n';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { settingsScreenshotPickerOptions } from '../../../src/lib/settingsScreenshotPicker';
 import { PLATFORMS, colors, type PlatformId } from '../../../src/lib/constants';
@@ -32,15 +33,13 @@ import {
   type CourseSeed,
 } from '../../../src/lib/courses';
 import {
-  mulliganDisplayLabel,
   normalizeMulligans,
-  type Mulligans,
   type PinDay,
   round1,
   type PuttingMode,
   type Wind,
 } from '../../../src/lib/handicap';
-import { pinDisplayLabel } from '../../../src/lib/pinPlacement';
+import { isGsProPlatform } from '../../../src/lib/pinPlacement';
 import {
   acceptOpenChallenge,
   fetchMatchPlayerDisplayNames,
@@ -53,39 +52,49 @@ import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken'
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
+import type { TFunction } from 'i18next';
 
 const WIZARD_STEPS = 3;
 
 const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
 
-const PUTTING_OPTS: { key: PuttingMode; dn: string }[] = [
-  { key: 'auto_2putt', dn: 'Auto' },
-  { key: 'gimme_5', dn: 'Gimme' },
-  { key: 'putt_all', dn: 'Putt' },
-];
+const PUTTING_KEYS: PuttingMode[] = ['auto_2putt', 'gimme_5', 'putt_all'];
+const WIND_KEYS: Wind[] = ['off', 'light', 'strong'];
 
-const WIND_OPTS: { key: Wind; dn: string }[] = [
-  { key: 'off', dn: 'Off' },
-  { key: 'light', dn: 'Light' },
-  { key: 'strong', dn: 'Strong' },
-];
-
-function formatHolesLabel(m: DbMatchRow): string {
-  if (m.holes === 18) return '18 holes';
-  if (m.nine_selection === 'front') return 'Front 9';
-  if (m.nine_selection === 'back') return 'Back 9';
-  return `${m.holes} holes`;
+function formatHolesLabel(m: DbMatchRow, t: TFunction): string {
+  if (m.holes === 18) return t('match.create.holes18');
+  if (m.nine_selection === 'front') return t('match.create.front9');
+  if (m.nine_selection === 'back') return t('match.create.back9');
+  return t('match.history.holesCount', { count: m.holes });
 }
 
-function conditionsSummary(m: DbMatchRow): string {
-  const p = PUTTING_OPTS.find((x) => x.key === m.putting_mode)?.dn ?? m.putting_mode;
-  const pin = pinDisplayLabel(
+function pinLabel(pin: PinDay, platformId: PlatformId, t: TFunction): string {
+  if (isGsProPlatform(platformId)) {
+    return t(`match.create.pin.${pin}`);
+  }
+  if (pin === 'thu') return t('match.create.pin.easy');
+  if (pin === 'fri') return t('match.create.pin.medium');
+  if (pin === 'sun') return t('match.create.pin.hard');
+  return t(`match.create.pin.${pin}`);
+}
+
+function conditionsSummary(m: DbMatchRow, t: TFunction): string {
+  const puttingKey = PUTTING_KEYS.includes(m.putting_mode as PuttingMode)
+    ? (m.putting_mode as PuttingMode)
+    : null;
+  const windKey = WIND_KEYS.includes(m.wind as Wind) ? (m.wind as Wind) : null;
+  const mullKey = normalizeMulligans(m.mulligans);
+  const putting = puttingKey
+    ? t(`match.create.putting.${puttingKey}.dn`)
+    : m.putting_mode;
+  const pin = pinLabel(
     (m.pin_placement as PinDay) || 'thu',
-    (m.player_1_platform as PlatformId) ?? 'Trackman'
+    (m.player_1_platform as PlatformId) ?? 'Trackman',
+    t
   );
-  const w = WIND_OPTS.find((x) => x.key === m.wind)?.dn ?? m.wind;
-  const mu = mulliganDisplayLabel(m.mulligans);
-  return `${p} putting · ${pin} pins · ${w} wind · ${mu}`;
+  const wind = windKey ? t(`match.create.windOpts.${windKey}.dn`) : m.wind;
+  const mulligans = t(`match.create.mulliganOpts.${mullKey}.ds`);
+  return t('match.create.conditionsLine', { putting, pins: pin, wind, mulligans });
 }
 
 function findCourseByMatchName(name: string): CourseSeed | undefined {
@@ -129,6 +138,7 @@ function resolvePlayer2Tee(args: {
 }
 
 export default function MatchOpenAcceptScreen() {
+  const { t } = useTranslation();
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const matchId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -141,7 +151,7 @@ export default function MatchOpenAcceptScreen() {
 
   const [loadErr, setLoadErr] = useState<string | null>(null);
   const [match, setMatch] = useState<DbMatchRow | null>(null);
-  const [posterName, setPosterName] = useState('Challenger');
+  const [posterName, setPosterName] = useState('');
   const [loadingMatch, setLoadingMatch] = useState(true);
   const [isOwnChallenge, setIsOwnChallenge] = useState(false);
 
@@ -202,7 +212,7 @@ export default function MatchOpenAcceptScreen() {
   useEffect(() => {
     if (!supabaseOn || !user?.id || !matchId) {
       setLoadingMatch(false);
-      setLoadErr(!matchId ? 'Missing match.' : 'Sign in to continue.');
+      setLoadErr(!matchId ? t('match.results.missingMatch') : t('match.openAccept.signInToContinue'));
       return;
     }
 
@@ -214,7 +224,7 @@ export default function MatchOpenAcceptScreen() {
       const res = await getMatchById(matchId, googleOAuthAccessToken ?? undefined);
       if (cancelled) return;
       if (res.error || !res.data) {
-        setLoadErr(res.error ?? 'Could not load this match.');
+        setLoadErr(res.error ?? t('match.openAccept.couldNotLoad'));
         setMatch(null);
         setLoadingMatch(false);
         return;
@@ -229,14 +239,14 @@ export default function MatchOpenAcceptScreen() {
         const expired = m.is_open && m.status === 'open' && lifecycle === 'expired';
         setLoadErr(
           taken
-            ? 'Challenge already taken.'
+            ? t('match.openAccept.challengeAlreadyTaken')
             : scheduled
-              ? 'This challenge is scheduled and not live yet.'
+              ? t('match.openAccept.scheduledNotLive')
               : awaitingPhoto
-                ? 'This challenge is waiting for the poster to upload a settings photo.'
+                ? t('match.openAccept.awaitingPosterPhoto')
                 : expired
-                  ? 'This challenge has expired.'
-                  : 'This open challenge is no longer available.'
+                  ? t('match.openAccept.expired')
+                  : t('match.openAccept.noLongerAvailable')
         );
         setMatch(null);
         setLoadingMatch(false);
@@ -257,7 +267,7 @@ export default function MatchOpenAcceptScreen() {
     return () => {
       cancelled = true;
     };
-  }, [supabaseOn, user?.id, matchId, googleOAuthAccessToken]);
+  }, [supabaseOn, user?.id, matchId, googleOAuthAccessToken, t]);
 
   useEffect(() => {
     setP1SettingsImageError(false);
@@ -265,7 +275,13 @@ export default function MatchOpenAcceptScreen() {
 
   useLayoutEffect(() => {
     const title =
-      phase === 'confirm' ? 'Open challenge' : wizardStep === 2 ? 'Confirm' : wizardStep === 1 ? 'Settings screenshot' : 'Your tee';
+      phase === 'confirm'
+        ? t('tabs.matchOpenAccept.title')
+        : wizardStep === 2
+          ? t('match.openAccept.steps.confirm')
+          : wizardStep === 1
+            ? t('match.openAccept.steps.settingsScreenshot')
+            : t('match.openAccept.steps.yourTee');
     navigation.setOptions({
       title,
       headerRight: () => (
@@ -274,13 +290,15 @@ export default function MatchOpenAcceptScreen() {
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.headerCancelPress}
           accessibilityRole="button"
-          accessibilityLabel="Close"
+          accessibilityLabel={t('match.openAccept.closeA11y')}
         >
-          <Text style={styles.headerCancelTxt}>{phase === 'wizard' ? 'Cancel' : 'Close'}</Text>
+          <Text style={styles.headerCancelTxt}>
+            {phase === 'wizard' ? t('common.cancel') : t('openFeedFilter.close')}
+          </Text>
         </Pressable>
       ),
     });
-  }, [navigation, router, phase, wizardStep]);
+  }, [navigation, router, phase, wizardStep, t]);
 
   const openPhotoSettings = useCallback(() => {
     if (Platform.OS === 'web') return;
@@ -362,20 +380,23 @@ export default function MatchOpenAcceptScreen() {
     setConfirmBusy(false);
     const m = res.data;
     if (res.error || !m) {
-      showAppAlert('Unavailable', res.error ?? 'Could not load this challenge.');
+      showAppAlert(
+        t('match.openAccept.unavailableTitle'),
+        res.error ?? t('match.openAccept.couldNotLoadChallenge')
+      );
       return;
     }
     const lifecycle = m.challenge_status ?? 'active';
     if (!(m.is_open && m.status === 'open' && lifecycle === 'active' && m.player_2_id == null)) {
       showAppAlert(
-        'Challenge already taken',
+        t('match.openAccept.challengeTakenTitle'),
         lifecycle === 'scheduled'
-          ? 'This challenge is scheduled and not live yet.'
+          ? t('match.openAccept.scheduledNotLive')
           : lifecycle === 'awaiting_photo'
-            ? 'This challenge is waiting for the poster to upload a settings photo.'
+            ? t('match.openAccept.awaitingPosterPhoto')
             : lifecycle === 'expired'
-              ? 'This challenge has expired.'
-              : 'Someone else accepted this challenge. It has been removed from the open feed.'
+              ? t('match.openAccept.expired')
+              : t('match.openAccept.someoneElseAccepted')
       );
       router.back();
       return;
@@ -383,7 +404,7 @@ export default function MatchOpenAcceptScreen() {
     setMatch(m);
     setPhase('wizard');
     setWizardStep(0);
-  }, [matchId, confirmBusy, isOwnChallenge, router, googleOAuthAccessToken]);
+  }, [matchId, confirmBusy, isOwnChallenge, router, googleOAuthAccessToken, t]);
 
   const onConfirmAccept = useCallback(async () => {
     if (!user || !match || !teeResolved || !matchId) return;
@@ -408,8 +429,8 @@ export default function MatchOpenAcceptScreen() {
     );
     if (!rpc.ok) {
       setSubmitBusy(false);
-      const msg = rpc.error ?? 'Unknown error';
-      showAppAlert('Could not accept', msg);
+      const msg = rpc.error ?? t('match.create.alerts.unknownError');
+      showAppAlert(t('match.openAccept.couldNotAccept'), msg);
       if (msg.toLowerCase().includes('already taken')) router.back();
       return;
     }
@@ -426,8 +447,8 @@ export default function MatchOpenAcceptScreen() {
       if ('error' in up) {
         setSubmitBusy(false);
         showAppAlert(
-          'Upload failed',
-          `${up.error}\n\nYou accepted this challenge. Share your sim settings screenshot with your opponent another way for now.`
+          t('match.create.alerts.uploadFailed'),
+          t('match.openAccept.uploadFailedBody', { error: up.error })
         );
         router.replace('/(tabs)/groups' as never);
         return;
@@ -440,28 +461,37 @@ export default function MatchOpenAcceptScreen() {
 
     setSubmitBusy(false);
     router.replace('/(tabs)/groups' as never);
-  }, [user, match, teeResolved, matchId, settingsImage, devSkipSettingsPhoto, router, googleOAuthAccessToken]);
+  }, [user, match, teeResolved, matchId, settingsImage, devSkipSettingsPhoto, router, googleOAuthAccessToken, t]);
 
   const wizardStepTitle = (n: number) => {
     switch (n) {
       case 0:
-        return 'Your tee';
+        return t('match.openAccept.steps.yourTee');
       case 1:
-        return 'Settings screenshot';
+        return t('match.openAccept.steps.settingsScreenshot');
       case 2:
-        return 'Confirm';
+        return t('match.openAccept.steps.confirm');
       default:
         return '';
     }
   };
 
+  const displayTeeName = (name: string) => {
+    if (name === 'Custom') return t('match.create.custom');
+    if (name === 'Your tee') return t('match.openAccept.yourTeeName');
+    if (name === 'Default') return t('match.openAccept.defaultTee');
+    return name;
+  };
+
+  const posterDisplayName = posterName.trim() || t('matchPlay.challengerFallback');
+
   if (!supabaseOn || !user) {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.fallback, { padding: gutter }]}>
-          <Text style={styles.fallbackTxt}>Sign in with Supabase configured to accept a challenge.</Text>
+          <Text style={styles.fallbackTxt}>{t('match.openAccept.offline')}</Text>
           <Pressable style={styles.secondaryBtn} onPress={() => router.back()}>
-            <Text style={styles.secondaryBtnTxt}>Go back</Text>
+            <Text style={styles.secondaryBtnTxt}>{t('match.create.goBack')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -482,9 +512,9 @@ export default function MatchOpenAcceptScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.fallback, { padding: gutter }]}>
-          <Text style={styles.fallbackTxt}>{loadErr ?? 'Match not found.'}</Text>
+          <Text style={styles.fallbackTxt}>{loadErr ?? t('match.results.matchNotFound')}</Text>
           <Pressable style={styles.secondaryBtn} onPress={() => router.replace('/(tabs)/groups' as never)}>
-            <Text style={styles.secondaryBtnTxt}>Back to Social</Text>
+            <Text style={styles.secondaryBtnTxt}>{t('match.results.backToSocial')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -504,38 +534,41 @@ export default function MatchOpenAcceptScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.stepHead}>Challenge details</Text>
+          <Text style={styles.stepHead}>{t('match.openAccept.challengeDetails')}</Text>
           <Text style={styles.body}>
-            <Text style={styles.bodyStrong}>{posterName}</Text> posted an open stroke-play challenge on{' '}
-            <Text style={styles.bodyStrong}>{match.course_name}</Text> ({formatHolesLabel(match)}). Conditions are fixed —
-            you&apos;ll pick your sim platform, tee, and upload your settings screenshot to accept.
+            <Text style={styles.bodyStrong}>{posterDisplayName}</Text>
+            {t('match.openAccept.challengeBodyMid')}
+            <Text style={styles.bodyStrong}>{match.course_name}</Text>
+            {t('match.openAccept.challengeBodyAfter', { holes: formatHolesLabel(match, t) })}
           </Text>
           <View style={styles.summaryBlock}>
             <Text style={styles.summaryLine}>
-              <Text style={styles.summaryLbl}>Their tee · </Text>
+              <Text style={styles.summaryLbl}>{t('match.accept.theirTee')}</Text>
               {match.player_1_tee} ({match.player_1_course_rating} / {match.player_1_course_slope})
             </Text>
             <Text style={[styles.summaryLine, styles.summaryLineLast]}>
-              <Text style={styles.summaryLbl}>Conditions · </Text>
-              {conditionsSummary(match)}
+              <Text style={styles.summaryLbl}>{t('match.create.summaryConditions')}</Text>
+              {conditionsSummary(match, t)}
             </Text>
           </View>
 
           {match.player_1_settings_photo_url?.trim() ? (
             <>
-              <Text style={styles.challengerShotTitle}>Challenger&apos;s sim settings</Text>
+              <Text style={styles.challengerShotTitle}>{t('match.accept.challengerSettings')}</Text>
               <View style={styles.challengerShotPanel}>
                 {!p1SettingsImageError ? (
                   <Image
                     source={{ uri: match.player_1_settings_photo_url }}
                     style={styles.challengerShotImage}
                     resizeMode="contain"
-                    accessibilityLabel={`${posterName}'s simulator settings screenshot`}
+                    accessibilityLabel={t('match.accept.challengerSettingsA11y', {
+                      name: posterDisplayName,
+                    })}
                     onError={() => setP1SettingsImageError(true)}
                   />
                 ) : (
                   <Text style={styles.challengerShotPlaceholder}>
-                    Could not load this image. Ask the challenger to re-post or share their settings another way.
+                    {t('match.accept.couldNotLoadChallengerImage')}
                   </Text>
                 )}
               </View>
@@ -543,10 +576,7 @@ export default function MatchOpenAcceptScreen() {
           ) : null}
 
           {isOwnChallenge ? (
-            <Text style={styles.ownHint}>
-              This is your open challenge. When another SimCap player accepts, it leaves the feed and the match goes
-              active.
-            </Text>
+            <Text style={styles.ownHint}>{t('match.openAccept.ownHint')}</Text>
           ) : (
             <Pressable
               style={({ pressed }) => [
@@ -560,7 +590,7 @@ export default function MatchOpenAcceptScreen() {
               {confirmBusy ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.sendBtnTxt}>Accept challenge</Text>
+                <Text style={styles.sendBtnTxt}>{t('match.openAccept.acceptChallenge')}</Text>
               )}
             </Pressable>
           )}
@@ -583,42 +613,40 @@ export default function MatchOpenAcceptScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.stepProg}>
-            Step {wizardStep + 1} of {WIZARD_STEPS}
+            {t('match.create.stepOf', { current: wizardStep + 1, total: WIZARD_STEPS })}
           </Text>
           <Text style={styles.stepHead}>{wizardStepTitle(wizardStep)}</Text>
 
           {wizardStep === 0 ? (
             <>
               {!course ? (
-                <Text style={styles.body}>
-                  This course isn&apos;t in the SimCap catalog. Enter rating and slope for the tee you will play from.
-                </Text>
+                <Text style={styles.body}>{t('match.openAccept.courseNotInCatalog')}</Text>
               ) : !showTeeSelector ? (
-                <Text style={styles.body}>
-                  This course uses a single rating/slope for your platform. We&apos;ll use it for your side of the match.
-                </Text>
+                <Text style={styles.body}>{t('match.create.singleRatingBody')}</Text>
               ) : (
                 <>
-                  <Text style={styles.sectionLabel}>Sim platform</Text>
+                  <Text style={styles.sectionLabel}>{t('match.create.simPlatform')}</Text>
                   <Pressable style={[styles.pill, platOpen && styles.pillActive]} onPress={() => setPlatOpen(true)}>
                     <Text style={styles.pillVal}>{platform}</Text>
                     <Text style={styles.chev}>▾</Text>
                   </Pressable>
-                  <Text style={styles.sectionLabel}>Your tee</Text>
+                  <Text style={styles.sectionLabel}>{t('match.openAccept.steps.yourTee')}</Text>
                   <View style={styles.teeChipWrap}>
-                    {courseTees.map((t) => (
+                    {courseTees.map((tee) => (
                       <Pressable
-                        key={t.name}
-                        style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
+                        key={tee.name}
+                        style={[styles.teeChip, teePickKey === tee.name && styles.teeChipOn]}
                         onPress={() => {
-                          setTeePickKey(t.name);
+                          setTeePickKey(tee.name);
                           setCustomRating('');
                           setCustomSlope('');
                         }}
                       >
-                        <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
-                        <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
-                          {t.rating} / {t.slope}
+                        <Text style={[styles.teeChipTxt, teePickKey === tee.name && styles.teeChipTxtOn]}>
+                          {tee.name}
+                        </Text>
+                        <Text style={[styles.teeChipSub, teePickKey === tee.name && styles.teeChipSubOn]}>
+                          {tee.rating} / {tee.slope}
                         </Text>
                       </Pressable>
                     ))}
@@ -627,33 +655,33 @@ export default function MatchOpenAcceptScreen() {
                       onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
                     >
                       <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>
-                        Custom
+                        {t('match.create.custom')}
                       </Text>
                       <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
-                        Your rating / slope
+                        {t('match.create.customTeeSub')}
                       </Text>
                     </Pressable>
                   </View>
                   {teePickKey === CUSTOM_TEE_ID ? (
                     <View style={styles.teeCustomRow}>
                       <View style={styles.teeCustomField}>
-                        <Text style={styles.teeCustomLbl}>Course rating</Text>
+                        <Text style={styles.teeCustomLbl}>{t('match.create.courseRating')}</Text>
                         <TextInput
                           style={styles.teeNumInput}
                           value={customRating}
                           onChangeText={setCustomRating}
-                          placeholder="e.g. 72.1"
+                          placeholder={t('match.create.ratingPlaceholder')}
                           placeholderTextColor={colors.subtle}
                           keyboardType="decimal-pad"
                         />
                       </View>
                       <View style={styles.teeCustomField}>
-                        <Text style={styles.teeCustomLbl}>Slope</Text>
+                        <Text style={styles.teeCustomLbl}>{t('match.create.slope')}</Text>
                         <TextInput
                           style={styles.teeNumInput}
                           value={customSlope}
                           onChangeText={setCustomSlope}
-                          placeholder="e.g. 128"
+                          placeholder={t('match.create.slopePlaceholder')}
                           placeholderTextColor={colors.subtle}
                           keyboardType="number-pad"
                         />
@@ -665,23 +693,23 @@ export default function MatchOpenAcceptScreen() {
               {!course ? (
                 <View style={styles.teeCustomRow}>
                   <View style={styles.teeCustomField}>
-                    <Text style={styles.teeCustomLbl}>Course rating</Text>
+                    <Text style={styles.teeCustomLbl}>{t('match.create.courseRating')}</Text>
                     <TextInput
                       style={styles.teeNumInput}
                       value={customRating}
                       onChangeText={setCustomRating}
-                      placeholder="e.g. 72.1"
+                      placeholder={t('match.create.ratingPlaceholder')}
                       placeholderTextColor={colors.subtle}
                       keyboardType="decimal-pad"
                     />
                   </View>
                   <View style={styles.teeCustomField}>
-                    <Text style={styles.teeCustomLbl}>Slope</Text>
+                    <Text style={styles.teeCustomLbl}>{t('match.create.slope')}</Text>
                     <TextInput
                       style={styles.teeNumInput}
                       value={customSlope}
                       onChangeText={setCustomSlope}
-                      placeholder="e.g. 128"
+                      placeholder={t('match.create.slopePlaceholder')}
                       placeholderTextColor={colors.subtle}
                       keyboardType="number-pad"
                     />
@@ -689,7 +717,7 @@ export default function MatchOpenAcceptScreen() {
                 </View>
               ) : !showTeeSelector ? (
                 <>
-                  <Text style={styles.sectionLabel}>Sim platform</Text>
+                  <Text style={styles.sectionLabel}>{t('match.create.simPlatform')}</Text>
                   <Pressable style={[styles.pill, platOpen && styles.pillActive]} onPress={() => setPlatOpen(true)}>
                     <Text style={styles.pillVal}>{platform}</Text>
                     <Text style={styles.chev}>▾</Text>
@@ -702,27 +730,27 @@ export default function MatchOpenAcceptScreen() {
           {wizardStep === 1 ? (
             <>
               <Text style={styles.body}>
-                Upload your sim settings so {posterName} can verify conditions match the agreed setup.
+                {t('match.openAccept.photoBody', { name: posterDisplayName })}
               </Text>
               {libraryPermissionBlocked ? (
                 <View style={styles.photoPermCallout} accessibilityLiveRegion="polite">
-                  <Text style={styles.photoPermCalloutTxt}>
-                    Photo library access is off. Open Settings, allow Photos for this app, then tap Choose photo again.
-                  </Text>
+                  <Text style={styles.photoPermCalloutTxt}>{t('match.openAccept.photoPermBlocked')}</Text>
                   {Platform.OS !== 'web' ? (
                     <Pressable
                       style={styles.photoPermSettingsBtn}
                       onPress={openPhotoSettings}
                       accessibilityRole="button"
-                      accessibilityLabel="Open Settings to allow photo access"
+                      accessibilityLabel={t('match.create.openSettingsA11y')}
                     >
-                      <Text style={styles.photoPermSettingsBtnTxt}>Open Settings</Text>
+                      <Text style={styles.photoPermSettingsBtnTxt}>{t('match.create.openSettings')}</Text>
                     </Pressable>
                   ) : null}
                 </View>
               ) : null}
               <Pressable style={styles.pickPhotoBtn} onPress={() => void onPickImage()}>
-                <Text style={styles.pickPhotoBtnTxt}>{settingsImage ? 'Change photo' : 'Choose photo'}</Text>
+                <Text style={styles.pickPhotoBtnTxt}>
+                  {settingsImage ? t('match.create.changePhoto') : t('match.create.choosePhoto')}
+                </Text>
               </Pressable>
               {ALLOW_SKIP_SETTINGS_SCREENSHOT && !settingsImage?.uri && !devSkipSettingsPhoto ? (
                 <Pressable
@@ -742,14 +770,14 @@ export default function MatchOpenAcceptScreen() {
 
           {wizardStep === 2 && teeResolved ? (
             <>
-              <Text style={styles.bodyMuted}>You&apos;ll join this match as player 2. This cannot be undone.</Text>
+              <Text style={styles.bodyMuted}>{t('match.openAccept.joinAsPlayer2')}</Text>
               <View style={styles.summaryBlock}>
                 <Text style={styles.summaryLine}>
-                  <Text style={styles.summaryLbl}>Your tee · </Text>
-                  {teeResolved.teeName} ({teeResolved.rating} / {teeResolved.slope})
+                  <Text style={styles.summaryLbl}>{t('match.create.summaryTee')}</Text>
+                  {displayTeeName(teeResolved.teeName)} ({teeResolved.rating} / {teeResolved.slope})
                 </Text>
                 <Text style={styles.summaryLine}>
-                  <Text style={styles.summaryLbl}>Platform · </Text>
+                  <Text style={styles.summaryLbl}>{t('match.accept.summaryPlatform')}</Text>
                   {platform}
                 </Text>
               </View>
@@ -770,7 +798,7 @@ export default function MatchOpenAcceptScreen() {
                 {submitBusy ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.sendBtnTxt}>Accept &amp; start match</Text>
+                  <Text style={styles.sendBtnTxt}>{t('match.openAccept.acceptStart')}</Text>
                 )}
               </Pressable>
             </>
@@ -778,7 +806,7 @@ export default function MatchOpenAcceptScreen() {
 
           <View style={[styles.navRow, isWide && styles.navRowWide]}>
             <Pressable style={styles.secondaryBtn} onPress={goBackWizard}>
-              <Text style={styles.secondaryBtnTxt}>Back</Text>
+              <Text style={styles.secondaryBtnTxt}>{t('match.create.back')}</Text>
             </Pressable>
             {wizardStep < WIZARD_STEPS - 1 ? (
               <Pressable
@@ -786,7 +814,7 @@ export default function MatchOpenAcceptScreen() {
                 onPress={goNextWizard}
                 disabled={!canContinueWizard}
               >
-                <Text style={styles.primaryBtnTxt}>Continue</Text>
+                <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
               </Pressable>
             ) : (
               <View style={styles.navSpacer} />
@@ -803,7 +831,7 @@ export default function MatchOpenAcceptScreen() {
           <View style={styles.modalRoot}>
             <Pressable style={styles.modalBackdropPress} onPress={() => setPlatOpen(false)} />
             <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
-              <Text style={styles.modalTitle}>Platform</Text>
+              <Text style={styles.modalTitle}>{t('match.create.platformModal')}</Text>
               {PLATFORMS.map((p) => (
                 <Pressable
                   key={p}

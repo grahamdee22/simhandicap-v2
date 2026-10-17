@@ -1,6 +1,7 @@
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { Circle, Line, Rect } from 'react-native-svg';
 import { SimCapWordmark } from '@/src/components/SimCapWordmark';
+import { useTranslation } from '@/src/i18n';
 
 /** Width / height for the combined robot + wordmark row (robot column sets height at ~280px width). */
 export const SIM_CAP_LOGO_ASPECT = 280 / 140;
@@ -17,11 +18,12 @@ type Props = {
  * SimCap hero lockup: robot illustration + Playfair “SimCap” wordmark on dark bands (home, auth).
  */
 export function SimCapLogoHero({ style, showTagline = true, wordmarkSize = 34 }: Props) {
+  const { t } = useTranslation();
   return (
     <View
       style={[styles.root, style]}
       accessibilityRole="image"
-      accessibilityLabel="Sim Cap, sim golf handicap"
+      accessibilityLabel={t('brand.logoA11y')}
     >
       <View style={styles.row}>
         <View style={styles.robotWrap}>
@@ -66,7 +68,7 @@ export function SimCapLogoHero({ style, showTagline = true, wordmarkSize = 34 }:
         </View>
         <View style={styles.wordBlock}>
           <SimCapWordmark accessible={false} fontSize={wordmarkSize} />
-          {showTagline ? <Text style={styles.tagline}>THE SIM GOLF HANDICAP APP</Text> : null}
+          {showTagline ? <Text style={styles.tagline}>{t('brand.tagline')}</Text> : null}
         </View>
       </View>
     </View>

@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../../../src/components/ContentWidth';
+import { useTranslation } from '../../../../src/i18n';
 import { confirmDestructive, showAppAlert } from '../../../../src/lib/alertCompat';
 import { colors } from '../../../../src/lib/constants';
 import { PRACTICE_ANALYZER_ENABLED } from '../../../../src/lib/featureFlags';
@@ -64,13 +65,14 @@ function StatTile({
 }
 
 function ClubCard({ club, tileFlex }: { club: ClubSummary; tileFlex: { flexBasis: `${number}%`; maxWidth: `${number}%` } }) {
+  const { t } = useTranslation();
   const metricsToShow = [...PRIMARY_METRICS, ...SECONDARY_METRICS].filter((key) => club.metrics[key]);
   return (
     <View style={styles.clubCard}>
       <View style={styles.clubHead}>
         <Text style={styles.clubTitle}>{club.club_label}</Text>
         <Text style={styles.clubCount}>
-          {club.shot_count} shot{club.shot_count === 1 ? '' : 's'}
+          {t('log.practice.detail.shotCount', { count: club.shot_count })}
         </Text>
       </View>
       <View style={styles.statsWrap}>
@@ -78,10 +80,15 @@ function ClubCard({ club, tileFlex }: { club: ClubSummary; tileFlex: { flexBasis
           const stats = club.metrics[key];
           if (!stats) return null;
           const withStdev = key === 'carry' || key === 'offline';
+          const baseLabel = metricLabel(key);
           return (
             <View key={key} style={[styles.statWrap, tileFlex]}>
               <StatTile
-                label={withStdev ? `${metricLabel(key)} ±` : metricLabel(key)}
+                label={
+                  withStdev
+                    ? t('log.practice.detail.metricWithStdev', { label: baseLabel })
+                    : baseLabel
+                }
                 value={formatMetricValue(stats, { withStdev })}
               />
             </View>
@@ -92,7 +99,7 @@ function ClubCard({ club, tileFlex }: { club: ClubSummary; tileFlex: { flexBasis
         <Text style={styles.clubTakeaway}>{club.takeaway}</Text>
       ) : !club.qualifies_for_takeaway ? (
         <Text style={styles.clubSkip}>
-          Stats only — {MIN_SHOTS_FOR_TAKEAWAY}+ shots of this club needed for a takeaway.
+          {t('log.practice.detail.clubSkip', { minShots: MIN_SHOTS_FOR_TAKEAWAY })}
         </Text>
       ) : null}
     </View>
@@ -100,6 +107,7 @@ function ClubCard({ club, tileFlex }: { club: ClubSummary; tileFlex: { flexBasis
 }
 
 export default function PracticeAnalysisDetailScreen() {
+  const { t } = useTranslation();
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const analysisId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -116,21 +124,21 @@ export default function PracticeAnalysisDetailScreen() {
   const load = useCallback(async (silent = false) => {
     if (!analysisId || !supabaseOn) {
       setLoading(false);
-      setErr(!supabaseOn ? 'Supabase is not configured.' : 'Missing analysis.');
+      setErr(!supabaseOn ? t('matchChat.notConfigured') : t('log.practice.detail.missingAnalysis'));
       return;
     }
     if (!silent) setLoading(true);
     setErr(null);
     const res = await fetchPracticeAnalysis(analysisId, token);
     if (res.error || !res.data) {
-      setErr(res.error ?? 'Could not load analysis.');
+      setErr(res.error ?? t('log.practice.detail.couldNotLoad'));
       setDetail(null);
       setLoading(false);
       return;
     }
     setDetail(mapPracticeAnalysisRow(res.data));
     setLoading(false);
-  }, [analysisId, supabaseOn, token]);
+  }, [analysisId, supabaseOn, token, t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -140,10 +148,10 @@ export default function PracticeAnalysisDetailScreen() {
 
   useEffect(() => {
     if (detail?.status !== 'processing') return;
-    const t = setInterval(() => {
+    const timer = setInterval(() => {
       void load(true);
     }, 2000);
-    return () => clearInterval(t);
+    return () => clearInterval(timer);
   }, [detail?.status, load]);
 
   const tileFlex = useMemo(() => {
@@ -155,20 +163,20 @@ export default function PracticeAnalysisDetailScreen() {
   const onDelete = useCallback(async () => {
     if (!detail || deleting) return;
     const ok = await confirmDestructive(
-      'Delete session?',
-      'This removes the saved insights and the uploaded CSV. It does not affect your SimCap index.',
-      'Delete'
+      t('log.practice.detail.deleteTitle'),
+      t('log.practice.detail.deleteBody'),
+      t('log.practice.detail.deleteAction')
     );
     if (!ok) return;
     setDeleting(true);
     const res = await deletePracticeAnalysis(detail.id, token);
     setDeleting(false);
     if (res.error) {
-      showAppAlert('Could not delete', res.error);
+      showAppAlert(t('log.practice.detail.couldNotDelete'), res.error);
       return;
     }
     router.replace('/(tabs)/log/practice' as never);
-  }, [detail, deleting, token, router]);
+  }, [detail, deleting, token, router, t]);
 
   if (!PRACTICE_ANALYZER_ENABLED) {
     return <Redirect href={'/(tabs)/log/round' as never} />;
@@ -188,12 +196,12 @@ export default function PracticeAnalysisDetailScreen() {
     return (
       <ContentWidth bg={colors.bg}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.muted}>{err ?? 'Analysis not found.'}</Text>
+          <Text style={styles.muted}>{err ?? t('log.practice.detail.notFound')}</Text>
           <Pressable
             style={[styles.secondaryBtn, { marginTop: 16 }]}
             onPress={() => router.replace('/(tabs)/log/practice' as never)}
           >
-            <Text style={styles.secondaryBtnTxt}>Back to Practice Analyzer</Text>
+            <Text style={styles.secondaryBtnTxt}>{t('log.practice.detail.backToAnalyzer')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -205,7 +213,7 @@ export default function PracticeAnalysisDetailScreen() {
       <ContentWidth bg={colors.bg}>
         <View style={[styles.centered, { padding: gutter }]}>
           <ActivityIndicator color={colors.header} />
-          <Text style={[styles.muted, { marginTop: 12 }]}>Analyzing this session…</Text>
+          <Text style={[styles.muted, { marginTop: 12 }]}>{t('log.practice.detail.analyzing')}</Text>
         </View>
       </ContentWidth>
     );
@@ -224,43 +232,46 @@ export default function PracticeAnalysisDetailScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.eyebrow}>Practice analysis</Text>
+        <Text style={styles.eyebrow}>{t('log.practice.detail.eyebrow')}</Text>
         <Text style={styles.title}>{detail.platformLabel}</Text>
         <Text style={styles.meta}>
-          {when}
-          {detail.shotCount > 0 ? ` · ${detail.shotCount} shots` : ''}
+          {detail.shotCount > 0
+            ? t('log.practice.detail.metaWithShots', { when, count: detail.shotCount })
+            : when}
         </Text>
 
         {detail.status === 'failed' ? (
-          <Text style={styles.failed}>{detail.errorMessage ?? 'Analysis failed.'}</Text>
+          <Text style={styles.failed}>
+            {detail.errorMessage ?? t('log.practice.detail.analysisFailed')}
+          </Text>
         ) : null}
 
         {detail.sessionNotes ? (
           <>
-            <Text style={styles.sectionTitle}>Session summary</Text>
+            <Text style={styles.sectionTitle}>{t('log.practice.detail.sessionSummary')}</Text>
             <View style={styles.panel}>
               <Text style={styles.summaryTxt}>{detail.sessionNotes}</Text>
             </View>
           </>
         ) : null}
 
-        <Text style={styles.sectionTitle}>By club</Text>
+        <Text style={styles.sectionTitle}>{t('log.practice.detail.byClub')}</Text>
         {detail.clubs.length === 0 ? (
-          <Text style={styles.muted}>No club breakdown stored for this session.</Text>
+          <Text style={styles.muted}>{t('log.practice.detail.noClubBreakdown')}</Text>
         ) : (
           detail.clubs.map((club) => <ClubCard key={club.club} club={club} tileFlex={tileFlex} />)
         )}
 
         {detail.tips.length > 0 ? (
           <>
-            <Text style={styles.sectionTitle}>Tips for next session</Text>
+            <Text style={styles.sectionTitle}>{t('log.practice.detail.tipsTitle')}</Text>
             <View style={styles.panel}>
-              {detail.tips.map((t, i) => (
+              {detail.tips.map((tip, i) => (
                 <View key={i} style={styles.tipRow}>
                   <View style={styles.tipNum}>
                     <Text style={styles.tipNumTxt}>{i + 1}</Text>
                   </View>
-                  <Text style={styles.tipTxt}>{t}</Text>
+                  <Text style={styles.tipTxt}>{tip}</Text>
                 </View>
               ))}
             </View>
@@ -271,7 +282,7 @@ export default function PracticeAnalysisDetailScreen() {
           style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
           onPress={() => router.replace('/(tabs)/log/practice' as never)}
         >
-          <Text style={styles.primaryBtnTxt}>Import another</Text>
+          <Text style={styles.primaryBtnTxt}>{t('log.practice.detail.importAnother')}</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [styles.secondaryBtn, pressed && styles.pressed, deleting && styles.disabled]}
@@ -281,7 +292,7 @@ export default function PracticeAnalysisDetailScreen() {
           {deleting ? (
             <ActivityIndicator color={colors.danger} />
           ) : (
-            <Text style={styles.dangerBtnTxt}>Delete session</Text>
+            <Text style={styles.dangerBtnTxt}>{t('log.practice.detail.deleteSession')}</Text>
           )}
         </Pressable>
       </ScrollView>

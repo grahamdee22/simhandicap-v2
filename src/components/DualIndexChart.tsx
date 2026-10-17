@@ -1,6 +1,7 @@
 import { memo } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Polyline, Text as SvgText } from 'react-native-svg';
+import { useTranslation } from '@/src/i18n';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
 import type { ChartPoint } from '../lib/realVsSim';
@@ -22,6 +23,7 @@ const PAD_T = 8;
 const PAD_B = 26;
 
 function DualIndexChartInner({ width, height, simPts, realPts, yMin, yMax, tMin, tMax }: Props) {
+  const { t } = useTranslation();
   const iw = Math.max(1, width - PAD_L - PAD_R);
   const ih = Math.max(1, height - PAD_T - PAD_B);
 
@@ -93,11 +95,11 @@ function DualIndexChartInner({ width, height, simPts, realPts, yMin, yMax, tMin,
       <View style={styles.legend}>
         <View style={styles.legendRow}>
           <View style={[styles.dot, { backgroundColor: colors.sage }]} />
-          <Text style={styles.legendTxt}>Sim index</Text>
+          <Text style={styles.legendTxt}>{t('charts.dual.simIndex')}</Text>
         </View>
         <View style={styles.legendRow}>
           <View style={[styles.dot, { backgroundColor: colors.warn }]} />
-          <Text style={styles.legendTxt}>GHIN (real)</Text>
+          <Text style={styles.legendTxt}>{t('charts.dual.ghinReal')}</Text>
         </View>
       </View>
     </View>

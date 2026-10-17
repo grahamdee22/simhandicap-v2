@@ -14,11 +14,13 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '@/src/i18n';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 import { useAppStore } from '@/src/store/useAppStore';
 
 export default function CompleteOauthProfileScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const [displayName, setDisplayName] = useState('');
@@ -27,7 +29,10 @@ export default function CompleteOauthProfileScreen() {
   const onSubmit = async () => {
     const dn = displayName.trim();
     if (!dn) {
-      showAppAlert('Display name', 'Enter how you want to appear in SimCap.');
+      showAppAlert(
+        t('auth.completeProfile.alertDisplayNameTitle'),
+        t('auth.completeProfile.alertDisplayNameBody')
+      );
       return;
     }
     const raw = await AsyncStorage.getItem('supabase.auth.token');
@@ -35,7 +40,7 @@ export default function CompleteOauthProfileScreen() {
     const accessToken = storedSession?.access_token;
     const userId = storedSession?.user?.id;
     if (!accessToken || !userId) {
-      showAppAlert('Session', 'You are not signed in.');
+      showAppAlert(t('auth.completeProfile.alertSessionTitle'), t('auth.completeProfile.alertNotSignedIn'));
       return;
     }
     setBusy(true);
@@ -69,7 +74,7 @@ export default function CompleteOauthProfileScreen() {
       } catch {
         /* ignore */
       }
-      showAppAlert('Could not save', msg);
+      showAppAlert(t('auth.completeProfile.alertCouldNotSave'), msg);
       return;
     }
     useAppStore.getState().setDisplayName(dn);
@@ -89,17 +94,15 @@ export default function CompleteOauthProfileScreen() {
           { paddingTop: 24, paddingBottom: insets.bottom + 28 },
         ]}
       >
-        <Text style={styles.title}>Choose your display name</Text>
-        <Text style={styles.sub}>
-          This is how other players see you in matches and groups. You can change it later in settings.
-        </Text>
+        <Text style={styles.title}>{t('auth.completeProfile.title')}</Text>
+        <Text style={styles.sub}>{t('auth.completeProfile.sub')}</Text>
 
-        <Text style={styles.lbl}>Display name</Text>
+        <Text style={styles.lbl}>{t('auth.completeProfile.displayName')}</Text>
         <TextInput
           style={styles.input}
           value={displayName}
           onChangeText={setDisplayName}
-          placeholder="e.g. Jordan P."
+          placeholder={t('auth.completeProfile.displayNamePlaceholder')}
           placeholderTextColor={colors.subtle}
           autoCorrect
           autoCapitalize="words"
@@ -114,7 +117,7 @@ export default function CompleteOauthProfileScreen() {
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.primaryTxt}>Continue</Text>
+            <Text style={styles.primaryTxt}>{t('common.continue')}</Text>
           )}
         </Pressable>
       </ScrollView>

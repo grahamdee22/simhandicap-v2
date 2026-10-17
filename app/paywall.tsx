@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../src/components/ContentWidth';
+import { useTranslation } from '../src/i18n';
 import { colors } from '../src/lib/constants';
 import { PAYWALL_ENABLED } from '../src/lib/featureFlags';
 import {
@@ -33,6 +34,7 @@ function packageForPlan(
 }
 
 export default function PaywallScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
@@ -55,12 +57,12 @@ export default function PaywallScreen() {
       setMonthly(packageForPlan(pkgs, 'monthly') ?? null);
       setAnnual(packageForPlan(pkgs, 'annual') ?? null);
       if (!entitled && Platform.OS !== 'web' && pkgs.length === 0) {
-        setError('No subscription plans are available right now. Try again later.');
+        setError(t('paywall.noPlans'));
       }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     if (!PAYWALL_ENABLED) return;
@@ -81,11 +83,11 @@ export default function PaywallScreen() {
     setBusy(null);
     if (result.cancelled) return;
     if (!result.success) {
-      setError(result.error ?? 'Purchase failed.');
+      setError(result.error ?? t('paywall.purchaseFailed'));
       return;
     }
     setIsPro(true);
-    setStatusMsg('You\'re subscribed to SimCap Pro.');
+    setStatusMsg(t('paywall.subscribed'));
     if (router.canGoBack()) {
       router.back();
     } else {
@@ -101,16 +103,16 @@ export default function PaywallScreen() {
     const result = await restorePurchases();
     if (!result.success) {
       setBusy(null);
-      setError(result.error ?? 'Restore failed.');
+      setError(result.error ?? t('paywall.restoreFailed'));
       return;
     }
     const entitled = await getIsProEntitled();
     setIsPro(entitled);
     setBusy(null);
     if (entitled) {
-      setStatusMsg('Purchases restored. You have SimCap Pro.');
+      setStatusMsg(t('paywall.restored'));
     } else {
-      setStatusMsg('No active SimCap Pro subscription found for this account.');
+      setStatusMsg(t('paywall.noActiveSub'));
     }
   };
 
@@ -136,7 +138,7 @@ export default function PaywallScreen() {
         ) : (
           <>
             <Text style={styles.planLabel}>{label}</Text>
-            <Text style={styles.planPrice}>{price ?? 'Unavailable'}</Text>
+            <Text style={styles.planPrice}>{price ?? t('common.unavailable')}</Text>
           </>
         )}
       </Pressable>
@@ -154,37 +156,32 @@ export default function PaywallScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.kicker}>SimCap Pro</Text>
-        <Text style={styles.headline}>Unlock SimCap Pro</Text>
-        <Text style={styles.intro}>
-          Subscription support for SimCap Pro. Pricing and benefits will finalize when the feature
-          goes live.
-        </Text>
+        <Text style={styles.kicker}>{t('paywall.kicker')}</Text>
+        <Text style={styles.headline}>{t('paywall.headline')}</Text>
+        <Text style={styles.intro}>{t('paywall.intro')}</Text>
 
         {isPro ? (
           <View style={styles.statusCard}>
-            <Text style={styles.statusTitle}>You&apos;re on Pro</Text>
-            <Text style={styles.statusBody}>Your SimCap Pro subscription is active on this account.</Text>
+            <Text style={styles.statusTitle}>{t('paywall.onProTitle')}</Text>
+            <Text style={styles.statusBody}>{t('paywall.onProBody')}</Text>
           </View>
         ) : null}
 
         {Platform.OS === 'web' ? (
           <View style={styles.card}>
-            <Text style={styles.webMsg}>
-              Subscriptions aren&apos;t available on web — use the iOS or Android app.
-            </Text>
+            <Text style={styles.webMsg}>{t('paywall.webUnavailable')}</Text>
           </View>
         ) : loading ? (
           <View style={styles.loadingWrap}>
             <ActivityIndicator color={colors.accent} />
-            <Text style={styles.loadingTxt}>Loading plans…</Text>
+            <Text style={styles.loadingTxt}>{t('paywall.loadingPlans')}</Text>
           </View>
         ) : (
           <View style={styles.card}>
-            <Text style={styles.lbl}>Choose a plan</Text>
+            <Text style={styles.lbl}>{t('paywall.choosePlan')}</Text>
             <View style={styles.planList}>
-              {renderPlanButton('monthly', monthly, 'Monthly')}
-              {renderPlanButton('annual', annual, 'Yearly')}
+              {renderPlanButton('monthly', monthly, t('paywall.monthly'))}
+              {renderPlanButton('annual', annual, t('paywall.yearly'))}
             </View>
             <Pressable
               onPress={() => void onRestore()}
@@ -195,12 +192,12 @@ export default function PaywallScreen() {
                 pressed && busy === null && styles.restorePressed,
               ]}
               accessibilityRole="button"
-              accessibilityLabel="Restore purchases"
+              accessibilityLabel={t('paywall.restoreA11y')}
             >
               {busy === 'restore' ? (
                 <ActivityIndicator color={colors.accent} />
               ) : (
-                <Text style={styles.restoreTxt}>Restore purchases</Text>
+                <Text style={styles.restoreTxt}>{t('paywall.restore')}</Text>
               )}
             </Pressable>
           </View>

@@ -1,0 +1,84 @@
+appId: com.simcap.app
+tags:
+  - demo
+  - log-round
+---
+# Demo: log a round at Pebble Beach (curated). Pace for how-to / Instagram footage.
+- runFlow: shared/sign-in-jordan.yaml
+
+- waitForAnimationToEnd
+- tapOn: "Log a round, tab.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "SIM PLATFORM"
+    timeout: 20000
+- waitForAnimationToEnd
+
+# Open course sheet (pill may already show a course name)
+- tapOn:
+    text: ".*Pebble Beach Golf Links.*"
+    optional: true
+- tapOn:
+    text: "Select.*"
+    optional: true
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Search by course name"
+    timeout: 15000
+- tapOn: "Search by course name"
+- waitForAnimationToEnd
+- inputText: "Pebble"
+- waitForAnimationToEnd
+- tapOn: "Pebble Beach Golf Links"
+- waitForAnimationToEnd
+
+- swipe:
+    direction: UP
+    duration: 800
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "White.*"
+    optional: true
+- waitForAnimationToEnd
+
+- swipe:
+    direction: UP
+    duration: 600
+- waitForAnimationToEnd
+
+- repeat:
+    times: 10
+    commands:
+      - tapOn: "\\+"
+      - waitForAnimationToEnd
+
+- swipe:
+    direction: UP
+    duration: 700
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Auto.*"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Sat.*"
+    optional: true
+- waitForAnimationToEnd
+
+- swipe:
+    direction: UP
+    duration: 500
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element: "Save round"
+    direction: DOWN
+    timeout: 8000
+- tapOn: "Save round"
+- extendedWaitUntil:
+    visible: ".*Pebble Beach.*"
+    timeout: 45000
+- waitForAnimationToEnd
+- waitForAnimationToEnd

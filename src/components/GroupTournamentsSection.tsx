@@ -2,6 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import i18n, { useTranslation } from '../i18n';
 import { todayLocalYmd } from '../lib/dates';
 import { colors } from '../lib/constants';
 import {
@@ -78,8 +79,8 @@ async function summarizePastLeague(
   if (!bundle) {
     const empty =
       league.format === 'match_play' && league.match_play_pairing_method === 'bracket'
-        ? 'No champion decided'
-        : 'No result recorded';
+        ? i18n.t('tournaments.section.noChampion')
+        : i18n.t('tournaments.section.noResult');
     return { dateRange, resultLine: empty };
   }
 
@@ -95,7 +96,9 @@ async function summarizePastLeague(
     });
     return {
       dateRange,
-      resultLine: model.championName ? `🏆 ${model.championName}` : 'No champion decided',
+      resultLine: model.championName
+        ? i18n.t('tournaments.section.champion', { name: model.championName })
+        : i18n.t('tournaments.section.noChampion'),
     };
   }
 
@@ -115,7 +118,9 @@ async function summarizePastLeague(
   const winner = standings[0]?.displayName;
   return {
     dateRange,
-    resultLine: winner ? `🏆 ${winner}` : 'No result recorded',
+    resultLine: winner
+      ? i18n.t('tournaments.section.champion', { name: winner })
+      : i18n.t('tournaments.section.noResult'),
   };
 }
 
@@ -136,6 +141,7 @@ export function GroupTournamentsSection({
   displayNames,
   onInfoPress,
 }: Props) {
+  const { t } = useTranslation();
   const router = useRouter();
   const initialCache = getTournamentSectionCache(group.id);
   const storeCreatorId = group.createdByUserId?.trim() || null;
@@ -264,7 +270,10 @@ export function GroupTournamentsSection({
                   ? pairing.player_2_entry_id
                   : pairing.player_1_entry_id;
               const opp = bundle.data.entries.find((e) => e.id === oppId);
-              const oppName = opp ? displayNames[opp.user_id] ?? 'Opponent' : 'Opponent';
+              const oppName =
+                opp
+                  ? displayNames[opp.user_id] ?? i18n.t('tournaments.section.opponent')
+                  : i18n.t('tournaments.section.opponent');
               matchLine = formatPairingResultLine(pairing, myEntry.id, oppName);
             }
           }
@@ -436,14 +445,14 @@ export function GroupTournamentsSection({
       <View style={[socialSectionHeaderStyles.headerWrap, { paddingHorizontal: gutter }]}>
         <View style={socialSectionHeaderStyles.row}>
           <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
-            Tournaments
+            {t('tournaments.section.title')}
           </Text>
           <Pressable
             style={socialSectionHeaderStyles.infoBtn}
             onPress={onInfoPress}
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityLabel="About Tournaments"
+            accessibilityLabel={t('tournaments.section.aboutA11y')}
           >
             <Text style={socialSectionHeaderStyles.infoBtnTxt}>ⓘ</Text>
           </Pressable>
@@ -456,18 +465,18 @@ export function GroupTournamentsSection({
             onPress={() => router.push(`/(tabs)/season/${activeSeason.id}` as never)}
             style={({ pressed }) => [styles.seasonCard, pressed && styles.pressed]}
             accessibilityRole="button"
-            accessibilityLabel={`Season ${activeSeason.name}`}
+            accessibilityLabel={t('tournaments.section.seasonA11y', { name: activeSeason.name })}
           >
-            <Text style={styles.pastMeta}>Season · Active</Text>
+            <Text style={styles.pastMeta}>{t('tournaments.section.seasonActive')}</Text>
             <Text style={styles.tournamentName}>{activeSeason.name}</Text>
             <Text style={styles.matchPreview}>
               {formatSeasonDateRange(activeSeason.start_date, activeSeason.end_date)}
               {' · '}
               {activeSeason.events_that_count == null
-                ? 'Every event counts'
-                : `Best ${activeSeason.events_that_count} events`}
+                ? t('tournaments.section.everyEventCounts')
+                : t('tournaments.section.bestEvents', { count: activeSeason.events_that_count })}
             </Text>
-            <Text style={styles.seeAll}>Season standings →</Text>
+            <Text style={styles.seeAll}>{t('tournaments.section.seasonStandings')}</Text>
           </Pressable>
         ) : null}
         {showLoadingSpinner ? (
@@ -486,7 +495,9 @@ export function GroupTournamentsSection({
                   </Text>
                 </View>
                 <View style={styles.daysBadge}>
-                  <Text style={styles.daysBadgeTxt}>{leagueDaysRemaining(activeLeague)}d left</Text>
+                  <Text style={styles.daysBadgeTxt}>
+                    {t('tournaments.section.daysLeft', { count: leagueDaysRemaining(activeLeague) })}
+                  </Text>
                 </View>
               </View>
               <Text style={styles.tournamentName}>{activeLeague.name}</Text>
@@ -520,31 +531,31 @@ export function GroupTournamentsSection({
                   ))}
                 </View>
               ) : (
-                <Text style={styles.previewMuted}>No scores yet — log rounds to climb the board.</Text>
+                <Text style={styles.previewMuted}>{t('tournaments.section.noScoresYet')}</Text>
               )}
-              <Text style={styles.seeAll}>See full standings →</Text>
+              <Text style={styles.seeAll}>{t('tournaments.section.seeFullStandings')}</Text>
             </Pressable>
           </View>
         ) : managerCheck === 'pending' ? (
           <View
             style={styles.neutralPending}
-            accessibilityLabel="Loading tournament options"
+            accessibilityLabel={t('tournaments.section.loadingOptionsA11y')}
             accessibilityRole="progressbar"
           />
         ) : !activeLeague && scheduledLeagues.length === 0 && !showCreateBtn ? (
-          <Text style={styles.emptyMuted}>No active tournament</Text>
+          <Text style={styles.emptyMuted}>{t('tournaments.section.noActive')}</Text>
         ) : null}
 
         {scheduledLeagues.length > 0 ? (
           <View style={styles.comingUpWrap}>
-            <Text style={styles.comingUpTitle}>Coming up</Text>
+            <Text style={styles.comingUpTitle}>{t('tournaments.section.comingUp')}</Text>
             {scheduledLeagues.map((league) => (
               <Pressable
                 key={league.id}
                 onPress={() => router.push(`/(tabs)/league/${league.id}` as never)}
                 style={({ pressed }) => [styles.comingUpRow, pressed && styles.pressed]}
                 accessibilityRole="button"
-                accessibilityLabel={`Scheduled tournament ${league.name}`}
+                accessibilityLabel={t('tournaments.section.scheduledA11y', { name: league.name })}
               >
                 <Text style={styles.pastMeta}>
                   {formatLeagueFormatLabel(league.format)} ·{' '}
@@ -566,9 +577,9 @@ export function GroupTournamentsSection({
             style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
             onPress={() => router.push(`/(tabs)/season-create/${group.id}` as never)}
             accessibilityRole="button"
-            accessibilityLabel="Start season"
+            accessibilityLabel={t('tournaments.section.startSeason')}
           >
-            <Text style={styles.createBtnTxt}>Start season</Text>
+            <Text style={styles.createBtnTxt}>{t('tournaments.section.startSeason')}</Text>
           </Pressable>
         ) : null}
 
@@ -577,10 +588,16 @@ export function GroupTournamentsSection({
             style={({ pressed }) => [styles.createBtn, pressed && styles.pressed]}
             onPress={() => router.push(`/(tabs)/league-create/${group.id}` as never)}
             accessibilityRole="button"
-            accessibilityLabel={activeLeague ? 'Schedule next tournament' : 'Create tournament'}
+            accessibilityLabel={
+              activeLeague
+                ? t('tournaments.section.scheduleNext')
+                : t('tournaments.section.createTournamentA11y')
+            }
           >
             <Text style={styles.createBtnTxt}>
-              {activeLeague ? 'Schedule next tournament' : 'Create Tournament'}
+              {activeLeague
+                ? t('tournaments.section.scheduleNext')
+                : t('tournaments.section.createTournament')}
             </Text>
           </Pressable>
         ) : null}
@@ -607,7 +624,9 @@ export function GroupTournamentsSection({
               style={styles.pastToggle}
               accessibilityRole="button"
             >
-              <Text style={styles.pastToggleTxt}>Past seasons ({pastSeasons.length})</Text>
+              <Text style={styles.pastToggleTxt}>
+                {t('tournaments.section.pastSeasons', { count: pastSeasons.length })}
+              </Text>
               <Text style={styles.pastChev}>{pastSeasonsOpen ? '▾' : '▸'}</Text>
             </Pressable>
             {pastSeasonsOpen
@@ -634,7 +653,9 @@ export function GroupTournamentsSection({
               style={styles.pastToggle}
               accessibilityRole="button"
             >
-              <Text style={styles.pastToggleTxt}>Past tournaments ({pastLeagues.length})</Text>
+              <Text style={styles.pastToggleTxt}>
+                {t('tournaments.section.pastTournaments', { count: pastLeagues.length })}
+              </Text>
               <Text style={styles.pastChev}>{pastOpen ? '▾' : '▸'}</Text>
             </Pressable>
             {pastOpen
@@ -651,7 +672,7 @@ export function GroupTournamentsSection({
                         {formatLeagueFormatLabel(l.format)} · {l.status}
                       </Text>
                       {summary === undefined ? (
-                        <Text style={styles.pastMeta}>Loading…</Text>
+                        <Text style={styles.pastMeta}>{t('tournaments.section.loading')}</Text>
                       ) : summary ? (
                         <Text style={styles.pastMeta}>
                           {summary.dateRange} · {summary.resultLine}
@@ -660,8 +681,8 @@ export function GroupTournamentsSection({
                         <Text style={styles.pastMeta}>
                           {formatLeagueDateRange(l.start_date, l.end_date)} ·{' '}
                           {l.format === 'match_play' && l.match_play_pairing_method === 'bracket'
-                            ? 'No champion decided'
-                            : 'No result recorded'}
+                            ? t('tournaments.section.noChampion')
+                            : t('tournaments.section.noResult')}
                         </Text>
                       )}
                     </Pressable>

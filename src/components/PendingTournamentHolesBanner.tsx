@@ -2,6 +2,7 @@ import { useFocusEffect } from '@react-navigation/native';
 import { useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import { googleOAuthAccessToken } from '../lib/googleOAuthAccessToken';
 import { resolveSocialGroupsAccessToken } from '../lib/socialGroups';
@@ -18,6 +19,7 @@ type Props = {
 
 /** Shown on main tabs when the user has incomplete tournament hole scorecards (PRD §5.2). */
 export function PendingTournamentHolesBanner({ gutter }: Props) {
+  const { t } = useTranslation();
   const router = useRouter();
   const [pending, setPending] = useState<PendingTournamentHoleRound[]>([]);
   const [loading, setLoading] = useState(false);
@@ -49,11 +51,11 @@ export function PendingTournamentHolesBanner({ gutter }: Props) {
 
   return (
     <View style={[styles.wrap, { marginHorizontal: gutter }]}>
-      <Text style={styles.title}>Complete your tournament scorecard</Text>
+      <Text style={styles.title}>{t('pendingHoles.title')}</Text>
       <Text style={styles.body}>
         {pending.length === 1
-          ? `Finish hole-by-hole entry for ${first.league_name} so it counts toward standings.`
-          : `You have ${pending.length} rounds waiting for hole-by-hole scores.`}
+          ? t('pendingHoles.bodyOne', { leagueName: first.league_name })
+          : t('pendingHoles.bodyMany', { count: pending.length })}
       </Text>
       <Pressable
         style={styles.btn}
@@ -67,7 +69,7 @@ export function PendingTournamentHolesBanner({ gutter }: Props) {
         {loading ? (
           <ActivityIndicator color="#fff" size="small" />
         ) : (
-          <Text style={styles.btnTxt}>Complete scorecard</Text>
+          <Text style={styles.btnTxt}>{t('pendingHoles.cta')}</Text>
         )}
       </Pressable>
     </View>

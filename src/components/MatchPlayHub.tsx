@@ -14,6 +14,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import i18n, { useTranslation } from '../i18n';
 import { confirmDestructive, showAppAlert } from '../lib/alertCompat';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
@@ -96,10 +97,10 @@ function uniqById<T extends { id: string }>(items: T[]): T[] {
 }
 
 function formatHoles(m: DbMatchRow): string {
-  if (m.holes === 18) return '18 holes';
-  if (m.nine_selection === 'front') return 'Front 9';
-  if (m.nine_selection === 'back') return 'Back 9';
-  return `${m.holes} holes`;
+  if (m.holes === 18) return i18n.t('matchPlay.holes18');
+  if (m.nine_selection === 'front') return i18n.t('matchPlay.front9');
+  if (m.nine_selection === 'back') return i18n.t('matchPlay.back9');
+  return i18n.t('matchPlay.holesCount', { count: m.holes });
 }
 
 function challengeLifecycle(m: DbMatchRow): 'scheduled' | 'awaiting_photo' | 'active' | 'expired' {
@@ -111,9 +112,19 @@ function challengeLifecycle(m: DbMatchRow): 'scheduled' | 'awaiting_photo' | 'ac
 function formatScheduledWhenAndCountdown(
   v: string | null | undefined
 ): { whenLabel: string; countdownLabel: string } {
-  if (!v) return { whenLabel: 'Scheduled', countdownLabel: 'soon' };
+  if (!v) {
+    return {
+      whenLabel: i18n.t('matchPlay.scheduled.fallback'),
+      countdownLabel: i18n.t('matchPlay.scheduled.soon'),
+    };
+  }
   const d = new Date(v);
-  if (!Number.isFinite(d.getTime())) return { whenLabel: 'Scheduled', countdownLabel: 'soon' };
+  if (!Number.isFinite(d.getTime())) {
+    return {
+      whenLabel: i18n.t('matchPlay.scheduled.fallback'),
+      countdownLabel: i18n.t('matchPlay.scheduled.soon'),
+    };
+  }
   const now = new Date();
   const tomorrow = new Date(now);
   tomorrow.setDate(now.getDate() + 1);
@@ -124,32 +135,40 @@ function formatScheduledWhenAndCountdown(
   const diffDays = Math.max(0, Math.floor(diffMs / (24 * 60 * 60 * 1000)));
   const diffHours = Math.max(0, Math.floor(diffMs / (60 * 60 * 1000)));
   const whenLabel = sameDay
-    ? `Today at ${time}`
+    ? i18n.t('matchPlay.scheduled.todayAt', { time })
     : sameTomorrow
-      ? `Tomorrow at ${time}`
+      ? i18n.t('matchPlay.scheduled.tomorrowAt', { time })
       : diffDays <= 7
-        ? `In ${diffDays + 1} days at ${time}`
+        ? i18n.t('matchPlay.scheduled.inDaysAt', { days: diffDays + 1, time })
         : d.toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   const countdownLabel =
-    diffDays >= 2 ? `in ${diffDays} days` : diffHours >= 1 ? `in ${diffHours} hours` : 'soon';
+    diffDays >= 2
+      ? i18n.t('matchPlay.scheduled.countdownDays', { count: diffDays })
+      : diffHours >= 1
+        ? i18n.t('matchPlay.scheduled.countdownHours', { count: diffHours })
+        : i18n.t('matchPlay.scheduled.soon');
   return { whenLabel, countdownLabel };
 }
 
 function statusLabel(m: DbMatchRow, uid: string): string {
-  if (m.status === 'pending' && !m.is_open && m.player_2_id === uid) return 'Needs your response';
-  if (m.status === 'pending' && !m.is_open && m.player_1_id === uid) return 'Awaiting opponent';
+  if (m.status === 'pending' && !m.is_open && m.player_2_id === uid) {
+    return i18n.t('matchPlay.status.needsYourResponse');
+  }
+  if (m.status === 'pending' && !m.is_open && m.player_1_id === uid) {
+    return i18n.t('matchPlay.status.awaitingOpponent');
+  }
   if (m.status === 'open' && m.is_open) {
     const cs = challengeLifecycle(m);
-    if (cs === 'scheduled') return 'Scheduled';
-    if (cs === 'awaiting_photo') return 'Awaiting photo';
-    if (cs === 'expired') return 'Expired';
-    return 'Open challenge';
+    if (cs === 'scheduled') return i18n.t('matchPlay.status.scheduled');
+    if (cs === 'awaiting_photo') return i18n.t('matchPlay.status.awaitingPhoto');
+    if (cs === 'expired') return i18n.t('matchPlay.status.expired');
+    return i18n.t('matchPlay.status.openChallenge');
   }
-  if (m.status === 'active') return 'In progress';
-  if (m.status === 'waiting') return 'Waiting on opponent';
-  if (m.status === 'complete') return 'Complete';
-  if (m.status === 'abandoned') return 'Abandoned';
-  if (m.status === 'declined') return 'Declined';
+  if (m.status === 'active') return i18n.t('matchPlay.status.inProgress');
+  if (m.status === 'waiting') return i18n.t('matchPlay.status.waitingOnOpponent');
+  if (m.status === 'complete') return i18n.t('matchPlay.status.complete');
+  if (m.status === 'abandoned') return i18n.t('matchPlay.status.abandoned');
+  if (m.status === 'declined') return i18n.t('matchPlay.status.declined');
   return m.status;
 }
 
@@ -159,16 +178,16 @@ function incomingActiveBadge(
   uid: string
 ): { text: string; tone: 'incoming' | 'muted' | 'yours' } | null {
   if (!m.is_open && m.status === 'pending' && m.player_2_id === uid) {
-    return { text: 'Awaiting your response', tone: 'incoming' };
+    return { text: i18n.t('matchPlay.status.awaitingYourResponse'), tone: 'incoming' };
   }
   if (!m.is_open && m.status === 'pending' && m.player_1_id === uid && m.player_2_id != null) {
-    return { text: 'Awaiting opponent', tone: 'muted' };
+    return { text: i18n.t('matchPlay.status.awaitingOpponent'), tone: 'muted' };
   }
   if (m.status === 'active' || m.status === 'waiting') {
-    return { text: 'In Progress', tone: 'muted' };
+    return { text: i18n.t('matchPlay.status.inProgressBadge'), tone: 'muted' };
   }
   if (m.is_open && m.status === 'open' && m.player_1_id === uid) {
-    return { text: 'Your open challenge', tone: 'yours' };
+    return { text: i18n.t('matchPlay.status.yourOpenChallenge'), tone: 'yours' };
   }
   return null;
 }
@@ -233,6 +252,7 @@ export function MatchPlayHub({
   onOutgoingAcceptedUnseenCount,
   onMatchPlayInfoPress,
 }: Props) {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const [myMatches, setMyMatches] = useState<DbMatchRow[]>([]);
@@ -381,8 +401,8 @@ export function MatchPlayHub({
       const proc = await processFutureOpenChallenges(googleOAuthAccessToken ?? undefined);
       if (!cancelled && proc.ok && proc.readyForUid) {
         showAppAlert(
-          'Future open challenge ready',
-          'Your Future Open Challenge is ready — upload your sim setup photo to go live.',
+          t('matchPlay.alerts.futureReadyTitle'),
+          t('matchPlay.alerts.futureReadyBody'),
           {
             onOk: () => {
               if (!cancelled) {
@@ -398,7 +418,7 @@ export function MatchPlayHub({
     return () => {
       cancelled = true;
     };
-  }, [isFocused, supabaseOn, userId, onIncomingDirectCount, onOutgoingAcceptedUnseenCount, googleOAuthAccessToken]);
+  }, [isFocused, supabaseOn, userId, onIncomingDirectCount, onOutgoingAcceptedUnseenCount, googleOAuthAccessToken, t]);
 
   useEffect(() => {
     const client = supabase;
@@ -521,62 +541,70 @@ export function MatchPlayHub({
 
   const onDeclineDirect = useCallback(
     async (m: DbMatchRow) => {
-      const challenger = m.player_1_id ? names[m.player_1_id] ?? 'Challenger' : 'Challenger';
+      const challenger = m.player_1_id
+        ? names[m.player_1_id] ?? t('matchPlay.challengerFallback')
+        : t('matchPlay.challengerFallback');
       const ok = await confirmDestructive(
-        'Decline challenge?',
-        `Decline the match on ${m.course_name}? ${challenger} will see this as declined.`,
-        'Decline'
+        t('matchPlay.alerts.declineTitle'),
+        t('matchPlay.alerts.declineBody', { course: m.course_name, challenger }),
+        t('matchPlay.alerts.declineAction')
       );
       if (!ok) return;
       setDeclineBusyId(m.id);
       const res = await updateMatchById(m.id, { status: 'declined' }, googleOAuthAccessToken ?? undefined);
       setDeclineBusyId(null);
       if (res.error) {
-        showAppAlert('Could not decline', res.error);
+        showAppAlert(t('matchPlay.alerts.couldNotDecline'), res.error);
         return;
       }
       setMyMatches((prev) =>
         prev.map((row) => (row.id === m.id ? { ...row, status: 'declined' as const } : row))
       );
     },
-    [names, googleOAuthAccessToken]
+    [names, googleOAuthAccessToken, t]
   );
 
   const onCancelOpenPosted = useCallback(async (m: DbMatchRow) => {
     const ok = await confirmDestructive(
-      'Cancel this open challenge?',
-      'It will be removed from the feed for everyone. This cannot be undone.',
-      'Cancel challenge'
+      t('matchPlay.alerts.cancelOpenTitle'),
+      t('matchPlay.alerts.cancelOpenBody'),
+      t('matchPlay.alerts.cancelOpenAction')
     );
     if (!ok) return;
     setCancelOpenBusyId(m.id);
     const res = await deleteMatchById(m.id, googleOAuthAccessToken ?? undefined);
     setCancelOpenBusyId(null);
     if (!res.ok) {
-      showAppAlert('Could not cancel', res.error ?? 'Unknown error');
+      showAppAlert(
+        t('matchPlay.alerts.couldNotCancel'),
+        res.error ?? t('matchPlay.alerts.unknownError')
+      );
       return;
     }
     setMyMatches((prev) => prev.filter((row) => row.id !== m.id));
     setOpenFeed((prev) => prev.filter((row) => row.id !== m.id));
-  }, [googleOAuthAccessToken]);
+  }, [googleOAuthAccessToken, t]);
 
   const onWithdrawPendingDirectChallenge = useCallback(async (m: DbMatchRow) => {
     const ok = await confirmDestructive(
-      'Withdraw challenge?',
-      'This removes the challenge before your opponent accepts. This cannot be undone.',
-      'Withdraw'
+      t('matchPlay.alerts.withdrawTitle'),
+      t('matchPlay.alerts.withdrawBody'),
+      t('matchPlay.alerts.withdrawAction')
     );
     if (!ok) return;
     setCancelOpenBusyId(m.id);
     const res = await deleteMatchById(m.id, googleOAuthAccessToken ?? undefined);
     setCancelOpenBusyId(null);
     if (!res.ok) {
-      showAppAlert('Could not withdraw', res.error ?? 'Unknown error');
+      showAppAlert(
+        t('matchPlay.alerts.couldNotWithdraw'),
+        res.error ?? t('matchPlay.alerts.unknownError')
+      );
       return;
     }
     setMyMatches((prev) => prev.filter((row) => row.id !== m.id));
     setOpenFeed((prev) => prev.filter((row) => row.id !== m.id));
-  }, [googleOAuthAccessToken]);
+  }, [googleOAuthAccessToken, t]);
 
   const onUploadAwaitingPhoto = useCallback(async (m: DbMatchRow) => {
     if (!userId) return;
@@ -585,7 +613,10 @@ export function MatchPlayHub({
       let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
       if (!perm.granted) perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
       if (!perm.granted) {
-        showAppAlert('Photos access needed', 'Allow photo library access to upload your sim settings screenshot.');
+        showAppAlert(
+          t('matchPlay.alerts.photosNeededTitle'),
+          t('matchPlay.alerts.photosNeededBody')
+        );
         return;
       }
       const result = await ImagePicker.launchImageLibraryAsync(settingsScreenshotPickerOptions());
@@ -598,7 +629,7 @@ export function MatchPlayHub({
         accessToken: googleOAuthAccessToken ?? undefined,
       });
       if ('error' in up) {
-        showAppAlert('Upload failed', up.error);
+        showAppAlert(t('matchPlay.alerts.uploadFailed'), up.error);
         return;
       }
       const upd = await updateMatchById(
@@ -610,7 +641,7 @@ export function MatchPlayHub({
         googleOAuthAccessToken ?? undefined
       );
       if (upd.error) {
-        showAppAlert('Could not go live', upd.error);
+        showAppAlert(t('matchPlay.alerts.couldNotGoLive'), upd.error);
         return;
       }
       setMyMatches((prev) =>
@@ -627,32 +658,38 @@ export function MatchPlayHub({
             : row
         )
       );
-      showAppAlert('Challenge is live', 'Your Future Open Challenge is now active in the feed.', {
-        onOk: () => {
-          void Promise.all([
-            listMyMatches(userId, googleOAuthAccessToken ?? undefined),
-            listOpenFeedMatches(userId, googleOAuthAccessToken ?? undefined),
-          ]).then(async ([myRes, openRes]) => {
-            if (myRes.error || openRes.error) return;
-            const my = myRes.data ?? [];
-            const open = openRes.data ?? [];
-            myMatchesRef.current = my;
-            setMyMatches(my);
-            setOpenFeed(open);
-            const { incomingDirect } = partitionHubData(my, userId);
-            onIncomingDirectCount(incomingDirect.length);
-            const nameRows = uniqById([...my, ...open]);
-            const sessionTok = supabase ? (await supabase.auth.getSession()).data.session?.access_token : undefined;
-            const nameBearer = googleOAuthAccessToken ?? sessionTok ?? undefined;
-            const nm = await fetchMatchPlayerDisplayNames(nameRows, nameBearer ?? undefined);
-            setNames(nm);
-          });
-        },
-      });
+      showAppAlert(
+        t('matchPlay.alerts.challengeLiveTitle'),
+        t('matchPlay.alerts.challengeLiveBody'),
+        {
+          onOk: () => {
+            void Promise.all([
+              listMyMatches(userId, googleOAuthAccessToken ?? undefined),
+              listOpenFeedMatches(userId, googleOAuthAccessToken ?? undefined),
+            ]).then(async ([myRes, openRes]) => {
+              if (myRes.error || openRes.error) return;
+              const my = myRes.data ?? [];
+              const open = openRes.data ?? [];
+              myMatchesRef.current = my;
+              setMyMatches(my);
+              setOpenFeed(open);
+              const { incomingDirect } = partitionHubData(my, userId);
+              onIncomingDirectCount(incomingDirect.length);
+              const nameRows = uniqById([...my, ...open]);
+              const sessionTok = supabase
+                ? (await supabase.auth.getSession()).data.session?.access_token
+                : undefined;
+              const nameBearer = googleOAuthAccessToken ?? sessionTok ?? undefined;
+              const nm = await fetchMatchPlayerDisplayNames(nameRows, nameBearer ?? undefined);
+              setNames(nm);
+            });
+          },
+        }
+      );
     } finally {
       setAwaitingPhotoBusyId(null);
     }
-  }, [onIncomingDirectCount, userId, googleOAuthAccessToken]);
+  }, [onIncomingDirectCount, userId, googleOAuthAccessToken, t]);
 
   const onDevRunFutureLifecycleNow = useCallback(async () => {
     if (!__DEV__) return;
@@ -789,7 +826,7 @@ export function MatchPlayHub({
       <View style={[styles.wrap, { marginHorizontal: gutter }]}>
         <View style={styles.matchPlayTitleRow}>
           <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
-            Match Play
+            {t('matchPlay.title')}
           </Text>
           {onMatchPlayInfoPress ? (
             <Pressable
@@ -797,18 +834,20 @@ export function MatchPlayHub({
               onPress={onMatchPlayInfoPress}
               hitSlop={6}
               accessibilityRole="button"
-              accessibilityLabel="About Match Play"
+              accessibilityLabel={t('matchPlay.aboutA11y')}
             >
               <Text style={styles.infoBtnTxt}>ⓘ</Text>
             </Pressable>
           ) : null}
         </View>
-        <Text style={styles.offlineHint}>Sign in with Supabase configured to see matches.</Text>
+        <Text style={styles.offlineHint}>{t('matchPlay.offlineHint')}</Text>
       </View>
     );
   }
 
-  const nameFor = (id: string | null) => (id ? names[id] ?? 'Golfer' : '—');
+  const nameFor = (id: string | null) =>
+    id ? names[id] ?? t('matchPlay.golferFallback') : t('matchPlay.emDash');
+  const awaitingOpponentLabel = t('matchPlay.status.awaitingOpponent');
 
   const renderCard = (
     m: DbMatchRow,
@@ -823,13 +862,16 @@ export function MatchPlayHub({
           ? (() => {
               const idx = m.player_1_ghin_index_at_post;
               if (idx != null && Number.isFinite(Number(idx)))
-                return `Posted by ${p1} · ${formatHandicapIndexDisplay(Number(idx))}`;
-              return `Posted by ${p1}`;
+                return t('matchPlay.postedByWithIndex', {
+                  name: p1,
+                  index: formatHandicapIndexDisplay(Number(idx)),
+                });
+              return t('matchPlay.postedBy', { name: p1 });
             })()
-          : `Posted by ${p1}`
+          : t('matchPlay.postedBy', { name: p1 })
         : m.player_2_id
-          ? `${p1} vs ${p2}`
-          : `Challenger ${p1}`;
+          ? t('matchPlay.vs', { p1, p2 })
+          : t('matchPlay.challengerName', { name: p1 });
     const incomingDirect = !m.is_open && m.status === 'pending' && m.player_2_id === uid;
     const isMyOpenPostedCancelable =
       listKind === 'hub' &&
@@ -862,37 +904,55 @@ export function MatchPlayHub({
           : null
         : null;
     const status = listKind === 'hub' ? null : statusLabel(m, uid);
-    const awaitingOpponentStatus = status === 'Awaiting opponent';
+    const awaitingOpponentStatus = status === awaitingOpponentLabel;
+    const strokePlay = t('matchPlay.strokePlay');
     const metaLine = (() => {
-      if (listKind === 'hub') return `${formatHoles(m)} · Stroke play`;
+      if (listKind === 'hub') {
+        return t('matchPlay.metaHub', { holes: formatHoles(m), strokePlay });
+      }
       const holes = formatHoles(m);
       if (listKind === 'openFeed' || listKind === 'openFeedScheduled') {
         const cs = challengeLifecycle(m);
         if (cs === 'scheduled') {
           const when = formatScheduledWhenAndCountdown(m.scheduled_for);
           return openFeedPlatform
-            ? `${when.whenLabel} · ${when.countdownLabel} · ${holes} · ${openFeedPlatform}`
-            : `${when.whenLabel} · ${when.countdownLabel} · ${holes}`;
+            ? t('matchPlay.metaOpenScheduledWithPlatform', {
+                when: when.whenLabel,
+                countdown: when.countdownLabel,
+                holes,
+                platform: openFeedPlatform,
+              })
+            : t('matchPlay.metaOpenScheduled', {
+                when: when.whenLabel,
+                countdown: when.countdownLabel,
+                holes,
+              });
         }
         if (awaitingOpponentStatus) {
-          return openFeedPlatform ? ` · ${holes} · ${openFeedPlatform}` : ` · ${holes}`;
+          return openFeedPlatform
+            ? t('matchPlay.metaOpenAwaitingWithPlatform', { holes, platform: openFeedPlatform })
+            : t('matchPlay.metaOpenAwaiting', { holes });
         }
-        return openFeedPlatform ? `${status} · ${holes} · ${openFeedPlatform}` : `${status} · ${holes}`;
+        return openFeedPlatform
+          ? t('matchPlay.metaOpenWithPlatform', { status, holes, platform: openFeedPlatform })
+          : t('matchPlay.metaOpen', { status, holes });
       }
-      if (awaitingOpponentStatus) return ` · ${holes} · Stroke play`;
-      return `${status} · ${holes} · Stroke play`;
+      if (awaitingOpponentStatus) {
+        return t('matchPlay.metaHistoryAwaiting', { holes, strokePlay });
+      }
+      return t('matchPlay.metaHistory', { status, holes, strokePlay });
     })();
 
     const cardInner = (
       <>
         {hubBadge ? (
-          hubBadge.text === 'Awaiting opponent' ? (
+          hubBadge.text === awaitingOpponentLabel ? (
             <Pressable
               style={[styles.cardStatusBadge, styles.cardStatusBadgeMuted, styles.awaitingOpponentBadge]}
               onPress={() => setAwaitingOpponentInfoOpen(true)}
               hitSlop={6}
               accessibilityRole="button"
-              accessibilityLabel="About awaiting opponent"
+              accessibilityLabel={t('matchPlay.aboutAwaitingOpponentA11y')}
             >
               <Text style={styles.cardStatusBadgeTxtMuted}>{hubBadge.text}</Text>
               <Text style={styles.infoBtnTxt}>ⓘ</Text>
@@ -926,7 +986,9 @@ export function MatchPlayHub({
         (m.status === 'active' || m.status === 'waiting') &&
         m.player_2_id != null ? (
           <View style={[styles.cardStatusBadge, styles.cardStatusBadgeVerification]}>
-            <Text style={styles.cardStatusBadgeTxtVerification}>Verification required</Text>
+            <Text style={styles.cardStatusBadgeTxtVerification}>
+              {t('matchPlay.verificationRequired')}
+            </Text>
           </View>
         ) : null}
         <Text style={styles.cardTitle} numberOfLines={1}>
@@ -939,9 +1001,9 @@ export function MatchPlayHub({
               onPress={() => setAwaitingOpponentInfoOpen(true)}
               hitSlop={6}
               accessibilityRole="button"
-              accessibilityLabel="About awaiting opponent"
+              accessibilityLabel={t('matchPlay.aboutAwaitingOpponentA11y')}
             >
-              <Text style={styles.cardMeta}>Awaiting opponent</Text>
+              <Text style={styles.cardMeta}>{awaitingOpponentLabel}</Text>
               <Text style={styles.infoBtnTxt}>ⓘ</Text>
             </Pressable>
             <Text style={styles.cardMeta}>{metaLine}</Text>
@@ -956,7 +1018,7 @@ export function MatchPlayHub({
           <View style={styles.chatBadge}>
             <View style={styles.chatBadgeDot} />
             <Text style={styles.chatBadgeTxt}>
-              {unreadByMatchId[m.id] > 9 ? '9+' : unreadByMatchId[m.id]}
+              {unreadByMatchId[m.id] > 9 ? t('matchPlay.unreadCap') : unreadByMatchId[m.id]}
             </Text>
           </View>
         ) : null}
@@ -966,9 +1028,17 @@ export function MatchPlayHub({
     if (listKind === 'openFeed') {
       const idx = m.player_1_ghin_index_at_post;
       const idxOk = idx != null && Number.isFinite(Number(idx));
-      const idxA11y = idxOk ? `, index ${formatHandicapIndexDisplay(Number(idx))}` : '';
-      const platA11y = openFeedPlatform ? `, ${openFeedPlatform}` : '';
-      const openA11y = `Open challenge on ${m.course_name}${platA11y}${idxA11y}`;
+      const idxA11y = idxOk
+        ? t('matchPlay.a11y.indexPart', { index: formatHandicapIndexDisplay(Number(idx)) })
+        : '';
+      const platA11y = openFeedPlatform
+        ? t('matchPlay.a11y.platformPart', { platform: openFeedPlatform })
+        : '';
+      const openA11y = t('matchPlay.a11y.openChallenge', {
+        course: m.course_name,
+        platform: platA11y,
+        index: idxA11y,
+      });
       return (
         <Pressable
           key={m.id}
@@ -978,7 +1048,7 @@ export function MatchPlayHub({
           accessibilityLabel={openA11y}
         >
           {cardInner}
-          <Text style={styles.cardTapHint}>Tap for details</Text>
+          <Text style={styles.cardTapHint}>{t('matchPlay.tapForDetails')}</Text>
         </Pressable>
       );
     }
@@ -995,7 +1065,7 @@ export function MatchPlayHub({
                 style={({ pressed }) => [styles.groupDeleteBtn, pressed && styles.groupDeleteBtnPressed]}
                 hitSlop={10}
                 accessibilityRole="button"
-                accessibilityLabel="Delete scheduled challenge"
+                accessibilityLabel={t('matchPlay.a11y.deleteScheduled')}
               >
                 {cancelOpenBusyId === m.id ? (
                   <ActivityIndicator size="small" color={colors.subtle} />
@@ -1018,10 +1088,10 @@ export function MatchPlayHub({
           style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
           onPress={() => router.push(`/(tabs)/match-results/${m.id}` as never)}
           accessibilityRole="button"
-          accessibilityLabel={`Results for ${m.course_name}`}
+          accessibilityLabel={t('matchPlay.a11y.results', { course: m.course_name })}
         >
           {cardInner}
-          <Text style={styles.cardTapHint}>Tap for results</Text>
+          <Text style={styles.cardTapHint}>{t('matchPlay.tapForResults')}</Text>
         </Pressable>
       );
     }
@@ -1033,10 +1103,10 @@ export function MatchPlayHub({
           style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
           onPress={() => onOpenLiveScoring(m)}
           accessibilityRole="button"
-          accessibilityLabel={`Open live scoring for ${m.course_name}`}
+          accessibilityLabel={t('matchPlay.a11y.liveScoring', { course: m.course_name })}
         >
           {cardInner}
-          <Text style={styles.cardTapHint}>Tap to enter scores</Text>
+          <Text style={styles.cardTapHint}>{t('matchPlay.tapToEnterScores')}</Text>
         </Pressable>
       );
     }
@@ -1055,7 +1125,9 @@ export function MatchPlayHub({
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel={
-                isMyOpenPostedCancelable ? 'Cancel open challenge' : 'Withdraw direct challenge'
+                isMyOpenPostedCancelable
+                  ? t('matchPlay.a11y.cancelOpen')
+                  : t('matchPlay.a11y.withdrawDirect')
               }
             >
               {cancelOpenBusyId === m.id ? (
@@ -1075,12 +1147,12 @@ export function MatchPlayHub({
               onPress={() => void onDeclineDirect(m)}
               disabled={declineBusy}
               accessibilityRole="button"
-              accessibilityLabel="Decline challenge"
+              accessibilityLabel={t('matchPlay.a11y.decline')}
             >
               {declineBusy ? (
                 <ActivityIndicator color={colors.header} />
               ) : (
-                <Text style={styles.declineOutlineTxt}>Decline</Text>
+                <Text style={styles.declineOutlineTxt}>{t('matchPlay.decline')}</Text>
               )}
             </Pressable>
             <Pressable
@@ -1088,9 +1160,9 @@ export function MatchPlayHub({
               onPress={() => onAcceptDirect(m)}
               disabled={declineBusy}
               accessibilityRole="button"
-              accessibilityLabel="Accept challenge"
+              accessibilityLabel={t('matchPlay.a11y.accept')}
             >
-              <Text style={styles.acceptBtnTxt}>Accept</Text>
+              <Text style={styles.acceptBtnTxt}>{t('matchPlay.accept')}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -1101,12 +1173,12 @@ export function MatchPlayHub({
               onPress={() => void onUploadAwaitingPhoto(m)}
               disabled={awaitingPhotoBusyId === m.id}
               accessibilityRole="button"
-              accessibilityLabel="Upload settings photo to activate challenge"
+              accessibilityLabel={t('matchPlay.a11y.uploadPhoto')}
             >
               {awaitingPhotoBusyId === m.id ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.acceptBtnTxt}>Upload photo to go live</Text>
+                <Text style={styles.acceptBtnTxt}>{t('matchPlay.uploadPhotoToGoLive')}</Text>
               )}
             </Pressable>
           </View>
@@ -1119,7 +1191,7 @@ export function MatchPlayHub({
     <View style={[styles.wrap, { marginHorizontal: gutter }]}>
       <View style={styles.matchPlayTitleRow}>
         <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
-          Match Play
+          {t('matchPlay.title')}
         </Text>
         {onMatchPlayInfoPress ? (
           <Pressable
@@ -1127,7 +1199,7 @@ export function MatchPlayHub({
             onPress={onMatchPlayInfoPress}
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityLabel="About Match Play"
+            accessibilityLabel={t('matchPlay.aboutA11y')}
           >
             <Text style={styles.infoBtnTxt}>ⓘ</Text>
           </Pressable>
@@ -1138,9 +1210,9 @@ export function MatchPlayHub({
         onPress={onCreateMatch}
         style={({ pressed }) => [styles.createBtn, pressed && styles.createBtnPressed]}
         accessibilityRole="button"
-        accessibilityLabel="Create match"
+        accessibilityLabel={t('matchPlay.createMatchA11y')}
       >
-        <Text style={styles.createBtnTxt}>Create Match</Text>
+        <Text style={styles.createBtnTxt}>{t('matchPlay.createMatch')}</Text>
       </Pressable>
 
       {loading ? (
@@ -1150,21 +1222,21 @@ export function MatchPlayHub({
       ) : null}
 
       {fetchError ? (
-        <Text style={styles.errorTxt}>Couldn&apos;t load matches. Open Social again to retry.</Text>
+        <Text style={styles.errorTxt}>{t('matchPlay.loadError')}</Text>
       ) : null}
 
-      <Text style={styles.sectionTitle}>Incoming &amp; active</Text>
-      <Text style={styles.sectionSub}>Direct challenges and rounds in progress.</Text>
+      <Text style={styles.sectionTitle}>{t('matchPlay.incomingActive')}</Text>
+      <Text style={styles.sectionSub}>{t('matchPlay.incomingActiveSub')}</Text>
       {section1.length === 0 ? (
-        <Text style={styles.empty}>No incoming challenges or active matches.</Text>
+        <Text style={styles.empty}>{t('matchPlay.incomingActiveEmpty')}</Text>
       ) : (
         section1.map((m) => renderCard(m, userId))
       )}
 
       <Text style={[styles.sectionTitle, styles.sectionSpaced]} accessibilityRole="header">
-        Open challenge feed
+        {t('matchPlay.openFeed')}
       </Text>
-      <Text style={styles.sectionSub}>Anyone on SimCap can accept these.</Text>
+      <Text style={styles.sectionSub}>{t('matchPlay.openFeedSub')}</Text>
       {__DEV__ ? (
         <Pressable
           onPress={() => void onDevRunFutureLifecycleNow()}
@@ -1195,29 +1267,31 @@ export function MatchPlayHub({
         onClearPlatformsChip={onClearOpenFeedPlatformsChip}
       />
       {openFeedActive.length === 0 && openFeedScheduled.length === 0 ? (
-        <Text style={styles.empty}>No open challenges match these filters. Clear filters or adjust your choices.</Text>
+        <Text style={styles.empty}>{t('matchPlay.openFeedEmpty')}</Text>
       ) : (
         <>
-          <Text style={styles.feedSplitTitle}>Open now</Text>
+          <Text style={styles.feedSplitTitle}>{t('matchPlay.openNow')}</Text>
           {openFeedActive.length === 0 ? (
-            <Text style={styles.empty}>No active open challenges right now.</Text>
+            <Text style={styles.empty}>{t('matchPlay.openNowEmpty')}</Text>
           ) : (
             openFeedActive.map((m) => renderCard(m, userId, 'openFeed'))
           )}
-          <Text style={[styles.feedSplitTitle, styles.feedSplitTitleSpaced]}>Scheduled challenges</Text>
-          <Text style={styles.feedSplitSub}>Coming soon — not yet open for acceptance</Text>
+          <Text style={[styles.feedSplitTitle, styles.feedSplitTitleSpaced]}>
+            {t('matchPlay.scheduledChallenges')}
+          </Text>
+          <Text style={styles.feedSplitSub}>{t('matchPlay.scheduledChallengesSub')}</Text>
           {openFeedScheduled.length === 0 ? (
-            <Text style={styles.empty}>No scheduled open challenges right now.</Text>
+            <Text style={styles.empty}>{t('matchPlay.scheduledEmpty')}</Text>
           ) : (
             openFeedScheduled.map((m) => renderCard(m, userId, 'openFeedScheduled'))
           )}
         </>
       )}
 
-      <Text style={[styles.sectionTitle, styles.sectionSpaced]}>Recent matches</Text>
-      <Text style={styles.sectionSub}>Finished or abandoned stroke-play matches.</Text>
+      <Text style={[styles.sectionTitle, styles.sectionSpaced]}>{t('matchPlay.recentMatches')}</Text>
+      <Text style={styles.sectionSub}>{t('matchPlay.recentMatchesSub')}</Text>
       {completed.length === 0 ? (
-        <Text style={styles.empty}>No finished or abandoned matches yet.</Text>
+        <Text style={styles.empty}>{t('matchPlay.recentEmpty')}</Text>
       ) : (
         completed.map((m) => renderCard(m, userId, 'recentHistory'))
       )}
@@ -1234,12 +1308,8 @@ export function MatchPlayHub({
             onPress={() => setAwaitingOpponentInfoOpen(false)}
           />
           <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.infoExplainTitle}>Awaiting opponent</Text>
-            <Text style={styles.infoExplainBody}>
-              Match Play doesn&apos;t use a shared scorecard — you and your opponent each enter your own hole-by-hole
-              scores separately. This just means they haven&apos;t finished entering theirs yet. Nothing&apos;s broken
-              and there&apos;s nothing for you to do.
-            </Text>
+            <Text style={styles.infoExplainTitle}>{t('matchPlay.awaitingOpponentExplainTitle')}</Text>
+            <Text style={styles.infoExplainBody}>{t('matchPlay.awaitingOpponentExplainBody')}</Text>
           </View>
         </View>
       </Modal>

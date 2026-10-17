@@ -17,9 +17,13 @@
       "supportsTablet": true,
       "usesAppleSignIn": true,
       "entitlements": {
-        "com.apple.developer.applesignin": ["Default"]
+        "com.apple.developer.applesignin": [
+          "Default"
+        ]
       },
-      "associatedDomains": ["applinks:app.sim-cap.com"],
+      "associatedDomains": [
+        "applinks:app.sim-cap.com"
+      ],
       "bundleIdentifier": "com.simcap.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -52,7 +56,10 @@
               "pathPrefix": "/"
             }
           ],
-          "category": ["BROWSABLE", "DEFAULT"]
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
         }
       ],
       "package": "com.simcap.app"
@@ -78,7 +85,8 @@
           "photosPermission": "SimCap needs photo access to upload a sim settings screenshot for Match Play.",
           "cameraPermission": "SimCap needs camera access to scan your GS Pro scorecard."
         }
-      ]
+      ],
+      "expo-localization"
     ],
     "experiments": {
       "typedRoutes": true

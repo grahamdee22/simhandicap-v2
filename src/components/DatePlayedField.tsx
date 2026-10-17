@@ -4,6 +4,7 @@ import { Modal, Platform, ScrollView, StyleSheet, Text, View } from 'react-nativ
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import {
   clampYmdParts,
@@ -13,21 +14,6 @@ import {
   todayLocalYmd,
   ymdFromParts,
 } from '../lib/dates';
-
-const MONTH_NAMES = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-] as const;
 
 const WHEEL_ROW = 40;
 
@@ -99,6 +85,7 @@ function WebDateWheels({
   ymd: string;
   onApply: (next: string) => void;
 }) {
+  const { t } = useTranslation();
   const initial = parseYmdParts(ymd) ?? parseYmdParts(todayLocalYmd())!;
   const [y, setY] = useState(initial.y);
   const [m, setM] = useState(initial.m);
@@ -115,8 +102,12 @@ function WebDateWheels({
     [yearEnd]
   );
   const months = useMemo(
-    () => MONTH_NAMES.map((name, i) => ({ key: `m-${i + 1}`, label: name })),
-    []
+    () =>
+      Array.from({ length: 12 }, (_, i) => ({
+        key: `m-${i + 1}`,
+        label: t(`datePlayed.months.${i + 1}`),
+      })),
+    [t]
   );
   const dim = daysInMonth(y, m);
   const days = useMemo(
@@ -166,7 +157,7 @@ function WebDateWheels({
         />
       </View>
       <Pressable style={webWheelStyles.applyBtn} onPress={() => onApply(ymdFromParts(y, m, d))}>
-        <Text style={webWheelStyles.applyTxt}>Done</Text>
+        <Text style={webWheelStyles.applyTxt}>{t('datePlayed.done')}</Text>
       </Pressable>
     </View>
   );
@@ -228,8 +219,8 @@ const webWheelStyles = StyleSheet.create({
 export function DatePlayedField({
   value,
   onChange,
-  label = 'Date played',
-  hint = 'Used for your index timeline and recent rounds order.',
+  label,
+  hint,
   large = false,
 }: {
   value: string;
@@ -238,6 +229,9 @@ export function DatePlayedField({
   hint?: string | null;
   large?: boolean;
 }) {
+  const { t } = useTranslation();
+  const resolvedLabel = label ?? t('datePlayed.label');
+  const resolvedHint = hint === undefined ? t('datePlayed.hint') : hint;
   const insets = useSafeAreaInsets();
   const [open, setOpen] = useState(false);
   const [iosDraft, setIosDraft] = useState(() => dateFromYmdLocal(value));
@@ -275,7 +269,7 @@ export function DatePlayedField({
 
   return (
     <>
-      <Text style={fieldStyles.sectionLabel}>{label}</Text>
+      <Text style={fieldStyles.sectionLabel}>{resolvedLabel}</Text>
       <Pressable
         style={({ pressed }) => [
           fieldStyles.pill,
@@ -293,7 +287,7 @@ export function DatePlayedField({
         <Text style={[fieldStyles.pillVal, large && fieldStyles.pillValLarge]}>{formatDisplay(value)}</Text>
         <Text style={fieldStyles.chev}>▾</Text>
       </Pressable>
-      {hint ? <Text style={fieldStyles.dateHint}>{hint}</Text> : null}
+      {resolvedHint ? <Text style={fieldStyles.dateHint}>{resolvedHint}</Text> : null}
 
       {Platform.OS === 'android' && androidOpen ? (
         <DateTimePicker
@@ -311,9 +305,9 @@ export function DatePlayedField({
             <View style={[fieldStyles.sheet, { paddingBottom: insets.bottom + 16 }]}>
               <View style={fieldStyles.sheetBar}>
                 <Pressable onPress={close} hitSlop={12}>
-                  <Text style={fieldStyles.sheetCancel}>Cancel</Text>
+                  <Text style={fieldStyles.sheetCancel}>{t('datePlayed.cancel')}</Text>
                 </Pressable>
-                <Text style={fieldStyles.sheetTitle}>{label}</Text>
+                <Text style={fieldStyles.sheetTitle}>{resolvedLabel}</Text>
                 <Pressable
                   onPress={() => {
                     const dt = iosDraft;
@@ -321,7 +315,7 @@ export function DatePlayedField({
                   }}
                   hitSlop={12}
                 >
-                  <Text style={fieldStyles.sheetDone}>Done</Text>
+                  <Text style={fieldStyles.sheetDone}>{t('datePlayed.done')}</Text>
                 </Pressable>
               </View>
               <DateTimePicker
@@ -346,9 +340,9 @@ export function DatePlayedField({
             <View style={[fieldStyles.sheet, { paddingBottom: insets.bottom + 16 }]}>
               <View style={fieldStyles.sheetBar}>
                 <Pressable onPress={close} hitSlop={12}>
-                  <Text style={fieldStyles.sheetCancel}>Cancel</Text>
+                  <Text style={fieldStyles.sheetCancel}>{t('datePlayed.cancel')}</Text>
                 </Pressable>
-                <Text style={fieldStyles.sheetTitle}>{label}</Text>
+                <Text style={fieldStyles.sheetTitle}>{resolvedLabel}</Text>
                 <View style={{ width: 56 }} />
               </View>
               <WebDateWheels key={value} ymd={value} onApply={applyYmd} />

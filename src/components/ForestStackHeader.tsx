@@ -3,6 +3,7 @@ import { getHeaderTitle } from '@react-navigation/elements';
 import type { NativeStackHeaderProps } from '@react-navigation/native-stack';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import { HeaderInstagramAndSimCap } from './HeaderInstagramSimCap';
 
@@ -24,6 +25,7 @@ export function ForestStackHeader({
   forceBack = false,
   onBackPress,
 }: Props) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const title = getHeaderTitle(options, route.name);
   const showBack = Boolean(back) || forceBack;
@@ -41,7 +43,7 @@ export function ForestStackHeader({
               if (navigation.canGoBack()) navigation.goBack();
             }}
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel={t('match.create.goBack')}
             hitSlop={10}
             style={({ pressed }) => [styles.backHit, pressed && styles.pressed]}
           >

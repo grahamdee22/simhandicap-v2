@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { useTranslation } from '../../../src/i18n';
 import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import {
@@ -63,6 +64,7 @@ function distinctHoleCount(rows: DbMatchHoleRow[], playerId: string): number {
 }
 
 export default function MatchScoreScreen() {
+  const { t } = useTranslation();
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const matchId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -73,7 +75,7 @@ export default function MatchScoreScreen() {
 
   const [match, setMatch] = useState<DbMatchRow | null>(null);
   const [holes, setHoles] = useState<DbMatchHoleRow[]>([]);
-  const [names, setNames] = useState<{ p1: string; p2: string }>({ p1: 'Player 1', p2: 'Player 2' });
+  const [names, setNames] = useState<{ p1: string; p2: string }>({ p1: '', p2: '' });
   const [ghin1, setGhin1] = useState<number>(0);
   const [ghin2, setGhin2] = useState<number>(0);
   const [fatalErr, setFatalErr] = useState<string | null>(null);
@@ -116,7 +118,7 @@ export default function MatchScoreScreen() {
     ]);
     if (!mounted.current) return;
     if (mRes.error || !mRes.data) {
-      setFatalErr(mRes.error ?? 'Match not found.');
+      setFatalErr(mRes.error ?? t('match.results.matchNotFound'));
       setMatch(null);
       setLoading(false);
       return;
@@ -131,7 +133,7 @@ export default function MatchScoreScreen() {
       return;
     }
     if ((m.status !== 'active' && m.status !== 'waiting') || !m.player_2_id) {
-      setFatalErr('This match is not open for scoring.');
+      setFatalErr(t('match.score.notOpenForScoring'));
       setMatch(null);
       setLoading(false);
       return;
@@ -141,6 +143,9 @@ export default function MatchScoreScreen() {
     if (hRes.data) setHoles(hRes.data);
     const p1 = m.player_1_id;
     const p2 = m.player_2_id;
+    const player1Fallback = t('match.results.player1');
+    const player2Fallback = t('match.results.player2');
+    const golferFallback = t('match.history.golferFallback');
 
     const nameBearer = accessToken;
 
@@ -148,8 +153,8 @@ export default function MatchScoreScreen() {
       const { displayNames, ghinById } = await fetchMatchParticipantProfiles([m], nameBearer);
       if (!mounted.current) return;
       setNames({
-        p1: displayNames[p1] ?? 'Player 1',
-        p2: displayNames[p2] ?? 'Player 2',
+        p1: displayNames[p1] ?? player1Fallback,
+        p2: displayNames[p2] ?? player2Fallback,
       });
       setGhin1(ghinById[p1] ?? 0);
       setGhin2(ghinById[p2] ?? 0);
@@ -167,25 +172,25 @@ export default function MatchScoreScreen() {
       }[]) {
         const g = row.ghin_index != null ? Number(row.ghin_index) : NaN;
         map[row.id] = {
-          dn: row.display_name?.trim() || 'Golfer',
+          dn: row.display_name?.trim() || golferFallback,
           ghin: Number.isFinite(g) ? g : 0,
         };
       }
       const nameMapFallback = await fetchMatchPlayerDisplayNames([m]);
       setNames({
-        p1: nameMapFallback[p1] ?? map[p1]?.dn ?? 'Player 1',
-        p2: nameMapFallback[p2] ?? map[p2]?.dn ?? 'Player 2',
+        p1: nameMapFallback[p1] ?? map[p1]?.dn ?? player1Fallback,
+        p2: nameMapFallback[p2] ?? map[p2]?.dn ?? player2Fallback,
       });
       setGhin1(map[p1]?.ghin ?? 0);
       setGhin2(map[p2]?.ghin ?? 0);
     } else {
       if (!mounted.current) return;
-      setNames({ p1: 'Player 1', p2: 'Player 2' });
+      setNames({ p1: player1Fallback, p2: player2Fallback });
       setGhin1(0);
       setGhin2(0);
     }
     setLoading(false);
-  }, [matchId, supabaseOn, user?.id, router]);
+  }, [matchId, supabaseOn, user?.id, router, t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -391,10 +396,7 @@ export default function MatchScoreScreen() {
       return;
 
     if (isMatchScoringLocked(match)) {
-      showAppAlert(
-        'Match locked',
-        'Scores cannot be edited after both players have verified and the match is complete.'
-      );
+      showAppAlert(t('match.score.matchLockedTitle'), t('match.score.matchLockedBody'));
       return;
     }
 
@@ -402,9 +404,9 @@ export default function MatchScoreScreen() {
     const isEdit = myMap.has(holeToSave);
     if (isEdit && playerIsVerified(match, amPlayer1)) {
       const ok = await confirmDestructive(
-        'Reset verification?',
-        "Editing your score will reset your verification. You'll need to resubmit your scorecard screenshot.",
-        'Edit score'
+        t('match.score.resetVerificationTitle'),
+        t('match.score.resetVerificationBody'),
+        t('match.score.editScore')
       );
       if (!ok) return;
     }
@@ -421,14 +423,11 @@ export default function MatchScoreScreen() {
     });
     setSubmitBusy(false);
     if (res.error) {
-      showAppAlert('Could not save hole', res.error);
+      showAppAlert(t('match.score.couldNotSaveHole'), res.error);
       return;
     }
     if (res.verificationReset) {
-      showAppAlert(
-        'Verification reset',
-        'Your scorecard verification was cleared. Upload a new screenshot when you are done editing.'
-      );
+      showAppAlert(t('match.score.verificationResetTitle'), t('match.score.verificationResetBody'));
     }
     setEditingHole(null);
     const nextRows = [...holes.filter((r) => !(r.player_id === user.id && r.hole_number === holeToSave))];
@@ -454,6 +453,7 @@ export default function MatchScoreScreen() {
     refreshAll,
     amPlayer1,
     maps,
+    t,
   ]);
 
   const onPickHoleReaction = useCallback(
@@ -482,7 +482,7 @@ export default function MatchScoreScreen() {
             const { [holeNum]: _, ...rest } = prev;
             return rest;
           });
-          showAppAlert('Reaction', res.error ?? 'Could not save.');
+          showAppAlert(t('match.score.reactionTitle'), res.error ?? t('match.score.couldNotSave'));
           return;
         }
         void refreshAll();
@@ -490,51 +490,54 @@ export default function MatchScoreScreen() {
         reactionRpcInFlightByHoleRef.current.delete(holeNum);
       }
     },
-    [matchId, user?.id, oppId, holes, amPlayer1, refreshAll]
+    [matchId, user?.id, oppId, holes, amPlayer1, refreshAll, t]
   );
 
   const onAbandonMatch = useCallback(async () => {
     if (!matchId || abandonBusy) return;
     const ok = await confirmDestructive(
-      'Abandon match?',
-      'You will record a loss and forfeit on your profile. Your opponent’s SimCap match record will not change.',
-      'Abandon'
+      t('match.score.abandonTitle'),
+      t('match.score.abandonBody'),
+      t('match.score.abandonAction')
     );
     if (!ok) return;
     setAbandonBusy(true);
     const res = await abandonMatch(matchId, (await resolveMatchAccessToken()) ?? undefined);
     setAbandonBusy(false);
     if (!res.ok) {
-      showAppAlert('Could not abandon match', res.error ?? 'Unknown error');
+      showAppAlert(
+        t('match.score.couldNotAbandon'),
+        res.error ?? t('match.create.alerts.unknownError')
+      );
       return;
     }
     router.replace('/(tabs)/groups' as never);
-  }, [matchId, abandonBusy, router]);
+  }, [matchId, abandonBusy, router, t]);
 
   useLayoutEffect(() => {
     navigation.setOptions({
-      title: match?.course_name ?? 'Match',
+      title: match?.course_name ?? t('match.score.titleFallback'),
       headerRight: () => (
         <Pressable
           onPress={() => router.back()}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.headerBtn}
           accessibilityRole="button"
-          accessibilityLabel="Close scoring"
+          accessibilityLabel={t('match.score.closeScoringA11y')}
         >
-          <Text style={styles.headerBtnTxt}>Close</Text>
+          <Text style={styles.headerBtnTxt}>{t('match.score.close')}</Text>
         </Pressable>
       ),
     });
-  }, [navigation, router, match?.course_name]);
+  }, [navigation, router, match?.course_name, t]);
 
   if (!matchId) {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.errTxt}>Missing match.</Text>
+          <Text style={styles.errTxt}>{t('match.results.missingMatch')}</Text>
           <Pressable style={styles.secondaryBtn} onPress={() => router.back()}>
-            <Text style={styles.secondaryBtnTxt}>Go back</Text>
+            <Text style={styles.secondaryBtnTxt}>{t('match.create.goBack')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -545,7 +548,7 @@ export default function MatchScoreScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.errTxt}>Sign in to score this match.</Text>
+          <Text style={styles.errTxt}>{t('match.score.signInToScore')}</Text>
         </View>
       </ContentWidth>
     );
@@ -565,9 +568,9 @@ export default function MatchScoreScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.errTxt}>{fatalErr ?? 'Match not available.'}</Text>
+          <Text style={styles.errTxt}>{fatalErr ?? t('match.score.matchNotAvailable')}</Text>
           <Pressable style={styles.secondaryBtn} onPress={() => router.back()}>
-            <Text style={styles.secondaryBtnTxt}>Go back</Text>
+            <Text style={styles.secondaryBtnTxt}>{t('match.create.goBack')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -618,8 +621,9 @@ export default function MatchScoreScreen() {
     const reactionISent =
       reactionISentFromServer ?? optimisticSentReactionByHole[h] ?? null;
     const showReactionPicker = Boolean(oppId && oppGross != null && !reactionISent);
-    let myNetDisp: string | number = '—';
-    let oppNetDisp: string | number = '—';
+    const emDash = t('match.results.emDash');
+    let myNetDisp: string | number = emDash;
+    let oppNetDisp: string | number = emDash;
     if (g1 != null && g2 != null) {
       const n1 = holeNetScore(g1, h, strokeCtx, true);
       const n2 = holeNetScore(g2, h, strokeCtx, false);
@@ -655,8 +659,12 @@ export default function MatchScoreScreen() {
     });
   }
 
-  const myDisplayName = amPlayer1 ? names.p1 : names.p2;
-  const oppDisplayName = amPlayer1 ? names.p2 : names.p1;
+  const displayNames = {
+    p1: names.p1 || t('match.results.player1'),
+    p2: names.p2 || t('match.results.player2'),
+  };
+  const myDisplayName = amPlayer1 ? displayNames.p1 : displayNames.p2;
+  const oppDisplayName = amPlayer1 ? displayNames.p2 : displayNames.p1;
   const mySettingsPhotoUrl = amPlayer1
     ? match.player_1_settings_photo_url
     : match.player_2_settings_photo_url;
@@ -665,6 +673,7 @@ export default function MatchScoreScreen() {
     : match.player_1_settings_photo_url;
 
   const parCur = activeEntryHole != null ? course.pars[activeEntryHole - 1] ?? 4 : null;
+  const emDash = t('match.results.emDash');
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -680,14 +689,12 @@ export default function MatchScoreScreen() {
         >
           {showAheadBanner ? (
             <View style={styles.banner}>
-              <Text style={styles.bannerTxt}>
-                Your opponent has continued playing — catch up when you&apos;re ready.
-              </Text>
+              <Text style={styles.bannerTxt}>{t('match.score.aheadBanner')}</Text>
             </View>
           ) : null}
 
           <Text style={styles.vsLine} numberOfLines={1}>
-            {names.p1} vs {names.p2}
+            {t('matchPlay.vs', { p1: displayNames.p1, p2: displayNames.p2 })}
           </Text>
 
           {mySettingsPhotoUrl?.trim() || oppSettingsPhotoUrl?.trim() ? (
@@ -697,7 +704,7 @@ export default function MatchScoreScreen() {
               style={styles.settingsPhotoCol}
               onPress={() => setSettingsThumbMineOpen((o) => !o)}
               accessibilityRole="button"
-              accessibilityLabel={`${myDisplayName} sim settings photo`}
+              accessibilityLabel={t('match.score.settingsPhotoA11y', { name: myDisplayName })}
               accessibilityState={{ expanded: settingsThumbMineOpen }}
             >
               <Text style={styles.settingsPhotoLabel} numberOfLines={1}>
@@ -713,12 +720,12 @@ export default function MatchScoreScreen() {
               ) : settingsThumbMineOpen ? (
                 <Text style={styles.settingsPhotoMissingExpanded}>
                   {settingsMineImgErr
-                    ? 'Could not load image.'
-                    : 'No sim settings photo for this player.'}
+                    ? t('match.score.couldNotLoadImage')
+                    : t('match.score.noSettingsPhoto')}
                 </Text>
               ) : (
                 <View style={styles.settingsPhotoThumbPlaceholder}>
-                  <Text style={styles.settingsPhotoMissingCollapsed}>—</Text>
+                  <Text style={styles.settingsPhotoMissingCollapsed}>{emDash}</Text>
                 </View>
               )}
             </Pressable>
@@ -726,7 +733,7 @@ export default function MatchScoreScreen() {
               style={styles.settingsPhotoCol}
               onPress={() => setSettingsThumbOppOpen((o) => !o)}
               accessibilityRole="button"
-              accessibilityLabel={`${oppDisplayName} sim settings photo`}
+              accessibilityLabel={t('match.score.settingsPhotoA11y', { name: oppDisplayName })}
               accessibilityState={{ expanded: settingsThumbOppOpen }}
             >
               <Text style={styles.settingsPhotoLabel} numberOfLines={1}>
@@ -742,12 +749,12 @@ export default function MatchScoreScreen() {
               ) : settingsThumbOppOpen ? (
                 <Text style={styles.settingsPhotoMissingExpanded}>
                   {settingsOppImgErr
-                    ? 'Could not load image.'
-                    : 'No sim settings photo for this player.'}
+                    ? t('match.score.couldNotLoadImage')
+                    : t('match.score.noSettingsPhoto')}
                 </Text>
               ) : (
                 <View style={styles.settingsPhotoThumbPlaceholder}>
-                  <Text style={styles.settingsPhotoMissingCollapsed}>—</Text>
+                  <Text style={styles.settingsPhotoMissingCollapsed}>{emDash}</Text>
                 </View>
               )}
             </Pressable>
@@ -755,11 +762,11 @@ export default function MatchScoreScreen() {
           ) : null}
 
           <View style={styles.tableHead}>
-            <Text style={[styles.th, styles.colHole]}>Hole</Text>
-            <Text style={[styles.th, styles.colNum]}>Gross</Text>
-            <Text style={[styles.th, styles.colNum]}>Net</Text>
-            <Text style={[styles.th, styles.colNum]}>Gross</Text>
-            <Text style={[styles.th, styles.colNum]}>Net</Text>
+            <Text style={[styles.th, styles.colHole]}>{t('match.results.hole')}</Text>
+            <Text style={[styles.th, styles.colNum]}>{t('match.score.gross')}</Text>
+            <Text style={[styles.th, styles.colNum]}>{t('match.score.net')}</Text>
+            <Text style={[styles.th, styles.colNum]}>{t('match.score.gross')}</Text>
+            <Text style={[styles.th, styles.colNum]}>{t('match.score.net')}</Text>
           </View>
 
           {rows.map(
@@ -788,10 +795,10 @@ export default function MatchScoreScreen() {
                         ]}
                         onPress={() => startEditHole(h)}
                         accessibilityRole="button"
-                        accessibilityLabel={`Edit score for hole ${h}`}
+                        accessibilityLabel={t('match.score.editHoleA11y', { hole: h })}
                       >
                         <Text style={[styles.td, styles.oppGrossInlineNum, styles.myScoreEditTxt]}>
-                          {myGross ?? '—'}
+                          {myGross ?? emDash}
                         </Text>
                         {reactionOnMyScore ? (
                           <Text style={styles.reactionEmojiInline}>{reactionOnMyScore}</Text>
@@ -799,7 +806,7 @@ export default function MatchScoreScreen() {
                       </Pressable>
                     ) : (
                       <View style={styles.oppGrossInlineRow}>
-                        <Text style={[styles.td, styles.oppGrossInlineNum]}>{myGross ?? '—'}</Text>
+                        <Text style={[styles.td, styles.oppGrossInlineNum]}>{myGross ?? emDash}</Text>
                         {reactionOnMyScore ? (
                           <Text style={styles.reactionEmojiInline}>{reactionOnMyScore}</Text>
                         ) : null}
@@ -813,7 +820,7 @@ export default function MatchScoreScreen() {
                 <View style={[styles.tdCell, styles.colNum]}>
                   <View style={styles.oppGrossInlineWrap}>
                     <View style={styles.oppGrossInlineRow}>
-                      <Text style={[styles.td, styles.oppGrossInlineNum]}>{oppGross ?? '—'}</Text>
+                      <Text style={[styles.td, styles.oppGrossInlineNum]}>{oppGross ?? emDash}</Text>
                       {reactionISent ? (
                         <Text style={styles.reactionEmojiInline}>{reactionISent}</Text>
                       ) : showReactionPicker ? (
@@ -826,7 +833,7 @@ export default function MatchScoreScreen() {
                             setReactionPickerOpenHole((cur) => (cur === h ? null : h))
                           }
                           accessibilityRole="button"
-                          accessibilityLabel="Add reaction to opponent score"
+                          accessibilityLabel={t('match.score.addReactionA11y')}
                           accessibilityState={{ expanded: reactionPickerOpenHole === h }}
                           hitSlop={{ top: 4, bottom: 6, left: 8, right: 8 }}
                         >
@@ -847,7 +854,7 @@ export default function MatchScoreScreen() {
                             ]}
                             onPress={() => void onPickHoleReaction(h, emo)}
                             accessibilityRole="button"
-                            accessibilityLabel={`React ${emo}`}
+                            accessibilityLabel={t('match.score.reactA11y', { emoji: emo })}
                           >
                             <Text style={styles.reactionPickEmoji}>{emo}</Text>
                           </Pressable>
@@ -864,29 +871,31 @@ export default function MatchScoreScreen() {
           )}
 
           <View style={[styles.tr, styles.trTotals]}>
-            <Text style={[styles.tdStrong, styles.colHole]}>Total</Text>
+            <Text style={[styles.tdStrong, styles.colHole]}>{t('match.score.total')}</Text>
             <View style={[styles.tdCell, styles.colNum]}>
               <Text style={[styles.tdStrong, styles.tdCenter]}>
-                {myScoredHoles === 0 ? '—' : cumMyGross}
-              </Text>
-            </View>
-            <View style={[styles.tdCell, styles.colNum]}>
-              <Text style={[styles.tdStrong, styles.tdCenter]}>{myScoredHoles === 0 ? '—' : cumMyNet}</Text>
-            </View>
-            <View style={[styles.tdCell, styles.colNum]}>
-              <Text style={[styles.tdStrong, styles.tdCenter]}>
-                {oppScoredHoles === 0 ? '—' : cumOppGross}
+                {myScoredHoles === 0 ? emDash : cumMyGross}
               </Text>
             </View>
             <View style={[styles.tdCell, styles.colNum]}>
               <Text style={[styles.tdStrong, styles.tdCenter]}>
-                {oppScoredHoles === 0 ? '—' : cumOppNet}
+                {myScoredHoles === 0 ? emDash : cumMyNet}
+              </Text>
+            </View>
+            <View style={[styles.tdCell, styles.colNum]}>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>
+                {oppScoredHoles === 0 ? emDash : cumOppGross}
+              </Text>
+            </View>
+            <View style={[styles.tdCell, styles.colNum]}>
+              <Text style={[styles.tdStrong, styles.tdCenter]}>
+                {oppScoredHoles === 0 ? emDash : cumOppNet}
               </Text>
             </View>
           </View>
 
           {myDone && !editingHole && !scoringLocked ? (
-            <Text style={styles.editHint}>Tap any of your scores to edit.</Text>
+            <Text style={styles.editHint}>{t('match.score.editHint')}</Text>
           ) : null}
 
           {myDone && match.verification_required && user?.id && !editingHole ? (
@@ -910,17 +919,18 @@ export default function MatchScoreScreen() {
           {activeEntryHole != null && !scoringLocked ? (
             <>
               <Text style={styles.footerTitle}>
-                {editingHole != null ? `Editing hole ${editingHole}` : `Hole ${activeEntryHole}`} · Par{' '}
-                {parCur}
+                {editingHole != null
+                  ? t('match.score.editingHolePar', { hole: editingHole, par: parCur })
+                  : t('match.score.holePar', { hole: activeEntryHole, par: parCur })}
               </Text>
-              <Text style={styles.sectionLabel}>Score</Text>
+              <Text style={styles.sectionLabel}>{t('match.score.score')}</Text>
               <View style={styles.scoreBlock}>
                 <View style={styles.scoreMain}>
                   <Pressable
                     style={styles.scoreBtn}
                     onPress={() => setHoleGross((g) => clampGross(g - 1))}
                     accessibilityRole="button"
-                    accessibilityLabel="Decrease gross score"
+                    accessibilityLabel={t('match.score.decreaseGrossA11y')}
                   >
                     <Text style={styles.scoreBtnTxt}>−</Text>
                   </Pressable>
@@ -931,7 +941,7 @@ export default function MatchScoreScreen() {
                     style={styles.scoreBtn}
                     onPress={() => setHoleGross((g) => clampGross(g + 1))}
                     accessibilityRole="button"
-                    accessibilityLabel="Increase gross score"
+                    accessibilityLabel={t('match.score.increaseGrossA11y')}
                   >
                     <Text style={styles.scoreBtnTxt}>+</Text>
                   </Pressable>
@@ -950,7 +960,9 @@ export default function MatchScoreScreen() {
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.submitBtnTxt}>
-                    {editingHole != null ? `Save hole ${editingHole}` : `Save hole ${activeEntryHole}`}
+                    {t('match.score.saveHole', {
+                      hole: editingHole != null ? editingHole : activeEntryHole,
+                    })}
                   </Text>
                 )}
               </Pressable>
@@ -960,17 +972,17 @@ export default function MatchScoreScreen() {
                   onPress={() => setEditingHole(null)}
                   accessibilityRole="button"
                 >
-                  <Text style={styles.cancelEditBtnTxt}>Cancel edit</Text>
+                  <Text style={styles.cancelEditBtnTxt}>{t('match.score.cancelEdit')}</Text>
                 </Pressable>
               ) : null}
             </>
           ) : myDone ? (
             <Text style={styles.footerTitle}>
               {scoringLocked
-                ? 'This match is locked — scores cannot be edited.'
+                ? t('match.score.lockedFooter')
                 : match.verification_required
-                  ? 'You\'ve entered all holes. Upload and verify your scorecard screenshot to finish.'
-                  : 'You\'ve entered all holes. Totals lock when both players finish.'}
+                  ? t('match.score.allHolesVerify')
+                  : t('match.score.allHolesWaiting')}
             </Text>
           ) : null}
           <Pressable
@@ -978,13 +990,13 @@ export default function MatchScoreScreen() {
             disabled={abandonBusy || submitBusy}
             onPress={() => void onAbandonMatch()}
             accessibilityRole="button"
-            accessibilityLabel="Abandon match"
+            accessibilityLabel={t('match.score.abandonMatchA11y')}
             hitSlop={{ top: 6, bottom: 10, left: 12, right: 12 }}
           >
             {abandonBusy ? (
               <ActivityIndicator color={colors.danger} />
             ) : (
-              <Text style={styles.abandonBtnTxt}>Abandon match</Text>
+              <Text style={styles.abandonBtnTxt}>{t('match.score.abandonMatch')}</Text>
             )}
           </Pressable>
         </View>

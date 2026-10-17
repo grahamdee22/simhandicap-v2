@@ -4,6 +4,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HeaderInstagramAndSimCap } from '../../src/components/HeaderInstagramSimCap';
 import { TabBarSvgIcon, type TabBarSvgName } from '../../src/components/TabBarSvgIcon';
+import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
 
 /** Mock: compact icons sitting in the upper half of the bar with labels beneath. */
@@ -18,6 +19,7 @@ function TabIcon({ name, color }: { name: TabBarSvgName; color: string }) {
 }
 
 export default function TabLayout() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   /**
    * React Navigation fixes default tab bar height (~49pt) before merging tabBarStyle.
@@ -111,36 +113,36 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'SimHandicap',
+          title: t('tabs.home.title'),
           headerShown: false,
-          tabBarLabel: 'Home',
+          tabBarLabel: t('tabs.home.label'),
           tabBarIcon: ({ color }) => <TabIcon name="home" color={color} />,
         }}
       />
       <Tabs.Screen
         name="log"
         options={{
-          title: 'Log a round',
+          title: t('tabs.log.title'),
           headerShown: false,
-          tabBarLabel: 'Log a round',
+          tabBarLabel: t('tabs.log.label'),
           tabBarIcon: ({ color }) => <TabIcon name="add-circle" color={color} />,
         }}
       />
       <Tabs.Screen
         name="analyze"
         options={{
-          title: 'Round analysis',
+          title: t('tabs.analyze.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Rounds',
+          tabBarLabel: t('tabs.analyze.label'),
           tabBarIcon: ({ color }) => <TabIcon name="analytics" color={color} />,
         }}
       />
       <Tabs.Screen
         name="groups"
         options={{
-          title: 'Social',
+          title: t('tabs.groups.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Social',
+          tabBarLabel: t('tabs.groups.label'),
           tabBarIcon: ({ color }) => <TabIcon name="people" color={color} />,
         }}
       />
@@ -148,62 +150,62 @@ export default function TabLayout() {
         name="match-create"
         options={{
           href: null,
-          title: 'Create match',
+          title: t('tabs.matchCreate.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Match',
+          tabBarLabel: t('tabs.matchCreate.label'),
         }}
       />
       <Tabs.Screen
         name="match-accept/[id]"
         options={{
           href: null,
-          title: 'Accept challenge',
+          title: t('tabs.matchAccept.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Accept',
+          tabBarLabel: t('tabs.matchAccept.label'),
         }}
       />
       <Tabs.Screen
         name="match-open-accept/[id]"
         options={{
           href: null,
-          title: 'Open challenge',
+          title: t('tabs.matchOpenAccept.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Open challenge',
+          tabBarLabel: t('tabs.matchOpenAccept.label'),
         }}
       />
       <Tabs.Screen
         name="match-score/[id]"
         options={{
           href: null,
-          title: 'Live scoring',
+          title: t('tabs.matchScore.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Score',
+          tabBarLabel: t('tabs.matchScore.label'),
         }}
       />
       <Tabs.Screen
         name="match-results/[id]"
         options={{
           href: null,
-          title: 'Results',
+          title: t('tabs.matchResults.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Results',
+          tabBarLabel: t('tabs.matchResults.label'),
         }}
       />
       <Tabs.Screen
         name="match-history"
         options={{
           href: null,
-          title: 'Match history',
+          title: t('tabs.matchHistory.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'History',
+          tabBarLabel: t('tabs.matchHistory.label'),
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('tabs.profile.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Profile',
+          tabBarLabel: t('tabs.profile.label'),
           tabBarIcon: ({ color }) => <TabIcon name="person" color={color} />,
         }}
       />
@@ -211,33 +213,33 @@ export default function TabLayout() {
         name="round/[id]"
         options={{
           href: null,
-          title: 'Round detail',
-          tabBarLabel: 'Round',
+          title: t('tabs.round.title'),
+          tabBarLabel: t('tabs.round.label'),
         }}
       />
       <Tabs.Screen
         name="net-calculator"
         options={{
           href: null,
-          title: 'Crew Match Calculator',
+          title: t('tabs.netCalculator.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Crew match',
+          tabBarLabel: t('tabs.netCalculator.label'),
         }}
       />
       <Tabs.Screen
         name="contact"
         options={{
           href: null,
-          title: 'Contact us',
+          title: t('tabs.contact.title'),
           headerRight: HeaderInstagramAndSimCap,
-          tabBarLabel: 'Contact',
+          tabBarLabel: t('tabs.contact.label'),
         }}
       />
       <Tabs.Screen
         name="season/[id]"
         options={{
           href: null,
-          title: 'Season',
+          title: t('tabs.season.title'),
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
@@ -245,7 +247,7 @@ export default function TabLayout() {
         name="season-create/[groupId]"
         options={{
           href: null,
-          title: 'Start season',
+          title: t('tabs.seasonCreate.title'),
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
@@ -253,7 +255,7 @@ export default function TabLayout() {
         name="league-create/[groupId]"
         options={{
           href: null,
-          title: 'Create tournament',
+          title: t('tabs.leagueCreate.title'),
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
@@ -261,7 +263,7 @@ export default function TabLayout() {
         name="league/[id]"
         options={{
           href: null,
-          title: 'Tournament',
+          title: t('tabs.league.title'),
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
@@ -269,7 +271,7 @@ export default function TabLayout() {
         name="league-manage/[id]"
         options={{
           href: null,
-          title: 'Manage tournament',
+          title: t('tabs.leagueManage.title'),
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
@@ -277,7 +279,7 @@ export default function TabLayout() {
         name="tournament-holes/[leagueRoundId]"
         options={{
           href: null,
-          title: 'Tournament scorecard',
+          title: t('tabs.tournamentHoles.title'),
           headerRight: HeaderInstagramAndSimCap,
         }}
       />
@@ -285,7 +287,7 @@ export default function TabLayout() {
         name="league-match/[pairingId]"
         options={{
           href: null,
-          title: 'Tournament match',
+          title: t('tabs.leagueMatch.title'),
           headerRight: HeaderInstagramAndSimCap,
         }}
       />

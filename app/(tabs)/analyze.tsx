@@ -1,4 +1,5 @@
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
+import type { TFunction } from 'i18next';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -6,6 +7,7 @@ import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { RoundListRow } from '../../src/components/RoundListRow';
 import { ShareRoundCardModal } from '../../src/components/ShareCard';
+import { useTranslation } from '../../src/i18n';
 import { colors, PLATFORMS, type PlatformId } from '../../src/lib/constants';
 import { formatDifferentialDisplay, MULLIGAN_PICKER_OPTS, normalizeMulligans, type Mulligans, type PinDay, type PuttingMode, type Wind } from '../../src/lib/handicap';
 import { pinFilterOptions } from '../../src/lib/pinPlacement';
@@ -29,29 +31,37 @@ const EMPTY_FILTERS: RoundFilters = {
   platform: null,
 };
 
-const PUTTING_FILTER_OPTS: { key: PuttingMode | null; label: string }[] = [
-  { key: null, label: 'All' },
-  { key: 'auto_2putt', label: 'Auto 2-putt' },
-  { key: 'gimme_5', label: 'Gimme' },
-  { key: 'putt_all', label: 'Full' },
-];
+function puttingFilterOpts(t: TFunction): { key: PuttingMode | null; label: string }[] {
+  return [
+    { key: null, label: t('analyze.filter.all') },
+    { key: 'auto_2putt', label: t('analyze.filter.putting.auto2putt') },
+    { key: 'gimme_5', label: t('analyze.filter.putting.gimme') },
+    { key: 'putt_all', label: t('analyze.filter.putting.full') },
+  ];
+}
 
-const WIND_FILTER_OPTS: { key: Wind | null; label: string }[] = [
-  { key: null, label: 'All' },
-  { key: 'off', label: 'Off' },
-  { key: 'light', label: 'Light' },
-  { key: 'strong', label: 'Strong' },
-];
+function windFilterOpts(t: TFunction): { key: Wind | null; label: string }[] {
+  return [
+    { key: null, label: t('analyze.filter.all') },
+    { key: 'off', label: t('analyze.filter.wind.off') },
+    { key: 'light', label: t('analyze.filter.wind.light') },
+    { key: 'strong', label: t('analyze.filter.wind.strong') },
+  ];
+}
 
-const MULL_FILTER_OPTS: { key: Mulligans | null; label: string }[] = [
-  { key: null, label: 'All' },
-  ...MULLIGAN_PICKER_OPTS.map((o) => ({ key: o.key, label: o.dn })),
-];
+function mullFilterOpts(t: TFunction): { key: Mulligans | null; label: string }[] {
+  return [
+    { key: null, label: t('analyze.filter.all') },
+    ...MULLIGAN_PICKER_OPTS.map((o) => ({ key: o.key, label: o.dn })),
+  ];
+}
 
-const PLATFORM_FILTER_OPTS: { key: PlatformId | null; label: string }[] = [
-  { key: null, label: 'All' },
-  ...PLATFORMS.map((p) => ({ key: p, label: p })),
-];
+function platformFilterOpts(t: TFunction): { key: PlatformId | null; label: string }[] {
+  return [
+    { key: null, label: t('analyze.filter.all') },
+    ...PLATFORMS.map((p) => ({ key: p, label: p })),
+  ];
+}
 
 function matchesRoundFilters(r: SimRound, f: RoundFilters): boolean {
   if (f.putting != null && r.putting !== f.putting) return false;
@@ -74,23 +84,30 @@ const F = {
   accent: '#52b788',
 } as const;
 
-function labelForPutting(k: PuttingMode | null) {
-  return PUTTING_FILTER_OPTS.find((o) => o.key === k)?.label ?? 'All';
+function labelForPutting(t: TFunction, k: PuttingMode | null) {
+  return puttingFilterOpts(t).find((o) => o.key === k)?.label ?? t('analyze.filter.all');
 }
-function labelForPin(k: PinDay | null, platformFilter: PlatformId | null) {
-  return pinFilterOptions(platformFilter).find((o) => o.key === k)?.label ?? 'All';
+function pinFilterOptsTranslated(t: TFunction, platformFilter: PlatformId | null) {
+  return pinFilterOptions(platformFilter).map((o) =>
+    o.key == null ? { ...o, label: t('analyze.filter.all') } : o
+  );
 }
-function labelForWind(k: Wind | null) {
-  return WIND_FILTER_OPTS.find((o) => o.key === k)?.label ?? 'All';
+
+function labelForPin(t: TFunction, k: PinDay | null, platformFilter: PlatformId | null) {
+  return pinFilterOptsTranslated(t, platformFilter).find((o) => o.key === k)?.label ?? t('analyze.filter.all');
 }
-function labelForMull(k: Mulligans | null) {
-  return MULL_FILTER_OPTS.find((o) => o.key === k)?.label ?? 'All';
+function labelForWind(t: TFunction, k: Wind | null) {
+  return windFilterOpts(t).find((o) => o.key === k)?.label ?? t('analyze.filter.all');
 }
-function labelForPlatform(k: PlatformId | null) {
-  return PLATFORM_FILTER_OPTS.find((o) => o.key === k)?.label ?? 'All';
+function labelForMull(t: TFunction, k: Mulligans | null) {
+  return mullFilterOpts(t).find((o) => o.key === k)?.label ?? t('analyze.filter.all');
+}
+function labelForPlatform(t: TFunction, k: PlatformId | null) {
+  return platformFilterOpts(t).find((o) => o.key === k)?.label ?? t('analyze.filter.all');
 }
 
 export default function AnalyzeScreen() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{
     leagueBanner?: string | string[];
     shareRoundId?: string | string[];
@@ -99,6 +116,10 @@ export default function AnalyzeScreen() {
   const insets = useSafeAreaInsets();
   const { gutter, maxContent, homeSplit, isWide, isVeryWide } = useResponsive();
   const rounds = useAppStore((s) => s.rounds);
+  const puttingOpts = useMemo(() => puttingFilterOpts(t), [t]);
+  const windOpts = useMemo(() => windFilterOpts(t), [t]);
+  const mullOpts = useMemo(() => mullFilterOpts(t), [t]);
+  const platformOpts = useMemo(() => platformFilterOpts(t), [t]);
   const [leagueBanner, setLeagueBanner] = useState<string | null>(null);
   const [shareRoundId, setShareRoundId] = useState<string | null>(null);
   const [filters, setFilters] = useState<RoundFilters>(EMPTY_FILTERS);
@@ -129,13 +150,9 @@ export default function AnalyzeScreen() {
   );
 
   const filterOn = filtersActive(filters);
-  const pinFilterOpts = useMemo(
-    () => pinFilterOptions(filters.platform),
-    [filters.platform]
-  );
   const draftPinFilterOpts = useMemo(
-    () => pinFilterOptions(draftFilters.platform),
-    [draftFilters.platform]
+    () => pinFilterOptsTranslated(t, draftFilters.platform),
+    [draftFilters.platform, t]
   );
   const rightColW = Math.min(420, Math.floor(maxContent * 0.4));
 
@@ -187,22 +204,37 @@ export default function AnalyzeScreen() {
   const activeFilterChips = useMemo(() => {
     const out: { dim: keyof RoundFilters; label: string }[] = [];
     if (filters.putting != null) {
-      out.push({ dim: 'putting', label: `Putting · ${labelForPutting(filters.putting)}` });
+      out.push({
+        dim: 'putting',
+        label: t('analyze.chip.putting', { label: labelForPutting(t, filters.putting) }),
+      });
     }
     if (filters.pin != null) {
-      out.push({ dim: 'pin', label: `Pin · ${labelForPin(filters.pin, filters.platform)}` });
+      out.push({
+        dim: 'pin',
+        label: t('analyze.chip.pin', { label: labelForPin(t, filters.pin, filters.platform) }),
+      });
     }
     if (filters.wind != null) {
-      out.push({ dim: 'wind', label: `Wind · ${labelForWind(filters.wind)}` });
+      out.push({
+        dim: 'wind',
+        label: t('analyze.chip.wind', { label: labelForWind(t, filters.wind) }),
+      });
     }
     if (filters.mulligans != null) {
-      out.push({ dim: 'mulligans', label: `Mulligans · ${labelForMull(filters.mulligans)}` });
+      out.push({
+        dim: 'mulligans',
+        label: t('analyze.chip.mulligans', { label: labelForMull(t, filters.mulligans) }),
+      });
     }
     if (filters.platform != null) {
-      out.push({ dim: 'platform', label: `Platform · ${labelForPlatform(filters.platform)}` });
+      out.push({
+        dim: 'platform',
+        label: t('analyze.chip.platform', { label: labelForPlatform(t, filters.platform) }),
+      });
     }
     return out;
-  }, [filters]);
+  }, [filters, t]);
 
   const filterPanel =
     rounds.length > 0 ? (
@@ -222,7 +254,7 @@ export default function AnalyzeScreen() {
                   onPress={() => removeFilter(c.dim)}
                   hitSlop={8}
                   accessibilityRole="button"
-                  accessibilityLabel={`Remove ${c.label}`}
+                  accessibilityLabel={t('analyze.removeFilterA11y', { label: c.label })}
                 >
                   <Text style={styles.appliedChipX}>×</Text>
                 </Pressable>
@@ -233,9 +265,9 @@ export default function AnalyzeScreen() {
                 onPress={openFilterPanel}
                 style={styles.addFilterBtn}
                 accessibilityRole="button"
-                accessibilityLabel="Add filter"
+                accessibilityLabel={t('analyze.addFilterA11y')}
               >
-                <Text style={styles.addFilterBtnTxt}>+ Add filter</Text>
+                <Text style={styles.addFilterBtnTxt}>{t('analyze.addFilter')}</Text>
               </Pressable>
             ) : null}
           </ScrollView>
@@ -244,18 +276,16 @@ export default function AnalyzeScreen() {
         {filtersExpanded ? (
           <View style={styles.filterExpanded}>
             <View style={styles.filterExpandedTop}>
-              <Text style={styles.filterExpandedTitle}>Filters</Text>
+              <Text style={styles.filterExpandedTitle}>{t('analyze.filters')}</Text>
               <Pressable onPress={resetAllFilters} hitSlop={8}>
-                <Text style={styles.resetAllTxt}>Reset all</Text>
+                <Text style={styles.resetAllTxt}>{t('analyze.resetAll')}</Text>
               </Pressable>
             </View>
-            <Text style={styles.filterHint}>
-              KPIs and matching rounds use this subset. Home still uses every round.
-            </Text>
+            <Text style={styles.filterHint}>{t('analyze.filterHint')}</Text>
 
-            <Text style={[styles.fCatLabel, styles.fCatFirst]}>Putting</Text>
+            <Text style={[styles.fCatLabel, styles.fCatFirst]}>{t('analyze.cat.putting')}</Text>
             <View style={styles.fPillRow}>
-              {PUTTING_FILTER_OPTS.map((o) => {
+              {puttingOpts.map((o) => {
                 const sel = draftFilters.putting === o.key;
                 const isAll = o.key === null;
                 return (
@@ -283,7 +313,7 @@ export default function AnalyzeScreen() {
               })}
             </View>
 
-            <Text style={styles.fCatLabel}>Pin</Text>
+            <Text style={styles.fCatLabel}>{t('analyze.cat.pin')}</Text>
             <View style={styles.fPillRow}>
               {draftPinFilterOpts.map((o) => {
                 const sel = draftFilters.pin === o.key;
@@ -313,9 +343,9 @@ export default function AnalyzeScreen() {
               })}
             </View>
 
-            <Text style={styles.fCatLabel}>Wind</Text>
+            <Text style={styles.fCatLabel}>{t('analyze.cat.wind')}</Text>
             <View style={styles.fPillRow}>
-              {WIND_FILTER_OPTS.map((o) => {
+              {windOpts.map((o) => {
                 const sel = draftFilters.wind === o.key;
                 const isAll = o.key === null;
                 return (
@@ -343,9 +373,9 @@ export default function AnalyzeScreen() {
               })}
             </View>
 
-            <Text style={styles.fCatLabel}>Mulligans</Text>
+            <Text style={styles.fCatLabel}>{t('analyze.cat.mulligans')}</Text>
             <View style={styles.fPillRow}>
-              {MULL_FILTER_OPTS.map((o) => {
+              {mullOpts.map((o) => {
                 const sel = draftFilters.mulligans === o.key;
                 const isAll = o.key === null;
                 return (
@@ -373,9 +403,9 @@ export default function AnalyzeScreen() {
               })}
             </View>
 
-            <Text style={styles.fCatLabel}>Platform</Text>
+            <Text style={styles.fCatLabel}>{t('analyze.cat.platform')}</Text>
             <View style={styles.fPillRow}>
-              {PLATFORM_FILTER_OPTS.map((o) => {
+              {platformOpts.map((o) => {
                 const sel = draftFilters.platform === o.key;
                 const isAll = o.key === null;
                 return (
@@ -404,7 +434,7 @@ export default function AnalyzeScreen() {
             </View>
 
             <Pressable onPress={applyFilters} style={styles.applyFiltersBtn}>
-              <Text style={styles.applyFiltersBtnTxt}>Apply filters</Text>
+              <Text style={styles.applyFiltersBtnTxt}>{t('analyze.applyFilters')}</Text>
             </Pressable>
           </View>
         ) : null}
@@ -420,8 +450,8 @@ export default function AnalyzeScreen() {
         ]}
       >
         {filterOn
-          ? `Rounds / best diff / avg score: ${filteredRounds.length} match${filteredRounds.length === 1 ? '' : 'es'}.`
-          : 'Rounds / best diff / avg score: all logged rounds.'}
+          ? t('analyze.kpiFiltered', { count: filteredRounds.length })
+          : t('analyze.kpiAll')}
       </Text>
     ) : null;
 
@@ -429,12 +459,12 @@ export default function AnalyzeScreen() {
     <>
       <View style={statsRowStyle}>
         <View style={[styles.statCard, isWide && styles.statCardLg]}>
-          <Text style={styles.statLbl}>Rounds</Text>
+          <Text style={styles.statLbl}>{t('analyze.stats.rounds')}</Text>
           <Text style={[styles.statVal, isWide && styles.statValLg]}>{listStats.roundsN}</Text>
-          <Text style={styles.statSub}>In subset</Text>
+          <Text style={styles.statSub}>{t('analyze.stats.inSubset')}</Text>
         </View>
         <View style={[styles.statCard, isWide && styles.statCardLg]}>
-          <Text style={styles.statLbl}>Best diff.</Text>
+          <Text style={styles.statLbl}>{t('analyze.stats.bestDiff')}</Text>
           <Text style={[styles.statVal, isWide && styles.statValLg]}>
             {formatDifferentialDisplay(listStats.bestDiff)}
           </Text>
@@ -443,11 +473,11 @@ export default function AnalyzeScreen() {
           </Text>
         </View>
         <View style={[styles.statCard, isWide && styles.statCardLg]}>
-          <Text style={styles.statLbl}>Avg score</Text>
+          <Text style={styles.statLbl}>{t('analyze.stats.avgScore')}</Text>
           <Text style={[styles.statVal, isWide && styles.statValLg]}>
             {listStats.avg != null ? listStats.avg : '—'}
           </Text>
-          <Text style={styles.statSub}>Gross</Text>
+          <Text style={styles.statSub}>{t('analyze.stats.gross')}</Text>
         </View>
       </View>
       {kpiCaption}
@@ -457,15 +487,17 @@ export default function AnalyzeScreen() {
   const roundList = (
     <>
       <View style={[styles.sectionHead, { paddingHorizontal: gutter }]}>
-        <Text style={[styles.sectionTitle, isWide && styles.sectionTitleLg]}>Matching rounds</Text>
+        <Text style={[styles.sectionTitle, isWide && styles.sectionTitleLg]}>
+          {t('analyze.matchingRounds')}
+        </Text>
       </View>
       {rounds.length === 0 ? (
         <Text style={[styles.emptyRounds, { paddingHorizontal: gutter }]}>
-          No rounds yet. Log a round from the Log tab, then come back here to explore trends by conditions.
+          {t('analyze.emptyRounds')}
         </Text>
       ) : filteredRounds.length === 0 ? (
         <Text style={[styles.emptyRounds, { paddingHorizontal: gutter }]}>
-          No rounds match these filters. Adjust filters above or tap Reset all.
+          {t('analyze.emptyFiltered')}
         </Text>
       ) : (
         filteredRounds.map((r) => (
@@ -493,10 +525,7 @@ export default function AnalyzeScreen() {
         nestedScrollEnabled
       >
         <View style={[styles.intro, { paddingTop: introPadTop, paddingHorizontal: gutter, paddingBottom: 12 }]}>
-          <Text style={styles.introSub}>
-            Filter by how you played the sim (putting, pins, wind, etc.) and compare scores and differentials for that
-            slice of your history.
-          </Text>
+          <Text style={styles.introSub}>{t('analyze.intro')}</Text>
         </View>
 
         <View style={{ marginTop: 12 }}>
@@ -512,7 +541,7 @@ export default function AnalyzeScreen() {
           >
             <Text style={styles.leagueBannerTxt}>{leagueBanner}</Text>
             <Pressable onPress={() => setLeagueBanner(null)} hitSlop={8} accessibilityRole="button">
-              <Text style={styles.leagueBannerDismiss}>Dismiss</Text>
+              <Text style={styles.leagueBannerDismiss}>{t('analyze.dismiss')}</Text>
             </Pressable>
           </View>
         ) : null}

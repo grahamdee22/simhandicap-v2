@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import type { EffectiveHandicapSource } from '../lib/effectiveHandicap';
 
@@ -9,23 +10,25 @@ type Props = {
 };
 
 export function HandicapSourceBadge({ source }: Props) {
+  const { t } = useTranslation();
+
   if (source === 'simcap') {
     return (
       <View style={[styles.badge, styles.simcap]}>
-        <Text style={[styles.txt, styles.simcapTxt]}>SimCap</Text>
+        <Text style={[styles.txt, styles.simcapTxt]}>{t('handicap.sourceSimcap')}</Text>
       </View>
     );
   }
   if (source === 'ghin') {
     return (
       <View style={[styles.badge, styles.ghin]}>
-        <Text style={[styles.txt, styles.ghinTxt]}>GHIN</Text>
+        <Text style={[styles.txt, styles.ghinTxt]}>{t('handicap.sourceGhin')}</Text>
       </View>
     );
   }
   return (
     <View style={[styles.badge, styles.none]}>
-      <Text style={[styles.txt, styles.noneTxt]}>No HCP</Text>
+      <Text style={[styles.txt, styles.noneTxt]}>{t('handicap.sourceNone')}</Text>
     </View>
   );
 }

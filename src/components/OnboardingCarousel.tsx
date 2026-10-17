@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
   NativeScrollEvent,
@@ -12,31 +12,13 @@ import {
   type ViewToken,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '@/src/i18n';
 
 const ONBOARDING_BG = '#1a3a2a';
 
-const SLIDES = [
-  {
-    key: '1',
-    headline: 'Your handicap, for the simulator',
-    body:
-      'SimCap tracks your index across every round you play on GSPro, Trackman, Foresight, Full Swing, E6, Garmin and more. Just log your score and sim settings after each round.',
-  },
-  {
-    key: '2',
-    headline: 'Compete with your crew',
-    body:
-      'Create groups, challenge friends to head-to-head matches, and run tournaments — stroke play, scramble, best ball, or single elimination match play. SimCap handles the scoring.',
-  },
-  {
-    key: '3',
-    headline: 'Every round makes it smarter',
-    body:
-      'The more rounds logged across the SimCap community, the more accurately we calibrate difficulty across platforms and courses. Your index gets fairer over time.',
-  },
-] as const;
+const SLIDE_KEYS = ['1', '2', '3'] as const;
 
-type Slide = (typeof SLIDES)[number];
+type Slide = { key: string; headline: string; body: string };
 
 type Props = {
   onSkip: () => void;
@@ -44,10 +26,21 @@ type Props = {
 };
 
 export function OnboardingCarousel({ onSkip, onComplete }: Props) {
+  const { t } = useTranslation();
   const { width } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<Slide>>(null);
   const [index, setIndex] = useState(0);
+
+  const slides = useMemo<Slide[]>(
+    () =>
+      SLIDE_KEYS.map((key) => ({
+        key,
+        headline: t(`onboarding.slides.${key}.headline`),
+        body: t(`onboarding.slides.${key}.body`),
+      })),
+    [t]
+  );
 
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
@@ -60,9 +53,9 @@ export function OnboardingCarousel({ onSkip, onComplete }: Props) {
   const viewabilityConfig = { itemVisiblePercentThreshold: 60 };
 
   const goNext = useCallback(() => {
-    if (index >= SLIDES.length - 1) return;
+    if (index >= slides.length - 1) return;
     listRef.current?.scrollToIndex({ index: index + 1, animated: true });
-  }, [index]);
+  }, [index, slides.length]);
 
   const renderItem: ListRenderItem<Slide> = useCallback(
     ({ item }) => (
@@ -74,13 +67,16 @@ export function OnboardingCarousel({ onSkip, onComplete }: Props) {
     [width]
   );
 
-  const onMomentumScrollEnd = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const x = e.nativeEvent.contentOffset.x;
-    const i = Math.round(x / Math.max(1, width));
-    setIndex(Math.min(SLIDES.length - 1, Math.max(0, i)));
-  }, [width]);
+  const onMomentumScrollEnd = useCallback(
+    (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+      const x = e.nativeEvent.contentOffset.x;
+      const i = Math.round(x / Math.max(1, width));
+      setIndex(Math.min(slides.length - 1, Math.max(0, i)));
+    },
+    [width, slides.length]
+  );
 
-  const isLast = index === SLIDES.length - 1;
+  const isLast = index === slides.length - 1;
 
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
@@ -90,17 +86,17 @@ export function OnboardingCarousel({ onSkip, onComplete }: Props) {
           onPress={onSkip}
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           accessibilityRole="button"
-          accessibilityLabel="Skip introduction"
+          accessibilityLabel={t('onboarding.skipA11y')}
           style={({ pressed }) => [styles.skipBtn, pressed && styles.skipBtnPressed]}
         >
-          <Text style={styles.skipTxt}>Skip</Text>
+          <Text style={styles.skipTxt}>{t('common.skip')}</Text>
         </Pressable>
       </View>
 
       <FlatList
         ref={listRef}
         style={styles.list}
-        data={[...SLIDES]}
+        data={slides}
         keyExtractor={(item) => item.key}
         renderItem={renderItem}
         horizontal
@@ -118,7 +114,7 @@ export function OnboardingCarousel({ onSkip, onComplete }: Props) {
 
       <View style={[styles.footer, { paddingBottom: Math.max(insets.bottom, 20) }]}>
         <View style={styles.dots}>
-          {SLIDES.map((s, i) => (
+          {slides.map((s, i) => (
             <View
               key={s.key}
               style={[styles.dot, i === index ? styles.dotActive : styles.dotInactive]}
@@ -131,18 +127,18 @@ export function OnboardingCarousel({ onSkip, onComplete }: Props) {
             onPress={onComplete}
             style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
             accessibilityRole="button"
-            accessibilityLabel="Get started"
+            accessibilityLabel={t('onboarding.getStartedA11y')}
           >
-            <Text style={styles.primaryBtnTxt}>Get Started</Text>
+            <Text style={styles.primaryBtnTxt}>{t('onboarding.getStarted')}</Text>
           </Pressable>
         ) : (
           <Pressable
             onPress={goNext}
             style={({ pressed }) => [styles.primaryBtn, pressed && styles.primaryBtnPressed]}
             accessibilityRole="button"
-            accessibilityLabel="Next slide"
+            accessibilityLabel={t('onboarding.nextA11y')}
           >
-            <Text style={styles.primaryBtnTxt}>Next</Text>
+            <Text style={styles.primaryBtnTxt}>{t('common.next')}</Text>
           </Pressable>
         )}
       </View>

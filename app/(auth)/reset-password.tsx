@@ -15,6 +15,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
+import { useTranslation } from '@/src/i18n';
 import { colors } from '@/src/lib/constants';
 import { supabase } from '@/src/lib/supabase';
 
@@ -35,6 +36,7 @@ function parseAuthTokensFromUrl(url: string): { access_token: string; refresh_to
 }
 
 export default function ResetPasswordScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { signOut } = useAuth();
@@ -50,7 +52,7 @@ export default function ResetPasswordScreen() {
 
   const applyRecoveryUrl = useCallback(async (url: string) => {
     if (!supabase) {
-      setLinkError('Sign-in is not available (missing configuration).');
+      setLinkError(t('common.configUnavailable'));
       setLinkPhase('error');
       return;
     }
@@ -70,7 +72,7 @@ export default function ResetPasswordScreen() {
       return;
     }
     setLinkPhase('ready');
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     let alive = true;
@@ -99,7 +101,7 @@ export default function ResetPasswordScreen() {
 
     const timeout = setTimeout(() => {
       if (!alive || sessionFromLinkRef.current) return;
-      setLinkError('This reset link is invalid or expired. Request a new one from sign-in.');
+      setLinkError(t('auth.resetPassword.invalidOrExpired'));
       setLinkPhase('error');
     }, 15000);
 
@@ -108,20 +110,20 @@ export default function ResetPasswordScreen() {
       clearTimeout(timeout);
       sub.remove();
     };
-  }, [applyRecoveryUrl]);
+  }, [applyRecoveryUrl, t]);
 
   const onSubmit = async () => {
     setFormError(null);
     if (!supabase) {
-      setFormError('Sign-in is not available (missing configuration).');
+      setFormError(t('common.configUnavailable'));
       return;
     }
     if (password.length < 6) {
-      setFormError('Password must be at least 6 characters.');
+      setFormError(t('common.passwordMinLength'));
       return;
     }
     if (password !== confirm) {
-      setFormError('Passwords do not match.');
+      setFormError(t('auth.resetPassword.passwordsDoNotMatch'));
       return;
     }
     setBusy(true);
@@ -158,46 +160,46 @@ export default function ResetPasswordScreen() {
         {linkPhase === 'pending' ? (
           <View style={styles.centerBlock}>
             <ActivityIndicator size="large" color={colors.header} />
-            <Text style={styles.pendingTxt}>Opening your reset link…</Text>
+            <Text style={styles.pendingTxt}>{t('auth.resetPassword.openingLink')}</Text>
           </View>
         ) : linkPhase === 'error' ? (
           <View style={styles.centerBlock}>
-            <Text style={styles.sectionTitle}>Could not open link</Text>
-            <Text style={styles.errorText}>{linkError ?? 'Something went wrong.'}</Text>
+            <Text style={styles.sectionTitle}>{t('auth.resetPassword.couldNotOpenTitle')}</Text>
+            <Text style={styles.errorText}>{linkError ?? t('common.somethingWentWrong')}</Text>
           </View>
         ) : success ? (
           <View style={styles.centerBlock}>
-            <Text style={styles.successMessage}>Password updated! You can now sign in.</Text>
+            <Text style={styles.successMessage}>{t('auth.resetPassword.success')}</Text>
           </View>
         ) : (
           <>
-            <Text style={styles.sectionTitle}>Choose a new password</Text>
-            <Text style={styles.subheading}>Enter and confirm your new password below.</Text>
+            <Text style={styles.sectionTitle}>{t('auth.resetPassword.title')}</Text>
+            <Text style={styles.subheading}>{t('auth.resetPassword.subheading')}</Text>
 
-            <Text style={styles.lbl}>New password</Text>
+            <Text style={styles.lbl}>{t('auth.resetPassword.newPassword')}</Text>
             <TextInput
               style={styles.input}
               value={password}
-              onChangeText={(t) => {
-                setPassword(t);
+              onChangeText={(value) => {
+                setPassword(value);
                 if (formError) setFormError(null);
               }}
-              placeholder="At least 6 characters"
+              placeholder={t('common.passwordMinPlaceholder')}
               placeholderTextColor={colors.subtle}
               secureTextEntry
               textContentType="newPassword"
               editable={!busy}
             />
 
-            <Text style={styles.lbl}>Confirm password</Text>
+            <Text style={styles.lbl}>{t('auth.resetPassword.confirmPassword')}</Text>
             <TextInput
               style={styles.input}
               value={confirm}
-              onChangeText={(t) => {
-                setConfirm(t);
+              onChangeText={(value) => {
+                setConfirm(value);
                 if (formError) setFormError(null);
               }}
-              placeholder="Re-enter password"
+              placeholder={t('auth.resetPassword.confirmPlaceholder')}
               placeholderTextColor={colors.subtle}
               secureTextEntry
               textContentType="newPassword"
@@ -214,7 +216,7 @@ export default function ResetPasswordScreen() {
               {busy ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.primaryTxt}>Update password</Text>
+                <Text style={styles.primaryTxt}>{t('auth.resetPassword.updatePassword')}</Text>
               )}
             </Pressable>
           </>

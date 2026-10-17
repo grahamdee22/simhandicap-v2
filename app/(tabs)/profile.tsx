@@ -8,6 +8,13 @@ import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { DualIndexChart } from '../../src/components/DualIndexChart';
 import { IconAddCircleOutline, IconCheckmark, IconChevronForward } from '../../src/components/SvgUiIcons';
+import {
+  SUPPORTED_LANGUAGES,
+  getLanguageOverride,
+  setLanguageOverride,
+  useTranslation,
+  type AppLanguageCode,
+} from '../../src/i18n';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { PAYWALL_ENABLED } from '../../src/lib/featureFlags';
@@ -31,11 +38,14 @@ const DEMO_CONTACT_EMAIL = 'jake.morrison@example.com';
 const PRIVACY_POLICY_URL = 'https://sim-cap.com/privacy.html';
 
 export default function ProfileScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const { user, signOut } = useAuth();
   const { gutter, isWide } = useResponsive();
   const insets = useSafeAreaInsets();
   const displayName = useAppStore((s) => s.displayName);
+  /** null = follow device locale; otherwise a manual override stored in AsyncStorage. */
+  const [languageOverride, setLanguageOverrideState] = useState<AppLanguageCode | null>(null);
   const setDisplayName = useAppStore((s) => s.setDisplayName);
   const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
   const setPreferredLogPlatform = useAppStore((s) => s.setPreferredLogPlatform);
@@ -113,6 +123,21 @@ export default function ProfileScreen() {
     if (!signedIn) setSimcapId(null);
   }, [signedIn]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void getLanguageOverride().then((code) => {
+      if (!cancelled) setLanguageOverrideState(code);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const onSelectLanguage = async (code: AppLanguageCode | null) => {
+    await setLanguageOverride(code);
+    setLanguageOverrideState(code);
+  };
+
   useFocusEffect(
     useCallback(() => {
       if (!PAYWALL_ENABLED) return;
@@ -140,7 +165,7 @@ export default function ProfileScreen() {
   const saveGhin = async () => {
     const v = parseFloat(ghinDraft.replace(/,/g, '.').trim());
     if (Number.isNaN(v) || v < 0) {
-      showAppAlert('GHIN index', 'Enter a valid handicap index (0 or higher).');
+      showAppAlert(t('profile.alertGhinTitle'), t('profile.alertGhinBody'));
       return;
     }
     const rounded = Math.round(v * 10) / 10;
@@ -154,7 +179,7 @@ export default function ProfileScreen() {
         googleOAuthAccessToken ?? undefined
       );
       setSavingField(null);
-      if (error) showAppAlert('Profile', error);
+      if (error) showAppAlert(t('profile.alertProfileTitle'), error);
     }
   };
 
@@ -163,7 +188,7 @@ export default function ProfileScreen() {
     if (trimmed === '') return;
     const v = parseFloat(trimmed);
     if (Number.isNaN(v) || v < 0) {
-      showAppAlert('GHIN index', 'Enter a valid handicap index (0 or higher).');
+      showAppAlert(t('profile.alertGhinTitle'), t('profile.alertGhinBody'));
       setGhinDraft(ghinLatest != null ? ghinLatest.toFixed(1) : '');
       return;
     }
@@ -173,7 +198,7 @@ export default function ProfileScreen() {
   };
 
   const saveName = async () => {
-    const n = draft.trim() || 'Golfer';
+    const n = draft.trim() || t('profile.defaultDisplayName');
     setDisplayName(n);
     setEditing(false);
     if (signedIn) {
@@ -184,7 +209,7 @@ export default function ProfileScreen() {
         googleOAuthAccessToken ?? undefined
       );
       setSavingField(null);
-      if (error) showAppAlert('Profile', error);
+      if (error) showAppAlert(t('profile.alertProfileTitle'), error);
     }
   };
 
@@ -198,7 +223,7 @@ export default function ProfileScreen() {
         googleOAuthAccessToken ?? undefined
       );
       setSavingField(null);
-      if (error) showAppAlert('Profile', error);
+      if (error) showAppAlert(t('profile.alertProfileTitle'), error);
     }
   };
 
@@ -222,20 +247,16 @@ export default function ProfileScreen() {
       >
         <PendingTournamentHolesBanner gutter={0} />
         <Text style={[styles.sub, isWide && styles.subLg]}>
-          {signedIn
-            ? 'Rounds, profile, and settings sync to your SimCap account in the cloud.'
-            : 'Rounds and display name are stored on this device.'}
+          {signedIn ? t('profile.syncCloud') : t('profile.syncLocal')}
         </Text>
 
         {signedIn ? (
           <View style={[styles.card, styles.simcapHeroCard]}>
-            <Text style={styles.simcapHeroLabel}>SimCap ID</Text>
+            <Text style={styles.simcapHeroLabel}>{t('profile.simcapId')}</Text>
             <Text selectable={!!simcapId} style={styles.simcapHeroValue}>
-              {simcapId ?? 'Loading...'}
+              {simcapId ?? t('profile.loading')}
             </Text>
-            <Text style={styles.simcapHeroHint}>
-              Tap and hold to copy. Share this ID for match challenges and player identity.
-            </Text>
+            <Text style={styles.simcapHeroHint}>{t('profile.simcapIdHint')}</Text>
           </View>
         ) : null}
 
@@ -248,12 +269,12 @@ export default function ProfileScreen() {
               pressed && styles.contactFeedbackRowPressed,
             ]}
             accessibilityRole="button"
-            accessibilityLabel="Contact us and send feedback"
+            accessibilityLabel={t('profile.contactA11y')}
           >
             <View style={styles.lastRoundTxt}>
-              <Text style={styles.lastRoundK}>Contact us / Feedback</Text>
+              <Text style={styles.lastRoundK}>{t('profile.contactTitle')}</Text>
               <Text style={styles.lastRoundTitle} numberOfLines={2}>
-                Bugs, ideas, or how the handicap math feels.
+                {t('profile.contactSub')}
               </Text>
             </View>
             <View style={styles.contactFeedbackChevron}>
@@ -263,14 +284,14 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.lbl}>Display name</Text>
+          <Text style={styles.lbl}>{t('profile.displayName')}</Text>
           {editing ? (
             <View style={styles.editRow}>
               <TextInput
                 style={styles.input}
                 value={draft}
                 onChangeText={setDraft}
-                placeholder="Your name"
+                placeholder={t('profile.namePlaceholder')}
                 placeholderTextColor={colors.subtle}
               />
               <Pressable
@@ -281,21 +302,21 @@ export default function ProfileScreen() {
                 {savingField === 'name' ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.saveMiniTxt}>Save</Text>
+                  <Text style={styles.saveMiniTxt}>{t('profile.save')}</Text>
                 )}
               </Pressable>
             </View>
           ) : (
             <Pressable onPress={() => { setDraft(displayName); setEditing(true); }}>
               <Text style={styles.name}>{displayName}</Text>
-              <Text style={styles.tap}>Tap to edit</Text>
+              <Text style={styles.tap}>{t('profile.tapToEdit')}</Text>
             </Pressable>
           )}
         </View>
 
         {signedIn ? (
           <View style={styles.card}>
-            <Text style={styles.lbl}>Account</Text>
+            <Text style={styles.lbl}>{t('profile.account')}</Text>
             <Text style={styles.cardLead}>{user?.email ?? ''}</Text>
             <Pressable
               onPress={onSignOut}
@@ -305,7 +326,7 @@ export default function ProfileScreen() {
               {savingField === 'signout' ? (
                 <ActivityIndicator color={colors.danger} />
               ) : (
-                <Text style={styles.signOutTxt}>Sign out</Text>
+                <Text style={styles.signOutTxt}>{t('profile.signOut')}</Text>
               )}
             </Pressable>
           </View>
@@ -316,16 +337,16 @@ export default function ProfileScreen() {
             style={({ pressed }) => [styles.card, pressed && styles.matchRecordCardPressed]}
             onPress={() => router.push('/paywall' as never)}
             accessibilityRole="button"
-            accessibilityLabel="SimCap Pro subscription"
+            accessibilityLabel={t('profile.proA11y')}
           >
-            <Text style={styles.lbl}>SimCap Pro</Text>
+            <Text style={styles.lbl}>{t('profile.simcapPro')}</Text>
             <View style={styles.matchRecordRow}>
               <View style={styles.matchRecordTextCol}>
-                <Text style={styles.cardLead}>{isProEntitled ? 'Pro' : 'Free'}</Text>
+                <Text style={styles.cardLead}>
+                  {isProEntitled ? t('profile.planPro') : t('profile.planFree')}
+                </Text>
                 <Text style={styles.meta}>
-                  {isProEntitled
-                    ? 'Your SimCap Pro subscription is active.'
-                    : 'View plans and manage your subscription.'}
+                  {isProEntitled ? t('profile.proActive') : t('profile.proManage')}
                 </Text>
               </View>
               <View style={styles.matchRecordChevron}>
@@ -340,17 +361,17 @@ export default function ProfileScreen() {
             style={({ pressed }) => [styles.card, pressed && styles.matchRecordCardPressed]}
             onPress={() => router.push('/(tabs)/match-history' as never)}
             accessibilityRole="button"
-            accessibilityLabel="View full match history"
+            accessibilityLabel={t('profile.matchHistoryA11y')}
           >
-            <Text style={styles.lbl}>Match play record</Text>
+            <Text style={styles.lbl}>{t('profile.matchPlayRecord')}</Text>
             <View style={styles.matchRecordRow}>
               <View style={styles.matchRecordTextCol}>
                 <Text style={styles.statBig}>
                   {matchPlayRecord.wins}–{matchPlayRecord.losses}–{matchPlayRecord.draws}
                 </Text>
-                <Text style={styles.statLbl}>W–L–D · stroke matches on SimCap</Text>
+                <Text style={styles.statLbl}>{t('profile.matchRecordLbl')}</Text>
                 <Text style={styles.matchForfeitMeta}>
-                  Forfeits (matches you abandoned): {matchPlayRecord.forfeits}
+                  {t('profile.forfeits', { count: matchPlayRecord.forfeits })}
                 </Text>
               </View>
               <View style={styles.matchRecordChevron}>
@@ -361,30 +382,33 @@ export default function ProfileScreen() {
         ) : null}
 
         <View style={styles.card}>
-          <Text style={styles.lbl}>Rounds & activity</Text>
+          <Text style={styles.lbl}>{t('profile.roundsActivity')}</Text>
           <Text style={styles.statBig}>{rounds.length}</Text>
-          <Text style={styles.statLbl}>rounds logged on this device</Text>
+          <Text style={styles.statLbl}>{t('profile.roundsLogged')}</Text>
           {latest ? (
             <Link href={`/round/${latest.id}`} asChild>
               <Pressable style={styles.lastRound}>
                 <View style={styles.lastRoundTxt}>
-                  <Text style={styles.lastRoundK}>Most recent</Text>
+                  <Text style={styles.lastRoundK}>{t('profile.mostRecent')}</Text>
                   <Text style={styles.lastRoundTitle} numberOfLines={1}>
                     {latest.courseName}
                   </Text>
                   <Text style={styles.lastRoundMeta} numberOfLines={2}>
-                    {new Date(latest.playedAt).toLocaleDateString(undefined, {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}{' '}
-                    · {latest.grossScore} gross
-                    {latest.holesPlayed === 'front'
-                      ? ' · Front 9'
-                      : latest.holesPlayed === 'back'
-                        ? ' · Back 9'
-                        : ''}{' '}
-                    · diff {formatDifferentialDisplay(latest.adjustedDiff)}
+                    {t('profile.lastRoundMeta', {
+                      date: new Date(latest.playedAt).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                      }),
+                      score: latest.grossScore,
+                      holes:
+                        latest.holesPlayed === 'front'
+                          ? t('profile.holesFront')
+                          : latest.holesPlayed === 'back'
+                            ? t('profile.holesBack')
+                            : '',
+                      diff: formatDifferentialDisplay(latest.adjustedDiff),
+                    })}
                   </Text>
                   <Text style={styles.lastRoundSettings} numberOfLines={2}>
                     {formatRoundMeta(latest)}
@@ -396,7 +420,7 @@ export default function ProfileScreen() {
           ) : (
             <Link href={'/(tabs)/log/round' as Href} asChild>
               <Pressable style={styles.logCta}>
-                <Text style={styles.logCtaTxt}>Log a round — your index and chart start here</Text>
+                <Text style={styles.logCtaTxt}>{t('profile.logCta')}</Text>
                 <IconAddCircleOutline size={20} color={colors.accent} />
               </Pressable>
             </Link>
@@ -404,23 +428,18 @@ export default function ProfileScreen() {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.lbl}>Real vs Sim</Text>
-          <Text style={styles.meta}>
-            Compare your official GHIN to the sim handicap we calculate from your logged rounds. Update GHIN whenever
-            it changes — we keep a simple history for the chart.
-          </Text>
+          <Text style={styles.lbl}>{t('profile.realVsSim')}</Text>
+          <Text style={styles.meta}>{t('profile.realVsSimMeta')}</Text>
 
-          <Text style={styles.ghinFieldLbl}>Current GHIN index</Text>
-          <Text style={styles.ghinFieldHint}>
-            Used in tournaments until your SimCap index is established (3+ rounds).
-          </Text>
+          <Text style={styles.ghinFieldLbl}>{t('profile.currentGhin')}</Text>
+          <Text style={styles.ghinFieldHint}>{t('profile.ghinTournamentHint')}</Text>
           <View style={styles.ghinRow}>
             <TextInput
               style={styles.ghinInput}
               value={ghinDraft}
               onChangeText={setGhinDraft}
               onBlur={() => onGhinBlur()}
-              placeholder="e.g. 6.4"
+              placeholder={t('profile.ghinPlaceholder')}
               placeholderTextColor={colors.subtle}
               keyboardType="decimal-pad"
             />
@@ -432,7 +451,9 @@ export default function ProfileScreen() {
               {savingField === 'ghin' ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.ghinSaveTxt}>{ghinLatest != null ? 'Update' : 'Save'}</Text>
+                <Text style={styles.ghinSaveTxt}>
+                  {ghinLatest != null ? t('profile.update') : t('profile.save')}
+                </Text>
               )}
             </Pressable>
           </View>
@@ -442,12 +463,12 @@ export default function ProfileScreen() {
               <View style={styles.compareCard}>
                 <View style={styles.compareRow}>
                   <View style={styles.compareCell}>
-                    <Text style={styles.compareK}>Sim index</Text>
+                    <Text style={styles.compareK}>{t('profile.simIndex')}</Text>
                     <Text style={styles.compareV}>{formatHandicapIndexDisplay(simIndex)}</Text>
                   </View>
                   <View style={styles.compareDivider} />
                   <View style={styles.compareCell}>
-                    <Text style={styles.compareK}>GHIN (real)</Text>
+                    <Text style={styles.compareK}>{t('profile.ghinReal')}</Text>
                     <Text style={styles.compareV}>{formatHandicapIndexDisplay(ghinLatest)}</Text>
                   </View>
                 </View>
@@ -456,9 +477,7 @@ export default function ProfileScreen() {
                     {formatSimVsRealGapSentence(simIndex, ghinLatest)}
                   </Text>
                 ) : (
-                  <Text style={styles.gapSentenceMuted}>
-                    Log sim rounds on the Log tab to calculate your sim index.
-                  </Text>
+                  <Text style={styles.gapSentenceMuted}>{t('profile.logSimRounds')}</Text>
                 )}
                 {simIndex != null ? (
                   <View
@@ -477,16 +496,16 @@ export default function ProfileScreen() {
                       ]}
                     >
                       {gapTrend === 'closing'
-                        ? 'Gap closing'
+                        ? t('profile.gapClosing')
                         : gapTrend === 'widening'
-                          ? 'Gap widening'
-                          : 'Gap steady'}
+                          ? t('profile.gapWidening')
+                          : t('profile.gapSteady')}
                     </Text>
                   </View>
                 ) : null}
               </View>
 
-              <Text style={styles.chartTitle}>Index history</Text>
+              <Text style={styles.chartTitle}>{t('profile.indexHistory')}</Text>
               <View
                 style={styles.chartBox}
                 onLayout={(e) => setChartW(e.nativeEvent.layout.width)}
@@ -503,25 +522,20 @@ export default function ProfileScreen() {
                     tMax={chartGeom.tMax}
                   />
                 ) : (
-                  <Text style={styles.chartEmpty}>
-                    Save GHIN updates over time and log sim rounds — both lines appear as you build history.
-                  </Text>
+                  <Text style={styles.chartEmpty}>{t('profile.chartEmpty')}</Text>
                 )}
               </View>
 
-              <Text style={styles.explainer}>
-                Most golfers play 2–4 strokes better on a sim. If your gap is closing it means your real game is
-                catching up — or your sim standards are getting tougher.
-              </Text>
+              <Text style={styles.explainer}>{t('profile.explainer')}</Text>
             </>
           ) : (
-            <Text style={styles.ghinHint}>Save a GHIN index above to see the comparison and chart.</Text>
+            <Text style={styles.ghinHint}>{t('profile.ghinHintEmpty')}</Text>
           )}
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.lbl}>Preferred sim platform</Text>
-          <Text style={styles.meta}>Default when you open the Log tab (saved to your profile when signed in).</Text>
+          <Text style={styles.lbl}>{t('profile.preferredPlatform')}</Text>
+          <Text style={styles.meta}>{t('profile.preferredPlatformMeta')}</Text>
           <View style={styles.platformList}>
             {PLATFORMS.map((p) => {
               const on = p === preferredLogPlatform;
@@ -540,11 +554,48 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        <View style={styles.card}>
+          <Text style={styles.lbl}>{t('settings.language')}</Text>
+          <Text style={styles.meta}>{t('settings.languageHint')}</Text>
+          <View style={styles.platformList}>
+            <Pressable
+              onPress={() => void onSelectLanguage(null)}
+              style={[styles.platformRow, languageOverride == null && styles.platformRowOn]}
+              accessibilityRole="button"
+              accessibilityState={{ selected: languageOverride == null }}
+            >
+              <Text
+                style={[styles.platformRowTxt, languageOverride == null && styles.platformRowTxtOn]}
+              >
+                {t('settings.languageDeviceDefault')}
+              </Text>
+              {languageOverride == null ? <IconCheckmark size={18} color={colors.accent} /> : null}
+            </Pressable>
+            {SUPPORTED_LANGUAGES.map((lang) => {
+              const on = languageOverride === lang.code;
+              return (
+                <Pressable
+                  key={lang.code}
+                  onPress={() => void onSelectLanguage(lang.code)}
+                  style={[styles.platformRow, on && styles.platformRowOn]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                >
+                  <Text style={[styles.platformRowTxt, on && styles.platformRowTxtOn]}>
+                    {lang.label}
+                  </Text>
+                  {on ? <IconCheckmark size={18} color={colors.accent} /> : null}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+
         {!signedIn ? (
           <View style={styles.card}>
-            <Text style={styles.lbl}>Contact</Text>
+            <Text style={styles.lbl}>{t('profile.contact')}</Text>
             <Text style={styles.cardLead}>{DEMO_CONTACT_EMAIL}</Text>
-            <Text style={styles.meta}>Demo email — not used for sign-in.</Text>
+            <Text style={styles.meta}>{t('profile.demoEmailMeta')}</Text>
           </View>
         ) : null}
 
@@ -552,9 +603,9 @@ export default function ProfileScreen() {
           onPress={() => void Linking.openURL(PRIVACY_POLICY_URL)}
           style={({ pressed }) => [styles.privacyLinkWrap, pressed && styles.privacyLinkPressed]}
           accessibilityRole="link"
-          accessibilityLabel="Privacy policy (opens in browser)"
+          accessibilityLabel={t('profile.privacyA11y')}
         >
-          <Text style={styles.privacyLink}>Privacy Policy</Text>
+          <Text style={styles.privacyLink}>{t('profile.privacyPolicy')}</Text>
         </Pressable>
       </ScrollView>
     </ContentWidth>

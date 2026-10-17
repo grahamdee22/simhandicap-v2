@@ -14,6 +14,7 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import i18n, { useTranslation } from '../../../src/i18n';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { mergeViewStyles } from '../../../src/lib/mergeStyles';
@@ -21,7 +22,7 @@ import { useResponsive } from '../../../src/lib/responsive';
 import {
   formatDifferentialDisplay,
   formatHandicapIndexDisplay,
-  mulliganDisplayLabel,
+  normalizeMulligans,
   scoreToParStyle,
 } from '../../../src/lib/handicap';
 import { getCourseById } from '../../../src/lib/courses';
@@ -36,8 +37,9 @@ import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken'
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { isSupabaseConfigured } from '../../../src/lib/supabase';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
-import { pinDetailLabel } from '../../../src/lib/pinPlacement';
+import { isGsProPlatform } from '../../../src/lib/pinPlacement';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
+import type { TFunction } from 'i18next';
 
 /** RN Web's Alert.alert is a no-op; use the browser confirm dialog there. */
 function confirmDestructive(
@@ -53,21 +55,33 @@ function confirmDestructive(
     return;
   }
   Alert.alert(title, message, [
-    { text: 'Cancel', style: 'cancel' },
+    { text: i18n.t('common.cancel'), style: 'cancel' },
     { text: destructiveLabel, style: 'destructive', onPress: onConfirm },
   ]);
 }
 
-function puttingLabel(p: SimRound['putting']): string {
-  if (p === 'auto_2putt') return 'Auto 2-putt';
-  if (p === 'gimme_5') return 'Gimme <5ft';
-  return 'Putt everything';
+function puttingLabel(t: TFunction, p: SimRound['putting']): string {
+  if (p === 'auto_2putt') return t('analyze.filter.putting.auto2putt');
+  if (p === 'gimme_5') return t('round.detail.putting.gimme_5');
+  return t('round.detail.putting.putt_all');
 }
 
-function windLabel(w: SimRound['wind']): string {
-  if (w === 'off') return 'Off';
-  if (w === 'light') return 'Light';
-  return 'Strong';
+function windLabel(t: TFunction, w: SimRound['wind']): string {
+  return t(`analyze.filter.wind.${w}`);
+}
+
+function pinDetailLabelTranslated(
+  t: TFunction,
+  pin: SimRound['pin'],
+  platform: SimRound['platform']
+): string {
+  if (isGsProPlatform(platform)) {
+    return t(`round.detail.pinDetail.${pin}`);
+  }
+  if (pin === 'thu') return t('log.round.pin.easy');
+  if (pin === 'fri') return t('log.round.pin.medium');
+  if (pin === 'sun') return t('log.round.pin.hard');
+  return t(`log.round.pin.${pin}`);
 }
 
 /** Same counting set as Home index math (`roundsForSimcapIndex`). */
@@ -85,6 +99,7 @@ function top8Ids(all: SimRound[]): Set<string> {
 }
 
 export default function RoundDetailScreen() {
+  const { t } = useTranslation();
   const { id } = useLocalSearchParams<{ id: string }>();
   const { gutter, isWide, isVeryWide, columnWidth } = useResponsive();
   const insets = useSafeAreaInsets();
@@ -136,16 +151,16 @@ export default function RoundDetailScreen() {
       <>
         <Stack.Screen
           options={{
-            title: 'Round detail',
+            title: t('tabs.round.title'),
             headerBackVisible: false,
             headerLeft: () => null,
           }}
         />
         <View style={[styles.miss, { paddingTop: insets.top }]}>
-          <Text style={styles.missTxt}>Round not found.</Text>
+          <Text style={styles.missTxt}>{t('round.detail.notFound')}</Text>
           <Link href="/" asChild>
             <Pressable>
-              <Text style={styles.link}>Back home</Text>
+              <Text style={styles.link}>{t('round.detail.backHome')}</Text>
             </Pressable>
           </Link>
         </View>
@@ -158,29 +173,46 @@ export default function RoundDetailScreen() {
   const parTotal = pars.reduce((a, b) => a + b, 0) || 72;
   const vsPar = r.grossScore - parTotal;
   const vsParTxt =
-    vsPar === 0 ? 'Even par' : vsPar > 0 ? `${vsPar} over par` : `${Math.abs(vsPar)} under par`;
+    vsPar === 0
+      ? t('round.detail.evenPar')
+      : vsPar > 0
+        ? t('round.detail.overPar', { count: vsPar })
+        : t('round.detail.underPar', { count: Math.abs(vsPar) });
 
   const excludedFromIndex = !!r.excludesFromSimcapIndex;
   const inTop = !excludedFromIndex && top8Ids(rounds).has(r.id);
   const indexBadgeSub = excludedFromIndex
-    ? 'Excluded from index'
+    ? t('round.detail.excludedFromIndex')
     : inTop
-      ? 'Counts toward index'
-      : 'Outside best 8 / 20';
+      ? t('round.detail.countsTowardIndex')
+      : t('round.detail.outsideBest8');
   const filledCard = r.holeScores.length === 18 && r.holeScores.every((h) => h != null);
+  const emDash = t('match.history.emDash');
+  const holesMeta =
+    r.holesPlayed === 'front'
+      ? ` · ${t('roundList.front9')}`
+      : r.holesPlayed === 'back'
+        ? ` · ${t('roundList.back9')}`
+        : '';
+  const holesSub =
+    r.holesPlayed === 'front'
+      ? t('roundList.front9')
+      : r.holesPlayed === 'back'
+        ? t('roundList.back9')
+        : vsParTxt;
 
   const onDelete = () => {
     confirmDestructive(
-      'Delete round?',
-      'This will recalculate your sim index.',
-      'Delete',
+      t('round.detail.deleteConfirmTitle'),
+      t('round.detail.deleteConfirmBody'),
+      t('round.detail.deleteAction'),
       () => {
         void (async () => {
           try {
             await deleteRound(r.id);
             router.replace('/');
           } catch (e) {
-            showAppAlert('Could not delete', String(e));
+            showAppAlert(t('round.detail.couldNotDelete'), String(e));
           }
         })();
       }
@@ -191,13 +223,15 @@ export default function RoundDetailScreen() {
     <>
       <Stack.Screen
         options={{
-          title: 'Round detail',
+          title: t('tabs.round.title'),
           headerBackVisible: false,
           headerLeft: () => null,
           headerRight: () => (
             <Link href={{ pathname: '/(tabs)/log/round', params: { editId: r.id } } as unknown as Href} asChild>
               <Pressable style={{ paddingHorizontal: 12 }}>
-                <Text style={{ color: colors.accentMuted, fontSize: 13, fontWeight: '600' }}>Edit</Text>
+                <Text style={{ color: colors.accentMuted, fontSize: 13, fontWeight: '600' }}>
+                  {t('round.detail.edit')}
+                </Text>
               </Pressable>
             </Link>
           ),
@@ -228,34 +262,26 @@ export default function RoundDetailScreen() {
             <Text style={[styles.meta, isWide && styles.metaLg]}>
               {r.platform} · {new Date(r.playedAt).toLocaleDateString(undefined, { dateStyle: 'medium' })}
               {r.teeName ? ` · ${r.teeName}` : ''}
-              {r.holesPlayed === 'front'
-                ? ' · Front 9'
-                : r.holesPlayed === 'back'
-                  ? ' · Back 9'
-                  : ''}
+              {holesMeta}
             </Text>
             <View style={[styles.heroStats, isWide && { gap: 12 }]}>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
-                <Text style={styles.hstatLbl}>Gross score</Text>
+                <Text style={styles.hstatLbl}>{t('round.detail.grossScore')}</Text>
                 <Text style={styles.hstatVal}>{r.grossScore}</Text>
-                <Text style={styles.hstatSub}>
-                  {r.holesPlayed === 'front' || r.holesPlayed === 'back'
-                    ? r.holesPlayed === 'front'
-                      ? 'Front 9'
-                      : 'Back 9'
-                    : vsParTxt}
-                </Text>
+                <Text style={styles.hstatSub}>{holesSub}</Text>
               </View>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
-                <Text style={styles.hstatLbl}>Differential</Text>
+                <Text style={styles.hstatLbl}>{t('round.detail.differential')}</Text>
                 <Text style={styles.hstatVal}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                 <Text style={styles.hstatSub}>{indexBadgeSub}</Text>
               </View>
               <View style={[styles.hstat, isWide && styles.hstatLg]}>
-                <Text style={styles.hstatLbl}>Index after</Text>
+                <Text style={styles.hstatLbl}>{t('round.detail.indexAfter')}</Text>
                 <Text style={styles.hstatVal}>{formatHandicapIndexDisplay(r.indexAfter)}</Text>
                 <Text style={styles.hstatSub}>
-                  {r.indexDelta != null ? `${r.indexDelta.toFixed(1)} this round` : '—'}
+                  {r.indexDelta != null
+                    ? t('round.detail.indexDeltaThisRound', { value: r.indexDelta.toFixed(1) })
+                    : emDash}
                 </Text>
               </View>
             </View>
@@ -267,31 +293,33 @@ export default function RoundDetailScreen() {
               <View style={styles.splitCol}>
                 <View style={[styles.predCard, styles.predCardSplit]}>
                   <View style={styles.predStatRow}>
-                    <Text style={styles.predStatLbl}>Adjusted differential:</Text>
+                    <Text style={styles.predStatLbl}>{t('log.round.adjustedDifferential')}</Text>
                     <Text style={styles.predAdjustedNum}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                   </View>
                 </View>
               </View>
               <View style={styles.splitCol}>
                 <View style={styles.sectionHead}>
-                  <Text style={styles.sectionTitle}>Conditions played</Text>
+                  <Text style={styles.sectionTitle}>{t('round.detail.conditionsPlayed')}</Text>
                 </View>
                 <View style={styles.grid}>
                   <View style={[styles.chip, isVeryWide && styles.chipLg]}>
-                    <Text style={styles.chipLbl}>Putting mode</Text>
-                    <Text style={styles.chipVal}>{puttingLabel(r.putting)}</Text>
+                    <Text style={styles.chipLbl}>{t('log.round.puttingMode')}</Text>
+                    <Text style={styles.chipVal}>{puttingLabel(t, r.putting)}</Text>
                   </View>
                   <View style={[styles.chip, isVeryWide && styles.chipLg]}>
-                    <Text style={styles.chipLbl}>Pin placement</Text>
-                    <Text style={styles.chipVal}>{pinDetailLabel(r.pin, r.platform)}</Text>
+                    <Text style={styles.chipLbl}>{t('log.round.pinPlacement')}</Text>
+                    <Text style={styles.chipVal}>{pinDetailLabelTranslated(t, r.pin, r.platform)}</Text>
                   </View>
                   <View style={[styles.chip, isVeryWide && styles.chipLg]}>
-                    <Text style={styles.chipLbl}>Wind</Text>
-                    <Text style={[styles.chipVal, styles.chipHi]}>{windLabel(r.wind)}</Text>
+                    <Text style={styles.chipLbl}>{t('log.round.wind')}</Text>
+                    <Text style={[styles.chipVal, styles.chipHi]}>{windLabel(t, r.wind)}</Text>
                   </View>
                   <View style={[styles.chip, isVeryWide && styles.chipLg]}>
-                    <Text style={styles.chipLbl}>Mulligans</Text>
-                    <Text style={[styles.chipVal, styles.chipHi]}>{mulliganDisplayLabel(r.mulligans)}</Text>
+                    <Text style={styles.chipLbl}>{t('log.round.mulligans')}</Text>
+                    <Text style={[styles.chipVal, styles.chipHi]}>
+                      {t(`log.round.mulliganOpts.${normalizeMulligans(r.mulligans)}.ds`)}
+                    </Text>
                   </View>
                 </View>
               </View>
@@ -300,30 +328,32 @@ export default function RoundDetailScreen() {
             <>
               <View style={[styles.predCard, { marginHorizontal: gutter }]}>
                 <View style={styles.predStatRow}>
-                  <Text style={styles.predStatLbl}>Adjusted differential:</Text>
+                  <Text style={styles.predStatLbl}>{t('log.round.adjustedDifferential')}</Text>
                   <Text style={styles.predAdjustedNum}>{formatDifferentialDisplay(r.adjustedDiff)}</Text>
                 </View>
               </View>
 
               <View style={[styles.sectionHead, { paddingHorizontal: gutter }]}>
-                <Text style={styles.sectionTitle}>Conditions played</Text>
+                <Text style={styles.sectionTitle}>{t('round.detail.conditionsPlayed')}</Text>
               </View>
               <View style={[styles.grid, { paddingHorizontal: gutter }]}>
                 <View style={styles.chip}>
-                  <Text style={styles.chipLbl}>Putting mode</Text>
-                  <Text style={styles.chipVal}>{puttingLabel(r.putting)}</Text>
+                  <Text style={styles.chipLbl}>{t('log.round.puttingMode')}</Text>
+                  <Text style={styles.chipVal}>{puttingLabel(t, r.putting)}</Text>
                 </View>
                 <View style={styles.chip}>
-                  <Text style={styles.chipLbl}>Pin placement</Text>
-                  <Text style={styles.chipVal}>{pinDetailLabel(r.pin, r.platform)}</Text>
+                  <Text style={styles.chipLbl}>{t('log.round.pinPlacement')}</Text>
+                  <Text style={styles.chipVal}>{pinDetailLabelTranslated(t, r.pin, r.platform)}</Text>
                 </View>
                 <View style={styles.chip}>
-                  <Text style={styles.chipLbl}>Wind</Text>
-                  <Text style={[styles.chipVal, styles.chipHi]}>{windLabel(r.wind)}</Text>
+                  <Text style={styles.chipLbl}>{t('log.round.wind')}</Text>
+                  <Text style={[styles.chipVal, styles.chipHi]}>{windLabel(t, r.wind)}</Text>
                 </View>
                 <View style={styles.chip}>
-                  <Text style={styles.chipLbl}>Mulligans</Text>
-                  <Text style={[styles.chipVal, styles.chipHi]}>{mulliganDisplayLabel(r.mulligans)}</Text>
+                  <Text style={styles.chipLbl}>{t('log.round.mulligans')}</Text>
+                  <Text style={[styles.chipVal, styles.chipHi]}>
+                    {t(`log.round.mulliganOpts.${normalizeMulligans(r.mulligans)}.ds`)}
+                  </Text>
                 </View>
               </View>
             </>
@@ -332,26 +362,26 @@ export default function RoundDetailScreen() {
           {filledCard ? (
             <>
               <View style={[styles.sectionHead, { paddingHorizontal: gutter }]}>
-                <Text style={styles.sectionTitle}>Scorecard</Text>
+                <Text style={styles.sectionTitle}>{t('round.detail.scorecard')}</Text>
               </View>
               {isVeryWide ? (
                 <View style={[styles.scRowWide, { paddingHorizontal: gutter, gap: gutter }]}>
                   <ScoreTable
                     pars={pars}
                     scores={r.holeScores as number[]}
-                    label="Front 9"
+                    label={t('roundList.front9')}
                     start={0}
                     count={9}
-                    totalLabel="Out"
+                    totalLabel={t('round.detail.scorecardOut')}
                     wrapStyle={styles.scWrapHalf}
                   />
                   <ScoreTable
                     pars={pars}
                     scores={r.holeScores as number[]}
-                    label="Back 9"
+                    label={t('roundList.back9')}
                     start={9}
                     count={9}
-                    totalLabel="In"
+                    totalLabel={t('round.detail.scorecardIn')}
                     wrapStyle={styles.scWrapHalf}
                   />
                 </View>
@@ -360,19 +390,19 @@ export default function RoundDetailScreen() {
                   <ScoreTable
                     pars={pars}
                     scores={r.holeScores as number[]}
-                    label="Front 9"
+                    label={t('roundList.front9')}
                     start={0}
                     count={9}
-                    totalLabel="Out"
+                    totalLabel={t('round.detail.scorecardOut')}
                     wrapStyle={{ marginHorizontal: gutter }}
                   />
                   <ScoreTable
                     pars={pars}
                     scores={r.holeScores as number[]}
-                    label="Back 9"
+                    label={t('roundList.back9')}
                     start={9}
                     count={9}
-                    totalLabel="In"
+                    totalLabel={t('round.detail.scorecardIn')}
                     wrapStyle={{ marginHorizontal: gutter }}
                   />
                 </>
@@ -383,14 +413,14 @@ export default function RoundDetailScreen() {
           <View style={[styles.actions, { marginHorizontal: gutter }]}>
             <Link href={'/(tabs)/log/round' as Href} asChild>
               <Pressable style={mergeViewStyles(styles.actionBtn, styles.actionPrimary)}>
-                <Text style={[styles.actionTxt, styles.actionPrimaryTxt]}>Log another</Text>
+                <Text style={[styles.actionTxt, styles.actionPrimaryTxt]}>{t('round.detail.logAnother')}</Text>
               </Pressable>
             </Link>
           </View>
 
           <Pressable style={styles.deleteBtn} onPress={onDelete}>
             <Ionicons name="trash-outline" size={22} color={colors.danger} />
-            <Text style={styles.deleteTxt}>Delete round</Text>
+            <Text style={styles.deleteTxt}>{t('round.detail.deleteRound')}</Text>
           </Pressable>
           </View>
         </ScrollView>
@@ -416,13 +446,15 @@ function ScoreTable({
   totalLabel: string;
   wrapStyle?: ViewStyle;
 }) {
+  const { t } = useTranslation();
   const holes = Array.from({ length: count }, (_, i) => start + i);
   const total = holes.reduce((s, i) => s + (scores[i] ?? 0), 0);
+  const emDash = t('match.history.emDash');
   return (
     <View style={[styles.scWrap, wrapStyle]}>
       <Text style={styles.scSection}>{label}</Text>
       <View style={styles.scHdr}>
-        <Text style={[styles.scCell, styles.scCellL]}>H</Text>
+        <Text style={[styles.scCell, styles.scCellL]}>{t('round.detail.scorecardHole')}</Text>
         {holes.map((i) => (
           <Text key={i} style={styles.scCell}>
             {i + 1}
@@ -430,15 +462,15 @@ function ScoreTable({
         ))}
       </View>
       <View style={styles.scRow}>
-        <Text style={styles.scN}>Par</Text>
+        <Text style={styles.scN}>{t('round.detail.scorecardPar')}</Text>
         {holes.map((i) => (
           <Text key={i} style={styles.scS}>
-            {pars[i] ?? '—'}
+            {pars[i] ?? emDash}
           </Text>
         ))}
       </View>
       <View style={styles.scRow}>
-        <Text style={styles.scN}>You</Text>
+        <Text style={styles.scN}>{t('round.detail.scorecardYou')}</Text>
         {holes.map((i) => {
           const sc = scores[i];
           const par = pars[i] ?? 4;

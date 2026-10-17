@@ -16,6 +16,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { MatchPlayBracketSection } from '../../../src/components/MatchPlayBracketSection';
+import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
@@ -35,7 +36,6 @@ import type { DbTournamentTeamHoleScoreRow } from '../../../src/lib/tournamentTy
 import {
   computeLeagueStandings,
   formatLeagueDateRange,
-  formatLeagueFormatLabel,
   formatTeamMemberSummary,
   isLeagueActive,
   isTeamLeagueFormat,
@@ -47,6 +47,7 @@ import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 export default function LeagueDetailScreen() {
+  const { t } = useTranslation();
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const leagueId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -220,8 +221,9 @@ export default function LeagueDetailScreen() {
         ? myPairing.player_2_entry_id
         : myPairing.player_1_entry_id;
     const opp = bundle.entries.find((e) => e.id === oppEntryId);
-    return opp ? displayNames[opp.user_id] ?? 'Opponent' : 'Opponent';
-  }, [myPairing, myEntry, bundle, displayNames]);
+    const fallback = t('tournaments.section.opponent');
+    return opp ? displayNames[opp.user_id] ?? fallback : fallback;
+  }, [myPairing, myEntry, bundle, displayNames, t]);
 
   const myStanding = useMemo(() => {
     if (!user?.id) return null;
@@ -240,7 +242,7 @@ export default function LeagueDetailScreen() {
     if (!bundle || !user?.id || bundle.league.format !== 'scramble') return null;
     const entry = bundle.entries.find((e) => e.user_id === user.id);
     return entry?.league_team_id
-      ? bundle.teams.find((t) => t.id === entry.league_team_id) ?? null
+      ? bundle.teams.find((team) => team.id === entry.league_team_id) ?? null
       : null;
   }, [bundle, user?.id]);
 
@@ -261,7 +263,7 @@ export default function LeagueDetailScreen() {
   if (!bundle) {
     return (
       <ContentWidth bg={colors.surface}>
-        <Text style={{ padding: gutter }}>Tournament not found.</Text>
+        <Text style={{ padding: gutter }}>{t('league.detail.notFound')}</Text>
       </ContentWidth>
     );
   }
@@ -273,6 +275,7 @@ export default function LeagueDetailScreen() {
   const isTeamLeague = isTeamLeagueFormat(league.format);
   const playerCount = bundle.entries.length;
   const teamCount = bundle.teams.length;
+  const emDash = t('match.history.emDash');
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -285,15 +288,19 @@ export default function LeagueDetailScreen() {
       >
         <View style={styles.badgeRow}>
           <View style={styles.pill}>
-            <Text style={styles.pillTxt}>{formatLeagueFormatLabel(league.format)}</Text>
+            <Text style={styles.pillTxt}>
+              {t(`league.create.formats.${league.format}.title`)}
+            </Text>
           </View>
           {!completed ? (
             <View style={styles.pillMuted}>
-              <Text style={styles.pillMutedTxt}>{leagueDaysRemaining(league)} days left</Text>
+              <Text style={styles.pillMutedTxt}>
+                {t('league.detail.daysLeft', { count: leagueDaysRemaining(league) })}
+              </Text>
             </View>
           ) : (
             <View style={styles.pillMuted}>
-              <Text style={styles.pillMutedTxt}>Completed</Text>
+              <Text style={styles.pillMutedTxt}>{t('season.detail.statusCompleted')}</Text>
             </View>
           )}
         </View>
@@ -322,11 +329,9 @@ export default function LeagueDetailScreen() {
 
         {isLegacyMp ? (
           <View style={styles.pairingsCard}>
-            <Text style={styles.pairingsTitle}>Match pairings</Text>
+            <Text style={styles.pairingsTitle}>{t('league.detail.matchPairings')}</Text>
             {pairings.length === 0 ? (
-              <Text style={styles.pairingsEmpty}>
-                No pairings yet. The group creator or an admin can assign matchups from Manage tournament.
-              </Text>
+              <Text style={styles.pairingsEmpty}>{t('league.detail.pairingsEmpty')}</Text>
             ) : (
               pairings.map((p) => {
                 const { name1, name2 } = pairingPlayerNames(p, bundle.entries, displayNames);
@@ -342,7 +347,7 @@ export default function LeagueDetailScreen() {
                     }
                   >
                     <Text style={styles.pairingLine}>
-                      {name1} vs. {name2}
+                      {t('league.detail.vsLine', { name1, name2 })}
                     </Text>
                   </Pressable>
                 );
@@ -361,11 +366,11 @@ export default function LeagueDetailScreen() {
               } as never)
             }
           >
-            <Text style={styles.matchCardTitle}>Your match</Text>
+            <Text style={styles.matchCardTitle}>{t('bracket.yourMatch')}</Text>
             <Text style={styles.matchCardLine}>
               {formatPairingResultLine(myPairing, myEntry.id, myOpponentName)}
             </Text>
-            <Text style={styles.matchCardLink}>Match details →</Text>
+            <Text style={styles.matchCardLink}>{t('league.detail.matchDetails')}</Text>
           </Pressable>
         ) : null}
 
@@ -373,8 +378,12 @@ export default function LeagueDetailScreen() {
           <View style={styles.podium}>
             {standings.length > 3 ? (
               <Text style={styles.podiumHint}>
-                Top 3 of {standings.length} {isTeamLeague ? 'teams' : 'players'} — full standings
-                below
+                {t('league.detail.podiumHint', {
+                  count: standings.length,
+                  entity: isTeamLeague
+                    ? t('league.detail.teamsEntity')
+                    : t('league.detail.playersEntity'),
+                })}
               </Text>
             ) : null}
             {standings[0] ? (
@@ -383,7 +392,7 @@ export default function LeagueDetailScreen() {
                 <Text style={styles.trophyTitle} numberOfLines={2}>
                   {standings[0].displayName}
                 </Text>
-                <Text style={styles.trophySub}>Tournament champion</Text>
+                <Text style={styles.trophySub}>{t('bracket.tournamentChampion')}</Text>
                 {isTeamLeague && standings[0].memberNames.length > 0 ? (
                   <Text style={styles.trophyMembers} numberOfLines={2}>
                     {formatTeamMemberSummary(standings[0].memberNames)}
@@ -397,7 +406,7 @@ export default function LeagueDetailScreen() {
                 <Text style={styles.trophyTitle} numberOfLines={2}>
                   {standings[1].displayName}
                 </Text>
-                <Text style={styles.trophySub}>2nd place</Text>
+                <Text style={styles.trophySub}>{t('league.detail.place2nd')}</Text>
                 {isTeamLeague && standings[1].memberNames.length > 0 ? (
                   <Text style={styles.trophyMembers} numberOfLines={2}>
                     {formatTeamMemberSummary(standings[1].memberNames)}
@@ -411,7 +420,7 @@ export default function LeagueDetailScreen() {
                 <Text style={styles.trophyTitle} numberOfLines={2}>
                   {standings[2].displayName}
                 </Text>
-                <Text style={styles.trophySub}>3rd place</Text>
+                <Text style={styles.trophySub}>{t('league.detail.place3rd')}</Text>
                 {isTeamLeague && standings[2].memberNames.length > 0 ? (
                   <Text style={styles.trophyMembers} numberOfLines={2}>
                     {formatTeamMemberSummary(standings[2].memberNames)}
@@ -424,7 +433,7 @@ export default function LeagueDetailScreen() {
 
         {!completed && isTeamLeague && teamCount > 0 ? (
           <Text style={styles.standingsMeta}>
-            {teamCount} teams · {playerCount} players
+            {t('league.detail.teamsPlayersMeta', { teamCount, playerCount })}
           </Text>
         ) : null}
 
@@ -434,12 +443,14 @@ export default function LeagueDetailScreen() {
             <>
               <View style={styles.tableHead}>
                 <Text style={[styles.th, styles.colRank]}>#</Text>
-                <Text style={[styles.th, styles.colNameMp]}>Player</Text>
-                <Text style={[styles.th, styles.colMp]}>MP</Text>
-                <Text style={[styles.th, styles.colMp]}>W</Text>
-                <Text style={[styles.th, styles.colMp]}>L</Text>
-                <Text style={[styles.th, styles.colMp]}>H</Text>
-                <Text style={[styles.th, styles.colPts]}>Pts</Text>
+                <Text style={[styles.th, styles.colNameMp]}>
+                  {t('league.create.playerFallback')}
+                </Text>
+                <Text style={[styles.th, styles.colMp]}>{t('league.detail.colMp')}</Text>
+                <Text style={[styles.th, styles.colMp]}>{t('league.detail.colW')}</Text>
+                <Text style={[styles.th, styles.colMp]}>{t('league.detail.colL')}</Text>
+                <Text style={[styles.th, styles.colMp]}>{t('league.detail.colH')}</Text>
+                <Text style={[styles.th, styles.colPts]}>{t('league.detail.colPts')}</Text>
               </View>
               {standings.map((s) => (
                 <View key={s.entryId} style={styles.tr}>
@@ -460,20 +471,24 @@ export default function LeagueDetailScreen() {
               <View style={styles.tableHead}>
                 <Text style={[styles.th, styles.colRank]}>#</Text>
                 <Text style={[styles.th, styles.colName]}>
-                  {isTeamLeague ? 'Team' : 'Player'}
+                  {isTeamLeague
+                    ? t('league.detail.colTeam')
+                    : t('league.create.playerFallback')}
                 </Text>
-                <Text style={[styles.th, styles.colR]}>Rds</Text>
+                <Text style={[styles.th, styles.colR]}>{t('league.detail.colRds')}</Text>
                 {league.format === 'scramble' || league.format === 'best_ball' ? (
                   <>
-                    <Text style={[styles.th, styles.colGross]}>Gross</Text>
+                    <Text style={[styles.th, styles.colGross]}>
+                      {t('league.detail.colGross')}
+                    </Text>
                     <View style={[styles.colScore, styles.thLowNetRow]}>
-                      <Text style={styles.th}>Low net</Text>
+                      <Text style={styles.th}>{t('league.detail.colLowNet')}</Text>
                       <Pressable
                         style={styles.infoBtn}
                         onPress={() => setLowNetInfoOpen(true)}
                         hitSlop={6}
                         accessibilityRole="button"
-                        accessibilityLabel="About Low net"
+                        accessibilityLabel={t('league.detail.lowNetA11y')}
                       >
                         <Text style={styles.infoBtnTxt}>ⓘ</Text>
                       </Pressable>
@@ -481,13 +496,13 @@ export default function LeagueDetailScreen() {
                   </>
                 ) : (
                   <View style={[styles.colScore, styles.thLowNetRow]}>
-                    <Text style={styles.th}>Low net</Text>
+                    <Text style={styles.th}>{t('league.detail.colLowNet')}</Text>
                     <Pressable
                       style={styles.infoBtn}
                       onPress={() => setLowNetInfoOpen(true)}
                       hitSlop={6}
                       accessibilityRole="button"
-                      accessibilityLabel="About Low net"
+                      accessibilityLabel={t('league.detail.lowNetA11y')}
                     >
                       <Text style={styles.infoBtnTxt}>ⓘ</Text>
                     </Pressable>
@@ -511,12 +526,12 @@ export default function LeagueDetailScreen() {
                 ) : null}
                 {s.isTeam && s.designatedScorerName ? (
                   <Text style={styles.tdSub} numberOfLines={1}>
-                    Scorer: {s.designatedScorerName}
+                    {t('league.detail.scorerLine', { name: s.designatedScorerName })}
                   </Text>
                 ) : null}
                 {s.isTeam && s.hasPartialPending ? (
                   <Text style={styles.tdPartial} numberOfLines={2}>
-                    Partial — waiting on teammates
+                    {t('league.detail.partialPending')}
                   </Text>
                 ) : null}
                   </View>
@@ -524,15 +539,15 @@ export default function LeagueDetailScreen() {
                   {league.format === 'scramble' || league.format === 'best_ball' ? (
                     <>
                       <Text style={[styles.td, styles.colGross]}>
-                        {s.bestGross != null ? s.bestGross.toFixed(0) : '—'}
+                        {s.bestGross != null ? s.bestGross.toFixed(0) : emDash}
                       </Text>
                       <Text style={[styles.td, styles.colScore]}>
-                        {s.lowNet != null ? s.lowNet.toFixed(1) : '—'}
+                        {s.lowNet != null ? s.lowNet.toFixed(1) : emDash}
                       </Text>
                     </>
                   ) : (
                     <Text style={[styles.td, styles.colScore]}>
-                      {s.lowNet != null ? s.lowNet.toFixed(1) : '—'}
+                      {s.lowNet != null ? s.lowNet.toFixed(1) : emDash}
                     </Text>
                   )}
                 </View>
@@ -544,58 +559,85 @@ export default function LeagueDetailScreen() {
 
         {(myStanding || myTeamStanding || user?.id) && !isBracketMp ? (
           <View style={styles.myStats}>
-            <Text style={styles.myStatsTitle}>My stats</Text>
+            <Text style={styles.myStatsTitle}>{t('league.detail.myStats')}</Text>
             {league.format === 'scramble' && myTeamStanding ? (
               <>
                 <Text style={styles.myStatsLine}>
-                  Team: {myTeamStanding.displayName} · Position: {myTeamStanding.rank} · Rounds:{' '}
-                  {myTeamStanding.roundsPlayed}
+                  {t('league.detail.teamStatsLine', {
+                    team: myTeamStanding.displayName,
+                    rank: myTeamStanding.rank,
+                    rounds: myTeamStanding.roundsPlayed,
+                  })}
                 </Text>
                 {myTeamStanding.lowNet != null ? (
                   <Text style={styles.myStatsLine}>
-                    Team low net: {myTeamStanding.lowNet.toFixed(1)}
+                    {t('league.detail.teamLowNet', {
+                      value: myTeamStanding.lowNet.toFixed(1),
+                    })}
                   </Text>
                 ) : null}
                 {!isScrambleScorer ? (
                   <Text style={styles.myStatsLine}>
-                    Your team&apos;s designated scorer logs rounds for the crew.
+                    {t('league.detail.scrambleScorerNote')}
                   </Text>
                 ) : null}
               </>
             ) : league.format === 'best_ball' && myTeamStanding ? (
               <>
                 <Text style={styles.myStatsLine}>
-                  Team: {myTeamStanding.displayName} · Position: {myTeamStanding.rank} · Rounds:{' '}
-                  {myTeamStanding.roundsPlayed}
+                  {t('league.detail.teamStatsLine', {
+                    team: myTeamStanding.displayName,
+                    rank: myTeamStanding.rank,
+                    rounds: myTeamStanding.roundsPlayed,
+                  })}
                 </Text>
                 {myTeamStanding.lowNet != null ? (
                   <Text style={styles.myStatsLine}>
-                    Team low net: {myTeamStanding.lowNet.toFixed(1)}
+                    {t('league.detail.teamLowNet', {
+                      value: myTeamStanding.lowNet.toFixed(1),
+                    })}
                   </Text>
                 ) : null}
                 {myTeamStanding.hasPartialPending ? (
                   <Text style={styles.myStatsLine}>
-                    Your team has a partial scorecard — standings update when all teammates submit.
+                    {t('league.detail.bestBallPartialNote')}
                   </Text>
                 ) : null}
               </>
             ) : (
               <>
                 <Text style={styles.myStatsLine}>
-                  Position: {myStanding?.rank ?? myTeamStanding?.rank ?? '—'} ·{' '}
-                  {league.format === 'match_play'
-                    ? `Matches: ${myStanding?.roundsPlayed ?? 0} · Points: ${myStanding?.points ?? 0}`
-                    : `Rounds: ${myStanding?.roundsPlayed ?? myTeamStanding?.roundsPlayed ?? 0}`}
+                  {t('league.detail.positionLine', {
+                    rank: myStanding?.rank ?? myTeamStanding?.rank ?? emDash,
+                    rest:
+                      league.format === 'match_play'
+                        ? t('league.detail.matchesPoints', {
+                            matches: myStanding?.roundsPlayed ?? 0,
+                            points: myStanding?.points ?? 0,
+                          })
+                        : t('league.detail.roundsCount', {
+                            count:
+                              myStanding?.roundsPlayed ??
+                              myTeamStanding?.roundsPlayed ??
+                              0,
+                          }),
+                  })}
                 </Text>
                 {league.format === 'match_play' && myStanding ? (
                   <Text style={styles.myStatsLine}>
-                    W–L–H: {myStanding.mpWins ?? 0}–{myStanding.mpLosses ?? 0}–{myStanding.mpHalved ?? 0}
+                    {t('league.detail.wlH', {
+                      wins: myStanding.mpWins ?? 0,
+                      losses: myStanding.mpLosses ?? 0,
+                      halved: myStanding.mpHalved ?? 0,
+                    })}
                   </Text>
                 ) : null}
                 {league.format !== 'match_play' &&
                 (myStanding?.lowNet != null || myTeamStanding?.lowNet != null) ? (
                   <Text style={styles.myStatsLine}>
-                    Low net: {(myStanding?.lowNet ?? myTeamStanding?.lowNet)?.toFixed(1)}
+                    {t('league.detail.lowNetValue', {
+                      value: (myStanding?.lowNet ?? myTeamStanding?.lowNet)?.toFixed(1),
+                    })}
                   </Text>
                 ) : null}
               </>
@@ -608,7 +650,7 @@ export default function LeagueDetailScreen() {
             style={styles.manageBtn}
             onPress={() => router.push(`/(tabs)/league-manage/${leagueId}` as never)}
           >
-            <Text style={styles.manageBtnTxt}>Manage tournament</Text>
+            <Text style={styles.manageBtnTxt}>{t('tabs.leagueManage.title')}</Text>
           </Pressable>
         ) : null}
       </ScrollView>
@@ -622,11 +664,8 @@ export default function LeagueDetailScreen() {
         <View style={styles.infoExplainRoot}>
           <Pressable style={styles.infoExplainBackdrop} onPress={() => setLowNetInfoOpen(false)} />
           <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.infoExplainTitle}>Low net</Text>
-            <Text style={styles.infoExplainBody}>
-              Net applies a player&apos;s handicap once they have at least 3 counted rounds, or a linked GHIN
-              index. Until then, Low Net shows their gross score — that&apos;s expected, not a bug.
-            </Text>
+            <Text style={styles.infoExplainTitle}>{t('league.detail.lowNetInfoTitle')}</Text>
+            <Text style={styles.infoExplainBody}>{t('league.detail.lowNetInfoBody')}</Text>
           </View>
         </View>
       </Modal>

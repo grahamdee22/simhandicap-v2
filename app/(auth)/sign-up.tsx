@@ -15,11 +15,13 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
 import { OAuthSignInButtons } from '@/src/components/OAuthSignInButtons';
+import { useTranslation } from '@/src/i18n';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 import { REFERRAL_CODE_FIELD_ENABLED } from '@/src/lib/featureFlags';
 
 export default function SignUpScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { signUp } = useAuth();
@@ -31,29 +33,27 @@ export default function SignUpScreen() {
 
   const onSubmit = async () => {
     if (!email.trim() || !password) {
-      showAppAlert('Create account', 'Enter email and password.');
+      showAppAlert(t('auth.signUp.alertTitle'), t('auth.signUp.enterEmailPassword'));
       return;
     }
     if (password.length < 6) {
-      showAppAlert('Create account', 'Password must be at least 6 characters.');
+      showAppAlert(t('auth.signUp.alertTitle'), t('common.passwordMinLength'));
       return;
     }
     setBusy(true);
     const { error, sessionCreated } = await signUp(email, password, displayName, referralCode);
     setBusy(false);
     if (error) {
-      showAppAlert('Create account', error);
+      showAppAlert(t('auth.signUp.alertTitle'), error);
       return;
     }
     if (sessionCreated) {
       router.replace('/');
       return;
     }
-    showAppAlert(
-      'Check your email',
-      'We sent a confirmation link if your project requires email verification. You can sign in once your account is active.',
-      { onOk: () => router.replace('/(auth)/sign-in') }
-    );
+    showAppAlert(t('auth.signUp.checkEmailTitle'), t('auth.signUp.checkEmailBody'), {
+      onOk: () => router.replace('/(auth)/sign-in'),
+    });
   };
 
   return (
@@ -71,30 +71,27 @@ export default function SignUpScreen() {
         <AuthBrandBanner />
 
         <View style={styles.contextBox}>
-          <Text style={styles.contextTxt}>
-            SimCap tracks your simulator golf handicap and lets you challenge other players to live head-to-head
-            matches. Free, and takes 2 minutes to set up.
-          </Text>
+          <Text style={styles.contextTxt}>{t('auth.signUp.context')}</Text>
         </View>
 
-        <OAuthSignInButtons dividerLabel="or create with email" />
+        <OAuthSignInButtons dividerLabel={t('auth.signUp.orCreateWithEmail')} />
 
-        <Text style={styles.lbl}>Display name</Text>
+        <Text style={styles.lbl}>{t('auth.signUp.displayName')}</Text>
         <TextInput
           style={styles.input}
           value={displayName}
           onChangeText={setDisplayName}
-          placeholder="e.g. Jordan P."
+          placeholder={t('auth.signUp.displayNamePlaceholder')}
           placeholderTextColor={colors.subtle}
           autoCorrect
         />
 
-        <Text style={styles.lbl}>Email</Text>
+        <Text style={styles.lbl}>{t('common.email')}</Text>
         <TextInput
           style={styles.input}
           value={email}
           onChangeText={setEmail}
-          placeholder="you@example.com"
+          placeholder={t('common.emailPlaceholder')}
           placeholderTextColor={colors.subtle}
           autoCapitalize="none"
           autoCorrect={false}
@@ -102,26 +99,26 @@ export default function SignUpScreen() {
           textContentType="emailAddress"
         />
 
-        <Text style={styles.lbl}>Password</Text>
+        <Text style={styles.lbl}>{t('common.password')}</Text>
         <TextInput
           style={styles.inputTightBottom}
           value={password}
           onChangeText={setPassword}
-          placeholder="At least 6 characters"
+          placeholder={t('common.passwordMinPlaceholder')}
           placeholderTextColor={colors.subtle}
           secureTextEntry
           textContentType="newPassword"
         />
-        <Text style={styles.passwordNote}>Use a simple password — just don't make it 1234.</Text>
+        <Text style={styles.passwordNote}>{t('auth.signUp.passwordNote')}</Text>
 
         {REFERRAL_CODE_FIELD_ENABLED && (
           <>
-            <Text style={styles.lbl}>Referral code (optional)</Text>
+            <Text style={styles.lbl}>{t('auth.signUp.referralCode')}</Text>
             <TextInput
               style={styles.input}
               value={referralCode}
               onChangeText={setReferralCode}
-              placeholder="If someone gave you one"
+              placeholder={t('auth.signUp.referralPlaceholder')}
               placeholderTextColor={colors.subtle}
               autoCapitalize="none"
               autoCorrect={false}
@@ -137,15 +134,15 @@ export default function SignUpScreen() {
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.primaryTxt}>Create account</Text>
+            <Text style={styles.primaryTxt}>{t('common.createAccount')}</Text>
           )}
         </Pressable>
 
         <View style={styles.footer}>
-          <Text style={styles.footerLine}>Already have an account?</Text>
+          <Text style={styles.footerLine}>{t('auth.signUp.alreadyHaveAccount')}</Text>
           <Link href="/(auth)/sign-in" asChild>
             <Pressable style={styles.footerLink}>
-              <Text style={styles.footerLinkTxt}>Sign in</Text>
+              <Text style={styles.footerLinkTxt}>{t('auth.signUp.signInLink')}</Text>
             </Pressable>
           </Link>
         </View>

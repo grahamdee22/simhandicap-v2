@@ -17,6 +17,7 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { IconCheckmark, IconTrashOutline } from '../../../src/components/SvgUiIcons';
+import { useTranslation } from '../../../src/i18n';
 import { confirmDestructive, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
@@ -56,6 +57,7 @@ function pairingsHaveRecordedResults(pairings: DbLeagueMatchPairingRow[]): boole
 }
 
 export default function LeagueManageScreen() {
+  const { t } = useTranslation();
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const leagueId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -142,15 +144,15 @@ export default function LeagueManageScreen() {
     setBracketBusy(false);
     setBracketBanner({
       kind: 'ok',
-      text: 'Bracket generated — lowest index is the #1 seed',
+      text: t('league.manage.bracketGenerated'),
     });
   };
 
   const onRegenerateBracket = async () => {
     const ok = await confirmDestructive(
-      'Regenerate bracket?',
-      'This will discard the current pairings and reseed from scratch.',
-      'Regenerate'
+      t('league.manage.regenerateConfirmTitle'),
+      t('league.manage.regenerateConfirmBody'),
+      t('league.manage.regenerateConfirmAction')
     );
     if (!ok) return;
     await runGenerateBracket();
@@ -160,8 +162,8 @@ export default function LeagueManageScreen() {
     setBusy(true);
     const res = await updateLeague(leagueId, { name: name.trim() }, googleOAuthAccessToken ?? undefined);
     setBusy(false);
-    if (res.error) showAppAlert('Update failed', res.error);
-    else showAppAlert('Saved', 'Tournament name updated.');
+    if (res.error) showAppAlert(t('league.manage.updateFailed'), res.error);
+    else showAppAlert(t('league.manage.saved'), t('league.manage.nameUpdated'));
   };
 
   const extendEnd = async () => {
@@ -169,21 +171,21 @@ export default function LeagueManageScreen() {
     const ymd = endDate.toISOString().slice(0, 10);
     const res = await updateLeague(leagueId, { end_date: ymd }, googleOAuthAccessToken ?? undefined);
     setBusy(false);
-    if (res.error) showAppAlert('Update failed', res.error);
-    else showAppAlert('Saved', 'End date updated.');
+    if (res.error) showAppAlert(t('league.manage.updateFailed'), res.error);
+    else showAppAlert(t('league.manage.saved'), t('league.manage.endDateUpdated'));
   };
 
   const endEarly = async () => {
     const ok = await confirmDestructive(
-      'End tournament?',
-      'This will mark the tournament as completed. Members will see final standings.',
-      'End tournament'
+      t('league.manage.endConfirmTitle'),
+      t('league.manage.endConfirmBody'),
+      t('league.manage.endConfirmAction')
     );
     if (!ok) return;
     setBusy(true);
     const res = await updateLeague(leagueId, { status: 'completed' }, googleOAuthAccessToken ?? undefined);
     setBusy(false);
-    if (res.error) showAppAlert('Could not end', res.error);
+    if (res.error) showAppAlert(t('league.manage.couldNotEnd'), res.error);
     else router.replace(`/(tabs)/league/${leagueId}` as never);
   };
 
@@ -241,34 +243,32 @@ export default function LeagueManageScreen() {
     });
     setRosterBusy(false);
     if (res.error) {
-      showAppAlert('Could not add players', res.error);
+      showAppAlert(t('league.manage.couldNotAddPlayers'), res.error);
       return;
     }
     setAddPlayersOpen(false);
-    setRosterNote(
-      `Added ${userIds.length} player${userIds.length === 1 ? '' : 's'}. They can start applying rounds now — rounds logged before today won't be backfilled.`
-    );
+    setRosterNote(t('league.manage.addedPlayers', { count: userIds.length }));
     if (bundle?.league.group_id) clearTournamentSectionCache(bundle.league.group_id);
     await load();
   };
 
   const onRemovePlayer = async (entryId: string, userId: string) => {
     if (activeStrokeEntries.length <= 1) {
-      showAppAlert('Cannot remove', 'A tournament needs at least one player.');
+      showAppAlert(t('league.manage.cannotRemove'), t('league.manage.cannotRemoveBody'));
       return;
     }
-    const name = displayNames[userId] ?? 'Player';
+    const playerName = displayNames[userId] ?? t('league.create.playerFallback');
     const ok = await confirmDestructive(
-      `Remove ${name} from this tournament?`,
-      "Their rounds logged so far will still count toward final standings. They won't be able to apply new rounds going forward.",
-      'Remove'
+      t('league.manage.removeConfirmTitle', { name: playerName }),
+      t('league.manage.removeConfirmBody'),
+      t('league.manage.removeConfirmAction')
     );
     if (!ok) return;
     setRosterBusy(true);
     const res = await softRemoveLeagueEntry(entryId, googleOAuthAccessToken ?? undefined);
     setRosterBusy(false);
     if (res.error) {
-      showAppAlert('Could not remove', res.error);
+      showAppAlert(t('league.manage.couldNotRemove'), res.error);
       return;
     }
     setRosterNote(null);
@@ -278,27 +278,28 @@ export default function LeagueManageScreen() {
 
   const teamRoster = useMemo(() => {
     if (!bundle || !isTeamLeagueFormat(bundle.league.format)) return [];
+    const playerFallback = t('league.create.playerFallback');
     return [...bundle.teams]
       .sort((a, b) => a.name.localeCompare(b.name))
-      .map((t) => {
+      .map((team) => {
         const members = bundle.entries
-          .filter((e) => e.league_team_id === t.id)
-          .map((e) => displayNames[e.user_id] ?? 'Player');
-        return { id: t.id, name: t.name, members };
+          .filter((e) => e.league_team_id === team.id)
+          .map((e) => displayNames[e.user_id] ?? playerFallback);
+        return { id: team.id, name: team.name, members };
       });
-  }, [bundle, displayNames]);
+  }, [bundle, displayNames, t]);
 
   const onDelete = async () => {
     const ok = await confirmDestructive(
-      'Delete tournament?',
-      'This cannot be undone. All tournament data will be removed.',
-      'Delete'
+      t('league.manage.deleteConfirmTitle'),
+      t('league.manage.deleteConfirmBody'),
+      t('league.manage.deleteConfirmAction')
     );
     if (!ok) return;
     setBusy(true);
     const res = await deleteLeague(leagueId, googleOAuthAccessToken ?? undefined);
     setBusy(false);
-    if (res.error) showAppAlert('Delete failed', res.error);
+    if (res.error) showAppAlert(t('league.manage.deleteFailed'), res.error);
     else router.replace('/(tabs)/groups' as never);
   };
 
@@ -313,10 +314,12 @@ export default function LeagueManageScreen() {
   if (!canManage) {
     return (
       <ContentWidth bg={colors.surface}>
-        <Text style={{ padding: gutter }}>Only the group creator or an admin can manage this tournament.</Text>
+        <Text style={{ padding: gutter }}>{t('league.manage.cannotManage')}</Text>
       </ContentWidth>
     );
   }
+
+  const playerFallback = t('league.create.playerFallback');
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -327,15 +330,15 @@ export default function LeagueManageScreen() {
           paddingBottom: insets.bottom + 24,
         }}
       >
-        <Text style={styles.head}>Manage tournament</Text>
+        <Text style={styles.head}>{t('tabs.leagueManage.title')}</Text>
 
-        <Text style={styles.lbl}>Tournament name</Text>
+        <Text style={styles.lbl}>{t('league.create.tournamentName')}</Text>
         <TextInput style={styles.input} value={name} onChangeText={setName} />
         <Pressable style={styles.outlineBtn} disabled={busy} onPress={() => void saveName()}>
-          <Text style={styles.outlineBtnTxt}>Save name</Text>
+          <Text style={styles.outlineBtnTxt}>{t('league.manage.saveName')}</Text>
         </Pressable>
 
-        <Text style={[styles.lbl, { marginTop: 20 }]}>Extend end date</Text>
+        <Text style={[styles.lbl, { marginTop: 20 }]}>{t('league.manage.extendEndDate')}</Text>
         <DateTimePicker
           value={endDate}
           mode="date"
@@ -343,29 +346,28 @@ export default function LeagueManageScreen() {
           onChange={(_, d) => d && setEndDate(d)}
         />
         <Pressable style={styles.outlineBtn} disabled={busy} onPress={() => void extendEnd()}>
-          <Text style={styles.outlineBtnTxt}>Save end date</Text>
+          <Text style={styles.outlineBtnTxt}>{t('league.manage.saveEndDate')}</Text>
         </Pressable>
 
         {teamRoster.length > 0 ? (
           <View style={styles.teamSection}>
-            <Text style={styles.lbl}>Teams ({teamRoster.length})</Text>
-            <Text style={styles.helper}>
-              Rosters are set when the tournament is created. To change teams, create a new
-              tournament.
+            <Text style={styles.lbl}>
+              {t('league.manage.teamsCount', { count: teamRoster.length })}
             </Text>
+            <Text style={styles.helper}>{t('league.manage.teamsHelper')}</Text>
             <View style={styles.teamRosterCard}>
-              {teamRoster.map((t, i) => (
+              {teamRoster.map((team, i) => (
                 <View
-                  key={t.id}
+                  key={team.id}
                   style={[styles.teamRosterRow, i === 0 && styles.teamRosterRowFirst]}
                 >
                   <Text style={styles.teamRosterName} numberOfLines={1}>
-                    {t.name}
+                    {team.name}
                   </Text>
                   <Text style={styles.teamRosterMembers} numberOfLines={2}>
-                    {t.members.length > 0
-                      ? formatTeamMemberSummary(t.members)
-                      : 'No players assigned'}
+                    {team.members.length > 0
+                      ? formatTeamMemberSummary(team.members)
+                      : t('league.manage.noPlayersAssigned')}
                   </Text>
                 </View>
               ))}
@@ -375,10 +377,10 @@ export default function LeagueManageScreen() {
 
         {bundle.league.format === 'stroke' ? (
           <View style={styles.rosterSection}>
-            <Text style={styles.lbl}>Players ({activeStrokeEntries.length})</Text>
-            <Text style={styles.helper}>
-              Standings only include rounds logged while a player was on the roster.
+            <Text style={styles.lbl}>
+              {t('league.manage.playersCount', { count: activeStrokeEntries.length })}
             </Text>
+            <Text style={styles.helper}>{t('league.manage.rosterHelper')}</Text>
             {rosterNote ? (
               <View style={[styles.bracketBanner, styles.bracketBannerOk]}>
                 <Text style={[styles.bracketBannerTxt, styles.bracketBannerTxtOk]}>{rosterNote}</Text>
@@ -390,26 +392,28 @@ export default function LeagueManageScreen() {
               onPress={openAddPlayers}
             >
               <Text style={styles.outlineBtnTxt}>
-                {addableGroupMembers.length === 0 ? 'No group members left to add' : 'Add player'}
+                {addableGroupMembers.length === 0
+                  ? t('league.manage.noMembersLeft')
+                  : t('league.manage.addPlayer')}
               </Text>
             </Pressable>
             <View style={styles.teamRosterCard}>
               {activeStrokeEntries.map((e, i) => {
-                const name = displayNames[e.user_id] ?? 'Player';
+                const playerName = displayNames[e.user_id] ?? playerFallback;
                 return (
                   <View
                     key={e.id}
                     style={[styles.rosterPlayerRow, i === 0 && styles.teamRosterRowFirst]}
                   >
                     <Text style={styles.teamRosterName} numberOfLines={1}>
-                      {name}
+                      {playerName}
                     </Text>
                     <Pressable
                       style={styles.removePlayerBtn}
                       disabled={rosterBusy || busy}
                       onPress={() => void onRemovePlayer(e.id, e.user_id)}
                       accessibilityRole="button"
-                      accessibilityLabel={`Remove ${name}`}
+                      accessibilityLabel={t('league.manage.removeA11y', { name: playerName })}
                       hitSlop={8}
                     >
                       <IconTrashOutline size={18} color={colors.danger} />
@@ -423,7 +427,7 @@ export default function LeagueManageScreen() {
 
         {bundle.league.format === 'match_play' ? (
           <View style={{ marginTop: 24 }}>
-            <Text style={styles.lbl}>Match pairings</Text>
+            <Text style={styles.lbl}>{t('league.detail.matchPairings')}</Text>
 
             {bracketBanner ? (
               <View
@@ -447,20 +451,18 @@ export default function LeagueManageScreen() {
 
             {pairings.length === 0 ? (
               <>
-                <Text style={styles.helper}>
-                  Bracket wasn't generated when this tournament launched.
-                </Text>
+                <Text style={styles.helper}>{t('league.manage.bracketNotGenerated')}</Text>
                 <Pressable
                   style={[styles.primaryBtn, bracketBusy && styles.btnDisabled]}
                   disabled={bracketBusy || busy}
                   onPress={() => void runGenerateBracket()}
                   accessibilityRole="button"
-                  accessibilityLabel="Generate bracket"
+                  accessibilityLabel={t('league.manage.generateBracketA11y')}
                 >
                   {bracketBusy ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.primaryBtnTxt}>Generate bracket</Text>
+                    <Text style={styles.primaryBtnTxt}>{t('league.manage.generateBracket')}</Text>
                   )}
                 </Pressable>
               </>
@@ -469,11 +471,15 @@ export default function LeagueManageScreen() {
                 {pairings.map((p) => {
                   const e1 = bundle.entries.find((e) => e.id === p.player_1_entry_id);
                   const e2 = bundle.entries.find((e) => e.id === p.player_2_entry_id);
-                  const n1 = e1 ? displayNames[e1.user_id] ?? 'Player' : 'Player';
-                  const n2 = e2 ? displayNames[e2.user_id] ?? 'Player' : 'Player';
+                  const n1 = e1 ? displayNames[e1.user_id] ?? playerFallback : playerFallback;
+                  const n2 = e2 ? displayNames[e2.user_id] ?? playerFallback : playerFallback;
                   return (
                     <Text key={p.id} style={styles.pairingLine}>
-                      {n1} vs {n2} · {formatPairingStatusLabel(p.status)}
+                      {t('league.manage.pairingLine', {
+                        name1: n1,
+                        name2: n2,
+                        status: formatPairingStatusLabel(p.status),
+                      })}
                     </Text>
                   );
                 })}
@@ -483,12 +489,14 @@ export default function LeagueManageScreen() {
                     disabled={bracketBusy || busy}
                     onPress={() => void onRegenerateBracket()}
                     accessibilityRole="button"
-                    accessibilityLabel="Regenerate bracket"
+                    accessibilityLabel={t('league.manage.regenerateBracketA11y')}
                   >
                     {bracketBusy ? (
                       <ActivityIndicator color={colors.muted} />
                     ) : (
-                      <Text style={styles.regenLinkTxt}>Regenerate bracket</Text>
+                      <Text style={styles.regenLinkTxt}>
+                        {t('league.manage.regenerateBracket')}
+                      </Text>
                     )}
                   </Pressable>
                 ) : null}
@@ -499,12 +507,12 @@ export default function LeagueManageScreen() {
 
         {bundle.league.status === 'active' ? (
           <Pressable style={[styles.outlineBtn, { marginTop: 24 }]} disabled={busy} onPress={() => void endEarly()}>
-            <Text style={styles.outlineBtnTxt}>End tournament early</Text>
+            <Text style={styles.outlineBtnTxt}>{t('league.manage.endEarly')}</Text>
           </Pressable>
         ) : null}
 
         <Pressable style={styles.dangerBtn} disabled={busy} onPress={() => void onDelete()}>
-          <Text style={styles.dangerBtnTxt}>Delete tournament</Text>
+          <Text style={styles.dangerBtnTxt}>{t('league.manage.deleteTournament')}</Text>
         </Pressable>
       </ScrollView>
 
@@ -515,10 +523,8 @@ export default function LeagueManageScreen() {
         onRequestClose={() => setAddPlayersOpen(false)}
       >
         <View style={[styles.addModal, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}>
-          <Text style={styles.head}>Add players</Text>
-          <Text style={styles.helper}>
-            Select group members who aren't in this tournament yet.
-          </Text>
+          <Text style={styles.head}>{t('league.manage.addPlayersTitle')}</Text>
+          <Text style={styles.helper}>{t('league.manage.addPlayersHelper')}</Text>
           <ScrollView style={{ flex: 1 }} keyboardShouldPersistTaps="handled">
             {addableGroupMembers.map((m) => {
               const checked = !!addPickIds[m.userId];
@@ -549,8 +555,7 @@ export default function LeagueManageScreen() {
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.primaryBtnTxt}>
-                Add {selectedAddCount > 0 ? `${selectedAddCount} ` : ''}player
-                {selectedAddCount === 1 ? '' : 's'}
+                {t('league.manage.addPlayersCta', { count: selectedAddCount })}
               </Text>
             )}
           </Pressable>
@@ -559,7 +564,7 @@ export default function LeagueManageScreen() {
             disabled={rosterBusy}
             onPress={() => setAddPlayersOpen(false)}
           >
-            <Text style={styles.outlineBtnTxt}>Cancel</Text>
+            <Text style={styles.outlineBtnTxt}>{t('common.cancel')}</Text>
           </Pressable>
         </View>
       </Modal>

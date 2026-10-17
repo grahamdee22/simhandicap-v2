@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import Svg, { Defs, LinearGradient, Path, Stop, Text as SvgText } from 'react-native-svg';
+import { useTranslation } from '@/src/i18n';
 import { colors } from '../lib/constants';
 import { formatHandicapIndexDisplay } from '../lib/handicap';
 
@@ -46,9 +47,16 @@ export function TrendChart({
   plotHeight?: number;
   edgePad?: number;
 }) {
+  const { t } = useTranslation();
   const W = Math.max(240, plotWidth ?? DEFAULT_W);
   const H = Math.max(64, plotHeight ?? DEFAULT_H);
   const padH = edgePad ?? 14;
+
+  const rangeLabel: Record<TrendRange, string> = {
+    '1M': t('charts.trend.range1M'),
+    '3M': t('charts.trend.range3M'),
+    '1Y': t('charts.trend.range1Y'),
+  };
 
   const pts = useMemo(() => {
     const base: Point[] = history.map((h) => ({
@@ -93,7 +101,7 @@ export function TrendChart({
   return (
     <View style={[styles.wrap, { paddingHorizontal: padH, paddingTop: 12 }]}>
       <View style={styles.hdr}>
-        <Text style={[styles.title, W > 400 && styles.titleLg]}>Index trend</Text>
+        <Text style={[styles.title, W > 400 && styles.titleLg]}>{t('charts.trend.title')}</Text>
         <View style={styles.tabs}>
           {(['1M', '3M', '1Y'] as const).map((r) => (
             <Pressable
@@ -105,13 +113,15 @@ export function TrendChart({
                 pressed && !(range === r) && styles.tabPressed,
               ]}
             >
-              <Text style={[styles.tabTxt, range === r && styles.tabTxtOn, W > 400 && styles.tabTxtLg]}>{r}</Text>
+              <Text style={[styles.tabTxt, range === r && styles.tabTxtOn, W > 400 && styles.tabTxtLg]}>
+                {rangeLabel[r]}
+              </Text>
             </Pressable>
           ))}
         </View>
       </View>
       {history.length === 0 ? (
-        <Text style={styles.empty}>Log rounds to see your sim index trend.</Text>
+        <Text style={styles.empty}>{t('charts.trend.empty')}</Text>
       ) : (
         <Svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`}>
           <Defs>
@@ -148,9 +158,7 @@ export function TrendChart({
           ) : null}
         </Svg>
       )}
-      <Text style={[styles.hint, W > 400 && styles.hintLg]}>
-        Lower on the chart = better (lower) sim index.
-      </Text>
+      <Text style={[styles.hint, W > 400 && styles.hintLg]}>{t('charts.trend.hint')}</Text>
     </View>
   );
 }

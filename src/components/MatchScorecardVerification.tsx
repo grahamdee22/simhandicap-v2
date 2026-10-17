@@ -8,6 +8,7 @@ import {
   Text,
   View,
 } from 'react-native';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import { showAppAlert } from '../lib/alertCompat';
 import {
@@ -16,7 +17,6 @@ import {
   playerVerificationUiState,
   verificationNotesMessage,
   verificationStatusEmoji,
-  verificationStatusLabel,
   type ScorecardVerificationUiState,
 } from '../lib/matchVerification';
 import type { DbMatchRow } from '../lib/matchPlay';
@@ -51,6 +51,7 @@ export function MatchScorecardVerification({
   accessToken,
   onVerified,
 }: Props) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [devBypassBusy, setDevBypassBusy] = useState(false);
   const [previewUri, setPreviewUri] = useState<string | null>(null);
@@ -96,7 +97,10 @@ export function MatchScorecardVerification({
     let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
     if (!perm.granted) perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
     if (!perm.granted) {
-      showAppAlert('Photos access needed', 'Allow photo library access to upload your scorecard screenshot.');
+      showAppAlert(
+        t('match.scorecardVerify.photosTitle'),
+        t('match.scorecardVerify.photosBody')
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync(pickerOpts);
@@ -115,7 +119,7 @@ export function MatchScorecardVerification({
     });
     if ('error' in up) {
       setBusy(false);
-      showAppAlert('Upload failed', up.error);
+      showAppAlert(t('match.create.alerts.uploadFailed'), up.error);
       return;
     }
 
@@ -126,13 +130,16 @@ export function MatchScorecardVerification({
     });
     if (pendingPatch.error) {
       setBusy(false);
-      showAppAlert('Could not save screenshot', pendingPatch.error);
+      showAppAlert(t('match.scorecardVerify.couldNotSaveScreenshot'), pendingPatch.error);
       return;
     }
 
     if (loggedGross == null) {
       setBusy(false);
-      showAppAlert('Scores incomplete', 'Enter all hole scores before verifying your scorecard.');
+      showAppAlert(
+        t('match.scorecardVerify.scoresIncompleteTitle'),
+        t('match.scorecardVerify.scoresIncompleteBody')
+      );
       return;
     }
 
@@ -143,23 +150,26 @@ export function MatchScorecardVerification({
     setBusy(false);
 
     if (ai.error && !ai.verified) {
-      showAppAlert('Verification unavailable', ai.error);
+      showAppAlert(t('match.scorecardVerify.verificationUnavailable'), ai.error);
       onVerified();
       return;
     }
 
     if (ai.verified) {
-      showAppAlert('Scorecard verified', 'Your score matches the screenshot. Waiting for your opponent to verify.');
+      showAppAlert(
+        t('match.scorecardVerify.verifiedTitle'),
+        t('match.scorecardVerify.verifiedBody')
+      );
       onVerified();
       return;
     }
 
     showAppAlert(
-      'Verification failed',
-      ai.notes || 'The score on your screenshot does not match what you logged. Re-enter scores or upload a clearer image.'
+      t('match.scorecardVerify.failedTitle'),
+      ai.notes || t('match.scorecardVerify.failedBodyFallback')
     );
     onVerified();
-  }, [busy, verified, match, loggedGross, userId, bearer, patchVerificationFields, onVerified]);
+  }, [busy, verified, match, loggedGross, userId, bearer, patchVerificationFields, onVerified, t]);
 
   const onDevBypassVerify = useCallback(async () => {
     if (!ALLOW_DEV_VERIFY_BYPASS || busy || devBypassBusy || verified) return;
@@ -184,23 +194,25 @@ export function MatchScorecardVerification({
   if (!match.verification_required) return null;
 
   const oppVerified = isPlayer1 ? match.p2_verified : match.p1_verified;
+  const statusLabel = t(`match.results.verifyStatus.${uiState}`);
+  const grossPart =
+    loggedGross != null
+      ? t('match.scorecardVerify.grossPart', { gross: loggedGross })
+      : '';
 
   return (
     <View style={styles.box}>
-      <Text style={styles.title}>Scorecard verification required</Text>
-      <Text style={styles.body}>
-        Upload a screenshot of your sim&apos;s final scorecard. We&apos;ll verify your logged gross
-        {loggedGross != null ? ` (${loggedGross})` : ''} matches the image before this match can finish.
-      </Text>
+      <Text style={styles.title}>{t('match.scorecardVerify.title')}</Text>
+      <Text style={styles.body}>{t('match.scorecardVerify.body', { grossPart })}</Text>
 
       <View style={styles.statusRow}>
         <Text style={styles.statusEmoji}>{verificationStatusEmoji(uiState)}</Text>
         <View style={styles.statusTxtCol}>
-          <Text style={styles.statusLabel}>{verificationStatusLabel(uiState)}</Text>
+          <Text style={styles.statusLabel}>{statusLabel}</Text>
           {notesMsg && uiState === 'failed' ? (
             <Text style={styles.statusNotes}>{notesMsg}</Text>
           ) : null}
-          {busy ? <Text style={styles.statusNotes}>Analyzing screenshot…</Text> : null}
+          {busy ? <Text style={styles.statusNotes}>{t('match.scorecardVerify.analyzing')}</Text> : null}
         </View>
       </View>
 
@@ -215,13 +227,15 @@ export function MatchScorecardVerification({
             disabled={busy || devBypassBusy}
             onPress={() => void onPickAndVerify()}
             accessibilityRole="button"
-            accessibilityLabel="Upload scorecard screenshot for verification"
+            accessibilityLabel={t('match.scorecardVerify.uploadA11y')}
           >
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
               <Text style={styles.btnTxt}>
-                {uiState === 'failed' ? 'Resubmit scorecard screenshot' : 'Upload scorecard screenshot'}
+                {uiState === 'failed'
+                  ? t('match.scorecardVerify.resubmit')
+                  : t('match.scorecardVerify.upload')}
               </Text>
             )}
           </Pressable>
@@ -248,10 +262,10 @@ export function MatchScorecardVerification({
       ) : (
         <Text style={styles.doneHint}>
           {matchReadyToFinalize(match)
-            ? 'Both players verified — match will finalize shortly.'
+            ? t('match.scorecardVerify.bothVerified')
             : oppVerified
-              ? 'You are verified. Waiting for your opponent.'
-              : 'You are verified. Waiting for your opponent to submit their scorecard.'}
+              ? t('match.scorecardVerify.waitingOpponent')
+              : t('match.scorecardVerify.waitingOpponentSubmit')}
         </Text>
       )}
     </View>

@@ -4,20 +4,17 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { fetchLeagueBundle, type LeagueBundle } from '../../../src/lib/leagues';
-import {
-  BRACKET_HALVED_TIEBREAKER_BODY,
-  bracketHalvedAdvanceLine,
-} from '../../../src/lib/matchPlayBracketCopy';
 import { formatMatchPlayStatus } from '../../../src/lib/matchPlayTournament';
 import {
   fetchLeagueMatchPairingById,
   fetchLeagueMatchPairingRoundLinks,
-  formatPairingStatusLabel,
   myHolesWonInPairing,
   type DbLeagueMatchPairingRow,
+  type LeagueMatchPairingStatus,
 } from '../../../src/lib/matchPlayTournamentPairings';
 import { fetchTournamentHoleScores } from '../../../src/lib/tournamentHoleScores';
 import { resolveTournamentAccessToken } from '../../../src/lib/tournamentApi';
@@ -29,7 +26,26 @@ function routeParam(raw: string | string[] | undefined): string {
   return typeof raw === 'string' ? raw : raw?.[0] ?? '';
 }
 
+function pairingStatusLabel(
+  status: LeagueMatchPairingStatus,
+  t: (key: string) => string
+): string {
+  switch (status) {
+    case 'scheduled':
+      return t('match.status.scheduled');
+    case 'in_progress':
+      return t('match.status.inProgress');
+    case 'complete':
+      return t('match.status.complete');
+    case 'halved':
+      return t('league.match.statusHalved');
+    default:
+      return status;
+  }
+}
+
 export default function LeagueMatchDetailScreen() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{
     pairingId?: string | string[];
     leagueId?: string | string[];
@@ -55,7 +71,7 @@ export default function LeagueMatchDetailScreen() {
       setBundle(null);
       setP1Holes([]);
       setP2Holes([]);
-      setLoadError('Missing tournament match id.');
+      setLoadError(t('league.match.missingId'));
       setLoading(false);
       return;
     }
@@ -99,7 +115,7 @@ export default function LeagueMatchDetailScreen() {
       setP2Holes([]);
     }
     setLoading(false);
-  }, [pairingId, leagueIdParam]);
+  }, [pairingId, leagueIdParam, t]);
 
   useEffect(() => {
     void load();
@@ -120,8 +136,8 @@ export default function LeagueMatchDetailScreen() {
 
   const p1 = bundle?.entries.find((e) => e.id === pairing?.player_1_entry_id);
   const p2 = bundle?.entries.find((e) => e.id === pairing?.player_2_entry_id);
-  const name1 = p1 ? displayNames[p1.user_id] ?? 'Player 1' : 'Player 1';
-  const name2 = p2 ? displayNames[p2.user_id] ?? 'Player 2' : 'Player 2';
+  const name1 = p1 ? displayNames[p1.user_id] ?? t('match.results.player1') : t('match.results.player1');
+  const name2 = p2 ? displayNames[p2.user_id] ?? t('match.results.player2') : t('match.results.player2');
 
   const myEntry = useMemo(() => {
     if (!user?.id || !bundle) return null;
@@ -144,13 +160,13 @@ export default function LeagueMatchDetailScreen() {
       if (h1?.gross_score == null || h2?.gross_score == null) return null;
       const g1 = h1.gross_score;
       const g2 = h2.gross_score;
-      let result = 'H';
-      if (g1 < g2) result = 'W';
-      else if (g2 < g1) result = 'L';
+      let result = t('league.match.holeResultH');
+      if (g1 < g2) result = t('league.match.holeResultW');
+      else if (g2 < g1) result = t('league.match.holeResultL');
       rows.push({ hole: n, g1, g2, result: h1.result ?? result });
     }
     return rows;
-  }, [p1Holes, p2Holes]);
+  }, [p1Holes, p2Holes, t]);
 
   const matchStatusLine = useMemo(() => {
     if (!pairing || pairing.status === 'scheduled') return null;
@@ -179,17 +195,17 @@ export default function LeagueMatchDetailScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={{ padding: gutter, gap: 16 }}>
-          <Text style={styles.notFoundTxt}>{loadError ?? 'Tournament match not found.'}</Text>
+          <Text style={styles.notFoundTxt}>{loadError ?? t('league.match.notFound')}</Text>
           {backLeagueId ? (
             <Pressable
               style={styles.backBtn}
               onPress={() => router.replace(`/(tabs)/league/${backLeagueId}` as never)}
             >
-              <Text style={styles.backBtnTxt}>Back to tournament</Text>
+              <Text style={styles.backBtnTxt}>{t('league.match.backToTournament')}</Text>
             </Pressable>
           ) : (
             <Pressable style={styles.backBtn} onPress={() => router.back()}>
-              <Text style={styles.backBtnTxt}>Go back</Text>
+              <Text style={styles.backBtnTxt}>{t('match.create.goBack')}</Text>
             </Pressable>
           )}
         </View>
@@ -197,7 +213,7 @@ export default function LeagueMatchDetailScreen() {
     );
   }
 
-  const statusLabel = formatPairingStatusLabel(pairing.status);
+  const statusLabel = pairingStatusLabel(pairing.status, t);
   const isComplete = pairing.status === 'complete' || pairing.status === 'halved';
 
   return (
@@ -217,49 +233,55 @@ export default function LeagueMatchDetailScreen() {
           <View style={styles.playerCol}>
             <Text style={styles.playerName}>{name1}</Text>
             <Text style={styles.holesWon}>{pairing.holes_won_p1}</Text>
-            <Text style={styles.holesLbl}>holes won</Text>
+            <Text style={styles.holesLbl}>{t('league.match.holesWon')}</Text>
           </View>
-          <Text style={styles.vs}>vs</Text>
+          <Text style={styles.vs}>{t('league.match.vs')}</Text>
           <View style={styles.playerCol}>
             <Text style={styles.playerName}>{name2}</Text>
             <Text style={styles.holesWon}>{pairing.holes_won_p2}</Text>
-            <Text style={styles.holesLbl}>holes won</Text>
+            <Text style={styles.holesLbl}>{t('league.match.holesWon')}</Text>
           </View>
         </View>
 
         {matchStatusLine ? <Text style={styles.statusLine}>{matchStatusLine}</Text> : null}
-        <Text style={styles.halvedLine}>{pairing.holes_halved} holes halved</Text>
+        <Text style={styles.halvedLine}>
+          {t('league.match.holesHalved', { count: pairing.holes_halved })}
+        </Text>
 
         {isComplete && pairing.winner_entry_id ? (
           <Text style={styles.resultLine}>
-            Winner: {pairing.winner_entry_id === pairing.player_1_entry_id ? name1 : name2}
+            {t('league.match.winner', {
+              name:
+                pairing.winner_entry_id === pairing.player_1_entry_id ? name1 : name2,
+            })}
           </Text>
         ) : null}
         {pairing.status === 'halved' ? (
           <Text style={styles.resultLine}>
             {bundle?.league.match_play_pairing_method === 'bracket' && pairing.winner_entry_id
-              ? bracketHalvedAdvanceLine(
-                  pairing.winner_entry_id === pairing.player_1_entry_id ? name1 : name2
-                )
-              : 'Match halved — 1 point each'}
+              ? t('league.match.halvedAdvance', {
+                  name:
+                    pairing.winner_entry_id === pairing.player_1_entry_id ? name1 : name2,
+                })
+              : t('league.match.halvedPoints')}
           </Text>
         ) : null}
 
         {bundle?.league.match_play_pairing_method === 'bracket' ? (
           <View style={styles.tiebreakBox}>
-            <Text style={styles.tiebreakTitle}>Bracket tiebreaker</Text>
-            <Text style={styles.tiebreakLine}>{BRACKET_HALVED_TIEBREAKER_BODY}</Text>
+            <Text style={styles.tiebreakTitle}>{t('league.match.bracketTiebreaker')}</Text>
+            <Text style={styles.tiebreakLine}>{t('league.match.tiebreakerBody')}</Text>
           </View>
         ) : null}
 
         {holeGrid ? (
           <View style={styles.gridCard}>
-            <Text style={styles.gridTitle}>Hole-by-hole</Text>
+            <Text style={styles.gridTitle}>{t('match.results.holeByHole')}</Text>
             <View style={styles.gridHead}>
-              <Text style={[styles.gridTh, styles.colHole]}>Hole</Text>
+              <Text style={[styles.gridTh, styles.colHole]}>{t('match.results.hole')}</Text>
               <Text style={[styles.gridTh, styles.colGross]}>{name1.split(' ')[0]}</Text>
               <Text style={[styles.gridTh, styles.colGross]}>{name2.split(' ')[0]}</Text>
-              <Text style={[styles.gridTh, styles.colRes]}>Result</Text>
+              <Text style={[styles.gridTh, styles.colRes]}>{t('league.match.result')}</Text>
             </View>
             {holeGrid.map((row) => (
               <View key={row.hole} style={styles.gridRow}>
@@ -271,22 +293,20 @@ export default function LeagueMatchDetailScreen() {
             ))}
           </View>
         ) : pairing.status === 'in_progress' ? (
-          <Text style={styles.waitingTxt}>
-            Waiting for both players to submit complete scorecards before hole-by-hole results appear.
-          </Text>
+          <Text style={styles.waitingTxt}>{t('league.match.waitingForScorecards')}</Text>
         ) : null}
 
         {myEntry &&
         (pairing.player_1_entry_id === myEntry.id || pairing.player_2_entry_id === myEntry.id) ? (
           <View style={styles.myBox}>
-            <Text style={styles.myBoxTitle}>Your result</Text>
+            <Text style={styles.myBoxTitle}>{t('league.match.yourResult')}</Text>
             <Text style={styles.myBoxLine}>
-              You won {myHolesWonInPairing(pairing, myEntry.id)} holes in this match.
+              {t('league.match.youWonHoles', {
+                count: myHolesWonInPairing(pairing, myEntry.id),
+              })}
             </Text>
             {pairing.status === 'scheduled' ? (
-              <Text style={styles.myBoxHint}>
-                Log a round and enter gross scores hole-by-hole to record your match.
-              </Text>
+              <Text style={styles.myBoxHint}>{t('league.match.logRoundHint')}</Text>
             ) : null}
           </View>
         ) : null}
@@ -299,7 +319,7 @@ export default function LeagueMatchDetailScreen() {
               : router.back()
           }
         >
-          <Text style={styles.backBtnTxt}>Back to tournament</Text>
+          <Text style={styles.backBtnTxt}>{t('league.match.backToTournament')}</Text>
         </Pressable>
       </ScrollView>
     </ContentWidth>

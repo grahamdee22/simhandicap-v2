@@ -10,6 +10,7 @@ import {
   type LayoutChangeEvent,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '../../i18n';
 import { colors } from '../../lib/constants';
 import type { SimRound } from '../../store/useAppStore';
 import { useAppStore } from '../../store/useAppStore';
@@ -25,6 +26,7 @@ type Props = {
 };
 
 export function ShareRoundCardModal({ visible, round, onClose }: Props) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const displayName = useAppStore((s) => s.displayName);
   const rounds = useAppStore((s) => s.rounds);
@@ -89,8 +91,8 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
     >
       <View style={[styles.backdrop, { paddingTop: insets.top + 12, paddingBottom: insets.bottom + 16 }]}>
         <View style={styles.sheet}>
-          <Text style={styles.title}>Round complete</Text>
-          <Text style={styles.sub}>Share your card, or keep browsing your rounds.</Text>
+          <Text style={styles.title}>{t('shareRound.modalTitle')}</Text>
+          <Text style={styles.sub}>{t('shareRound.modalSub')}</Text>
 
           {data ? (
             <View style={[styles.previewFrame, { width: previewWidth, height: previewHeight }]}>
@@ -115,12 +117,12 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
             onPress={() => void onShare()}
             disabled={shareBusy}
             accessibilityRole="button"
-            accessibilityLabel="Share round card"
+            accessibilityLabel={t('shareRound.shareA11y')}
           >
             {shareBusy ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryTxt}>Share</Text>
+              <Text style={styles.primaryTxt}>{t('shareRound.share')}</Text>
             )}
           </Pressable>
           <Pressable
@@ -128,9 +130,9 @@ export function ShareRoundCardModal({ visible, round, onClose }: Props) {
             onPress={onClose}
             disabled={sharing}
             accessibilityRole="button"
-            accessibilityLabel="Not now"
+            accessibilityLabel={t('shareRound.notNowA11y')}
           >
-            <Text style={styles.secondaryTxt}>Not Now</Text>
+            <Text style={styles.secondaryTxt}>{t('shareRound.notNow')}</Text>
           </Pressable>
         </View>
 

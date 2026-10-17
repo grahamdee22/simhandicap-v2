@@ -13,10 +13,12 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
+import { useTranslation } from '@/src/i18n';
 import { colors } from '@/src/lib/constants';
 import { supabase } from '@/src/lib/supabase';
 
 export default function ForgotPasswordScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [email, setEmail] = useState('');
   const [busy, setBusy] = useState(false);
@@ -27,11 +29,11 @@ export default function ForgotPasswordScreen() {
     setError(null);
     const trimmed = email.trim();
     if (!trimmed) {
-      setError('Enter your email.');
+      setError(t('auth.forgotPassword.enterEmail'));
       return;
     }
     if (!supabase) {
-      setError('Sign-in is not available (missing configuration).');
+      setError(t('common.configUnavailable'));
       return;
     }
     setBusy(true);
@@ -66,22 +68,22 @@ export default function ForgotPasswordScreen() {
 
         {success ? (
           <View style={styles.successBlock}>
-            <Text style={styles.successMessage}>Check your email — a reset link is on its way.</Text>
+            <Text style={styles.successMessage}>{t('auth.forgotPassword.success')}</Text>
           </View>
         ) : (
           <>
-            <Text style={styles.sectionTitle}>Reset your password</Text>
-            <Text style={styles.subheading}>{"Enter your email and we'll send you a reset link"}</Text>
+            <Text style={styles.sectionTitle}>{t('auth.forgotPassword.title')}</Text>
+            <Text style={styles.subheading}>{t('auth.forgotPassword.subheading')}</Text>
 
-            <Text style={styles.lbl}>Email</Text>
+            <Text style={styles.lbl}>{t('common.email')}</Text>
             <TextInput
               style={styles.input}
               value={email}
-              onChangeText={(t) => {
-                setEmail(t);
+              onChangeText={(value) => {
+                setEmail(value);
                 if (error) setError(null);
               }}
-              placeholder="you@example.com"
+              placeholder={t('common.emailPlaceholder')}
               placeholderTextColor={colors.subtle}
               autoCapitalize="none"
               autoCorrect={false}
@@ -100,7 +102,7 @@ export default function ForgotPasswordScreen() {
               {busy ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.primaryTxt}>Send reset link</Text>
+                <Text style={styles.primaryTxt}>{t('auth.forgotPassword.sendResetLink')}</Text>
               )}
             </Pressable>
           </>
@@ -109,7 +111,7 @@ export default function ForgotPasswordScreen() {
         <View style={styles.backRow}>
           <Link href="/(auth)/sign-in" asChild>
             <Pressable accessibilityRole="link" hitSlop={8} style={({ pressed }) => [pressed && styles.backLinkPressed]}>
-              <Text style={styles.backLink}>Back to sign in</Text>
+              <Text style={styles.backLink}>{t('auth.forgotPassword.backToSignIn')}</Text>
             </Pressable>
           </Link>
         </View>

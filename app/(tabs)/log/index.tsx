@@ -3,6 +3,7 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { IconAnalyticsBars, IconChevronForward, IconGolf } from '../../../src/components/SvgUiIcons';
+import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { PRACTICE_ANALYZER_ENABLED } from '../../../src/lib/featureFlags';
 import { useResponsive } from '../../../src/lib/responsive';
@@ -12,6 +13,7 @@ import { useResponsive } from '../../../src/lib/responsive';
  * When Practice Analyzer is disabled, skip straight to Log a Round.
  */
 export default function LogChoiceScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
@@ -32,23 +34,22 @@ export default function LogChoiceScreen() {
         showsVerticalScrollIndicator={false}
       >
         <Text style={styles.intro}>
-          Choose what you want to do. Logging a round updates your SimCap index. Practice Analyzer is coaching
-          only — it never touches your handicap.
+          {t('log.choice.intro')}
         </Text>
 
         <Pressable
           onPress={() => router.push('/(tabs)/log/round' as never)}
           style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
           accessibilityRole="button"
-          accessibilityLabel="Log a round"
+          accessibilityLabel={t('log.choice.logRound.a11y')}
         >
           <View style={styles.iconWrap}>
             <IconGolf size={22} color={colors.sage} />
           </View>
           <View style={styles.cardBody}>
-            <Text style={styles.cardTitle}>Log a Round</Text>
+            <Text style={styles.cardTitle}>{t('log.choice.logRound.title')}</Text>
             <Text style={styles.cardSub}>
-              Score + sim settings → updates your SimCap index, Trends, and profile.
+              {t('log.choice.logRound.sub')}
             </Text>
           </View>
           <IconChevronForward size={20} color={colors.subtle} />
@@ -58,15 +59,15 @@ export default function LogChoiceScreen() {
           onPress={() => router.push('/(tabs)/log/practice' as never)}
           style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
           accessibilityRole="button"
-          accessibilityLabel="Analyze practice"
+          accessibilityLabel={t('log.choice.practice.a11y')}
         >
           <View style={styles.iconWrap}>
             <IconAnalyticsBars size={22} color={colors.sage} />
           </View>
           <View style={styles.cardBody}>
-            <Text style={styles.cardTitle}>Analyze Practice</Text>
+            <Text style={styles.cardTitle}>{t('log.choice.practice.title')}</Text>
             <Text style={styles.cardSub}>
-              Import a GSPro practice CSV for per-club takeaways and tips. Does not affect your index.
+              {t('log.choice.practice.sub')}
             </Text>
           </View>
           <IconChevronForward size={20} color={colors.subtle} />

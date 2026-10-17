@@ -1,0 +1,44 @@
+appId: com.simcap.app
+---
+# One-time (or cold-start) sign-in for demo account Jordan Ellis.
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 15000
+
+- extendedWaitUntil:
+    visible: "Skip introduction"
+    timeout: 60000
+- tapOn: "Skip introduction"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Sign in to your account"
+    timeout: 30000
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "OK"
+    optional: true
+
+- tapOn: "you@example.com"
+- waitForAnimationToEnd
+- inputText: "jordan.ellis@demo.simcap.test"
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+
+- tapOn:
+    below:
+      text: "PASSWORD"
+- waitForAnimationToEnd
+- inputText: "Demo-Recording-JEllis!"
+- waitForAnimationToEnd
+- hideKeyboard
+- waitForAnimationToEnd
+
+- tapOn: "Sign in"
+- extendedWaitUntil:
+    visible: "Log a round, tab.*"
+    timeout: 60000
+- waitForAnimationToEnd

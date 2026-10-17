@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Linking, Pressable, StyleSheet, View } from 'react-native';
 
+import { useTranslation } from '../i18n';
 import { SIMCAP_INSTAGRAM_URL } from '../lib/socialLinks';
 import { SimCapMark } from './SimCapMark';
 
@@ -14,12 +15,13 @@ export function openSimCapInstagram() {
 
 /** Home hero (forest header): Instagram only, top-right alignment via parent row. */
 export function HomeHeroInstagramButton() {
+  const { t } = useTranslation();
   return (
     <Pressable
       onPress={openSimCapInstagram}
       style={({ pressed }) => [styles.homeInstaHit, pressed && styles.pressed]}
       accessibilityRole="link"
-      accessibilityLabel="SimCap on Instagram"
+      accessibilityLabel={t('common.instagramA11y')}
     >
       <Ionicons name="logo-instagram" size={28} color={HEADER_ICON_COLOR} />
     </Pressable>
@@ -28,13 +30,14 @@ export function HomeHeroInstagramButton() {
 
 /** Tab stack headers: Instagram left of SimCap mark (same tint as header). */
 export function HeaderInstagramAndSimCap() {
+  const { t } = useTranslation();
   return (
     <View style={styles.headerRightRow}>
       <Pressable
         onPress={openSimCapInstagram}
         style={({ pressed }) => [styles.headerInstaHit, pressed && styles.pressed]}
         accessibilityRole="link"
-        accessibilityLabel="SimCap on Instagram"
+        accessibilityLabel={t('common.instagramA11y')}
       >
         <Ionicons name="logo-instagram" size={HEADER_INSTAGRAM_SIZE} color={HEADER_ICON_COLOR} />
       </Pressable>

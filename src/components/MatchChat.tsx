@@ -13,6 +13,7 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import { useTranslation } from '@/src/i18n';
 import { colors } from '@/src/lib/constants';
 import { googleOAuthAccessToken } from '@/src/lib/googleOAuthAccessToken';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
@@ -32,18 +33,18 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
   };
 }
 
-const PRESET_PHRASES = [
-  "Get rekt 🏌️",
-  'Sandbagging? 👀',
-  'Easy game 😎',
-  'Oof 😬',
-  'You got lucky',
-  'GG 🤝',
-  'Rough hole 😬',
-  'Birdie szn 🐦',
-  "How'd you make that work? 🤔",
-  'That hurts to watch',
-  'Respect 🫡',
+const PRESET_KEYS = [
+  'getRekt',
+  'sandbagging',
+  'easyGame',
+  'oof',
+  'youGotLucky',
+  'gg',
+  'roughHole',
+  'birdieSzn',
+  'howdYouMakeThat',
+  'thatHurts',
+  'respect',
 ] as const;
 
 type MatchMessageRow = {
@@ -62,6 +63,7 @@ type Props = {
 };
 
 export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountChange }: Props) {
+  const { t } = useTranslation();
   const [messages, setMessages] = useState<MatchMessageRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
@@ -75,6 +77,10 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
   const atBottomRef = useRef(true);
 
   const messageLimitReached = messages.length >= 30;
+  const presetPhrases = useMemo(
+    () => PRESET_KEYS.map((key) => t(`matchChat.presets.${key}`)),
+    [t]
+  );
 
   useEffect(() => {
     onUnreadCountChange?.(unreadCount);
@@ -168,7 +174,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
   }, [matchId, currentUserId, opponentId, supabaseOn, expanded, googleOAuthAccessToken]);
 
   const lastMessage = messages[messages.length - 1] ?? null;
-  const lastPreview = lastMessage ? lastMessage.message : 'No messages yet';
+  const lastPreview = lastMessage ? lastMessage.message : t('matchChat.noMessagesYet');
 
   const handleSend = async (text: string) => {
     const trimmed = text.trim();
@@ -179,7 +185,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
       if (restTok) {
         const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
         if (!supabaseUrl || !supabaseAnonKey) {
-          Alert.alert('Chat', 'Supabase is not configured.');
+          Alert.alert(t('matchChat.alertTitle'), t('matchChat.notConfigured'));
           return;
         }
         const res = await fetch(`${supabaseUrl}/rest/v1/match_messages`, {
@@ -202,9 +208,12 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
           const body = await res.text().catch(() => '');
           const lower = body.toLowerCase();
           if (lower.includes('count')) {
-            Alert.alert('Chat', 'Message limit reached for this match.');
+            Alert.alert(t('matchChat.alertTitle'), t('matchChat.limitReached'));
           } else {
-            Alert.alert('Chat', body || res.statusText || 'Could not send.');
+            Alert.alert(
+              t('matchChat.alertTitle'),
+              body || res.statusText || t('matchChat.couldNotSend')
+            );
           }
           return;
         }
@@ -217,9 +226,9 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
         });
         if (error) {
           if (error.message.toLowerCase().includes('count')) {
-            Alert.alert('Chat', 'Message limit reached for this match.');
+            Alert.alert(t('matchChat.alertTitle'), t('matchChat.limitReached'));
           } else {
-            Alert.alert('Chat', error.message);
+            Alert.alert(t('matchChat.alertTitle'), error.message);
           }
           return;
         }
@@ -240,14 +249,21 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
   };
 
   const onLongPressMessage = (m: MatchMessageRow) => {
-    Alert.alert('Message options', 'What would you like to do?', [
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('matchChat.messageOptions'), t('matchChat.whatWouldYouLike'), [
+      { text: t('common.cancel'), style: 'cancel' },
       {
-        text: 'Report message',
+        text: t('matchChat.reportMessage'),
         style: 'destructive',
         onPress: () => {
-          const subject = encodeURIComponent('Message Report');
-          const body = encodeURIComponent(`Reported message:\n\n"${m.message}"\n\nMatch ID: ${m.match_id}\nFrom user: ${m.user_id}\nAt: ${m.created_at}`);
+          const subject = encodeURIComponent(t('matchChat.reportSubject'));
+          const body = encodeURIComponent(
+            t('matchChat.reportBody', {
+              message: m.message,
+              matchId: m.match_id,
+              userId: m.user_id,
+              createdAt: m.created_at,
+            })
+          );
           const url = `mailto:simcapadmin@gmail.com?subject=${subject}&body=${body}`;
           void Linking.openURL(url);
         },
@@ -282,12 +298,14 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
       <Pressable
         onPress={() => setExpanded((e) => !e)}
         accessibilityRole="button"
-        accessibilityLabel="Match chat"
+        accessibilityLabel={t('matchChat.a11y')}
       >
         <View style={styles.headerRow}>
           <View style={styles.headerTitleRow}>
-            <Text style={styles.headerTitle}>Match chat</Text>
-            <Text style={styles.headerToggle}>{expanded ? 'Hide' : 'Show'}</Text>
+            <Text style={styles.headerTitle}>{t('matchChat.title')}</Text>
+            <Text style={styles.headerToggle}>
+              {expanded ? t('matchChat.hide') : t('matchChat.show')}
+            </Text>
           </View>
           {unreadCount > 0 ? (
             <View style={styles.unreadBadge}>
@@ -348,7 +366,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
               ))}
               {formattedMessages.length === 0 ? (
                 <View style={styles.emptyState}>
-                  <Text style={styles.emptyStateTxt}>No messages yet.</Text>
+                  <Text style={styles.emptyStateTxt}>{t('matchChat.noMessagesYetPeriod')}</Text>
                 </View>
               ) : null}
             </ScrollView>
@@ -363,7 +381,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
           style={styles.presetRow}
           contentContainerStyle={styles.presetContent}
         >
-          {PRESET_PHRASES.map((p) => (
+          {presetPhrases.map((p) => (
             <Pressable
               key={p}
               onPress={() => onSelectPreset(p)}
@@ -388,7 +406,7 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
             messageLimitReached && styles.disabledBtn,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Open preset phrases"
+          accessibilityLabel={t('matchChat.presetA11y')}
         >
           <Text style={styles.presetBtnTxt}>💬</Text>
         </Pressable>
@@ -396,7 +414,11 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
           style={styles.input}
           value={input}
           onChangeText={setInput}
-          placeholder={messageLimitReached ? 'Message limit reached' : 'Type a message'}
+          placeholder={
+            messageLimitReached
+              ? t('matchChat.messageLimitReached')
+              : t('matchChat.typeMessage')
+          }
           placeholderTextColor={colors.subtle}
           editable={!sending && !messageLimitReached}
           multiline
@@ -411,17 +433,17 @@ export function MatchChat({ matchId, currentUserId, opponentId, onUnreadCountCha
             pressed && !sending && !messageLimitReached && input.trim() && styles.sendBtnPressed,
           ]}
           accessibilityRole="button"
-          accessibilityLabel="Send message"
+          accessibilityLabel={t('matchChat.sendA11y')}
         >
           {sending ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.sendBtnTxt}>Send</Text>
+            <Text style={styles.sendBtnTxt}>{t('matchChat.send')}</Text>
           )}
         </Pressable>
       </View>
       {messageLimitReached ? (
-        <Text style={styles.limitTxt}>Message limit reached</Text>
+        <Text style={styles.limitTxt}>{t('matchChat.messageLimitReached')}</Text>
       ) : null}
     </View>
   );

@@ -24,6 +24,7 @@ import { useKeyboardBottomInset } from '../../src/lib/useKeyboardBottomInset';
 import { useAuth } from '../../src/auth/AuthContext';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
+import { useTranslation } from '../../src/i18n';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import {
   COURSE_SEEDS,
@@ -38,7 +39,6 @@ import {
 import {
   formatHandicapIndexDisplay,
   MULLIGAN_PICKER_OPTS,
-  mulliganDisplayLabel,
   normalizeMulligans,
   round1,
   type Mulligans,
@@ -46,7 +46,7 @@ import {
   type PuttingMode,
   type Wind,
 } from '../../src/lib/handicap';
-import { pinDisplayLabel, pinOptionsForPlatform } from '../../src/lib/pinPlacement';
+import { isGsProPlatform, pinOptionsForPlatform } from '../../src/lib/pinPlacement';
 import { showAppAlert } from '../../src/lib/alertCompat';
 import { settingsScreenshotPickerOptions } from '../../src/lib/settingsScreenshotPicker';
 import {
@@ -71,19 +71,9 @@ const ALLOW_SKIP_SETTINGS_SCREENSHOT = __DEV__;
 const MAX_OPEN_CHALLENGES_POSTED = 3;
 const FUTURE_OPEN_MAX_DAYS = 30;
 
-const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
-  { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
-  { key: 'gimme_5', dn: 'Gimme', ds: '<5ft' },
-  { key: 'putt_all', dn: 'Putt', ds: 'Everything' },
-];
-
-const WIND_OPTS: { key: Wind; dn: string; ds: string }[] = [
-  { key: 'off', dn: 'Off', ds: 'Calm' },
-  { key: 'light', dn: 'Light', ds: 'Breeze' },
-  { key: 'strong', dn: 'Strong', ds: 'Heavy' },
-];
-
-const MULL_OPTS = MULLIGAN_PICKER_OPTS;
+const PUTTING_KEYS: PuttingMode[] = ['auto_2putt', 'gimme_5', 'putt_all'];
+const WIND_KEYS: Wind[] = ['off', 'light', 'strong'];
+const MULL_KEYS = MULLIGAN_PICKER_OPTS.map((m) => m.key);
 
 type OpponentPick = {
   userId: string;
@@ -161,6 +151,7 @@ function clampScheduledDate(v: Date, now = new Date()): Date {
 }
 
 export default function MatchCreateScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const navigation = useNavigation();
   const { fresh: freshRaw, rematchFrom: rematchFromRaw } = useLocalSearchParams<{
@@ -182,6 +173,32 @@ export default function MatchCreateScreen() {
   const groups = useAppStore((s) => s.groups);
   const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
   const supabaseOn = isSupabaseConfigured();
+
+  const pinLabel = useCallback(
+    (key: PinDay, platformId: PlatformId) => {
+      if (isGsProPlatform(platformId)) {
+        return t(`match.create.pin.${key}`);
+      }
+      if (key === 'thu') return t('match.create.pin.easy');
+      if (key === 'fri') return t('match.create.pin.medium');
+      if (key === 'sun') return t('match.create.pin.hard');
+      return t(`match.create.pin.${key}`);
+    },
+    [t]
+  );
+  const pinSublabel = useCallback(
+    (key: PinDay, platformId: PlatformId) => {
+      if (!isGsProPlatform(platformId)) return undefined;
+      const map: Record<PinDay, string> = {
+        thu: t('match.create.pin.round1'),
+        fri: t('match.create.pin.round2'),
+        sat: t('match.create.pin.round3'),
+        sun: t('match.create.pin.round4'),
+      };
+      return map[key];
+    },
+    [t]
+  );
 
   const [challengeKind, setChallengeKind] = useState<ChallengeKind>('direct');
   const [openChallengeMode, setOpenChallengeMode] = useState<OpenChallengeMode>('now');
@@ -288,29 +305,38 @@ export default function MatchCreateScreen() {
         if (cancelled) return;
         if (sourceRes.error || !sourceRes.data) {
           lastRematchHydratedRef.current = rid;
-          showAppAlert('Rematch', sourceRes.error ?? 'Could not load that match.', {
-            onOk: () => router.back(),
-          });
+          showAppAlert(
+            t('match.create.alerts.rematchTitle'),
+            sourceRes.error ?? t('match.create.alerts.couldNotLoadMatch'),
+            {
+              onOk: () => router.back(),
+            }
+          );
           return;
         }
         const source = sourceRes.data;
         if (source.status !== 'complete' || !source.player_2_id) {
           lastRematchHydratedRef.current = rid;
-          showAppAlert('Rematch', 'That match is not available for a rematch.', {
+          showAppAlert(t('match.create.alerts.rematchTitle'), t('match.create.alerts.notAvailableForRematch'), {
             onOk: () => router.back(),
           });
           return;
         }
         if (user.id !== source.player_1_id && user.id !== source.player_2_id) {
           lastRematchHydratedRef.current = rid;
-          showAppAlert('Rematch', 'You were not in that match.', { onOk: () => router.back() });
+          showAppAlert(t('match.create.alerts.rematchTitle'), t('match.create.alerts.notInMatch'), {
+            onOk: () => router.back(),
+          });
           return;
         }
 
         const myRes = await listMyMatches(user.id, googleOAuthAccessToken ?? undefined);
         if (cancelled) return;
         if (myRes.error || !myRes.data) {
-          showAppAlert('Rematch', myRes.error ?? 'Could not verify your matches.');
+          showAppAlert(
+            t('match.create.alerts.rematchTitle'),
+            myRes.error ?? t('match.create.alerts.couldNotVerifyMatches')
+          );
           return;
         }
 
@@ -319,19 +345,27 @@ export default function MatchCreateScreen() {
         if (existing) {
           lastRematchHydratedRef.current = rid;
           if (user.id === existing.player_2_id && existing.status === 'pending') {
-            showAppAlert('Rematch', 'Your opponent already wants a rematch!', {
-              onOk: () => router.replace(`/(tabs)/match-accept/${existing.id}` as never),
-            });
+            showAppAlert(
+              t('match.create.alerts.rematchTitle'),
+              t('match.create.alerts.opponentWantsRematch'),
+              {
+                onOk: () => router.replace(`/(tabs)/match-accept/${existing.id}` as never),
+              }
+            );
           } else if (user.id === existing.player_1_id && existing.status === 'pending') {
             showAppAlert(
-              'Rematch',
-              'You already have a direct challenge waiting. Finish or resolve it before starting another rematch.',
+              t('match.create.alerts.rematchTitle'),
+              t('match.create.alerts.directChallengeWaiting'),
               { onOk: () => router.back() }
             );
           } else {
-            showAppAlert('Rematch', 'You already have a match in progress with this opponent.', {
-              onOk: () => router.replace(`/(tabs)/match-score/${existing.id}` as never),
-            });
+            showAppAlert(
+              t('match.create.alerts.rematchTitle'),
+              t('match.create.alerts.matchInProgressWithOpponent'),
+              {
+                onOk: () => router.replace(`/(tabs)/match-score/${existing.id}` as never),
+              }
+            );
           }
           return;
         }
@@ -339,8 +373,8 @@ export default function MatchCreateScreen() {
         if (countActiveDirectMatchesForUser(myRes.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
           lastRematchHydratedRef.current = rid;
           showAppAlert(
-            'Challenge limit',
-            `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve one before sending a rematch.`,
+            t('match.create.alerts.challengeLimitTitle'),
+            t('match.create.alerts.challengeLimitRematch', { count: MAX_ACTIVE_DIRECT_CHALLENGES }),
             { onOk: () => router.back() }
           );
           return;
@@ -352,8 +386,8 @@ export default function MatchCreateScreen() {
           opps.find((o) => o.userId === oppId) ??
           ({
             userId: oppId,
-            displayName: 'Golfer',
-            groupLine: 'Rematch',
+            displayName: t('match.create.golferFallback'),
+            groupLine: t('match.create.rematchGroupLine'),
           } as OpponentPick);
 
         const amP1Old = source.player_1_id === user.id;
@@ -374,7 +408,7 @@ export default function MatchCreateScreen() {
         setPlatform(plat);
         setCourseId(cid);
         setPutting(
-          PUTTING_OPTS.some((x) => x.key === source.putting_mode)
+          PUTTING_KEYS.includes(source.putting_mode as PuttingMode)
             ? (source.putting_mode as PuttingMode)
             : 'auto_2putt'
         );
@@ -383,7 +417,7 @@ export default function MatchCreateScreen() {
             ? (source.pin_placement as PinDay)
             : 'thu'
         );
-        setWind(WIND_OPTS.some((x) => x.key === source.wind) ? (source.wind as Wind) : 'off');
+        setWind(WIND_KEYS.includes(source.wind as Wind) ? (source.wind as Wind) : 'off');
         setMulligans(normalizeMulligans(source.mulligans));
 
         if (source.holes === 18) {
@@ -445,7 +479,7 @@ export default function MatchCreateScreen() {
       cancelled = true;
       setRematchHydrating(false);
     };
-  }, [rematchFromParam, supabaseOn, user?.id, router, googleOAuthAccessToken]);
+  }, [rematchFromParam, supabaseOn, user?.id, router, googleOAuthAccessToken, t]);
 
   const opponents = useMemo(
     () => (user?.id ? collectOpponents(groups, user.id) : []),
@@ -549,13 +583,13 @@ export default function MatchCreateScreen() {
           hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
           style={styles.headerCancelPress}
           accessibilityRole="button"
-          accessibilityLabel="Cancel create match"
+          accessibilityLabel={t('match.create.cancelA11y')}
         >
-          <Text style={styles.headerCancelTxt}>Cancel</Text>
+          <Text style={styles.headerCancelTxt}>{t('match.create.cancel')}</Text>
         </Pressable>
       ),
     });
-  }, [navigation, router]);
+  }, [navigation, router, t]);
 
   const openPhotoSettings = useCallback(() => {
     if (Platform.OS === 'web') {
@@ -681,7 +715,10 @@ export default function MatchCreateScreen() {
       if (!uid) return;
       const myRes = await listMyMatches(uid, googleOAuthAccessToken ?? undefined);
       if (myRes.error || myRes.data == null) {
-        showAppAlert('Could not verify open challenges', myRes.error ?? 'Something went wrong.');
+        showAppAlert(
+          t('match.create.alerts.verifyOpenTitle'),
+          myRes.error ?? t('match.create.alerts.somethingWentWrong')
+        );
         return;
       }
       const openPostedCount = myRes.data.filter(
@@ -689,15 +726,15 @@ export default function MatchCreateScreen() {
       ).length;
       if (openPostedCount >= MAX_OPEN_CHALLENGES_POSTED) {
         showAppAlert(
-          'Open challenge limit',
-          `You already have ${MAX_OPEN_CHALLENGES_POSTED} open challenges. Cancel one from the Match Play section on Social before posting another.`
+          t('match.create.alerts.openLimitTitle'),
+          t('match.create.alerts.openLimitBody', { count: MAX_OPEN_CHALLENGES_POSTED })
         );
         return;
       }
       setChallengeKind('open');
       setOpenChallengeMode('now');
     },
-    [user?.id, googleOAuthAccessToken]
+    [user?.id, googleOAuthAccessToken, t]
   );
 
   const goNext = useCallback(async () => {
@@ -713,7 +750,7 @@ export default function MatchCreateScreen() {
               () =>
                 resolve({
                   data: null,
-                  error: 'Could not verify your matches — check your connection and try again.',
+                  error: t('match.create.alerts.verifyMatchesTimeout'),
                 }),
               timeoutMs
             );
@@ -721,22 +758,22 @@ export default function MatchCreateScreen() {
         ]);
         if (res.error || res.data == null) {
           showAppAlert(
-            'Could not verify your matches',
-            res.error ?? 'Could not verify your matches — check your connection and try again.'
+            t('match.create.alerts.verifyMatchesTitle'),
+            res.error ?? t('match.create.alerts.verifyMatchesTimeout')
           );
           return;
         }
         if (countActiveDirectMatchesForUser(res.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
           showAppAlert(
-            'Challenge limit',
-            `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a new one.`
+            t('match.create.alerts.challengeLimitTitle'),
+            t('match.create.alerts.challengeLimitNew', { count: MAX_ACTIVE_DIRECT_CHALLENGES })
           );
           return;
         }
         if (hasBlockingDirectMatchWithOpponent(res.data, user.id, opponent.userId)) {
           showAppAlert(
-            'Match already in progress',
-            `You already have a match with ${opponent.displayName} that is pending, active, or waiting. Finish or resolve that match before sending a new challenge.`
+            t('match.create.alerts.matchInProgressTitle'),
+            t('match.create.alerts.matchInProgressBody', { name: opponent.displayName })
           );
           return;
         }
@@ -755,6 +792,7 @@ export default function MatchCreateScreen() {
     screenStep,
     user?.id,
     googleOAuthAccessToken,
+    t,
   ]);
 
   const goBackStep = useCallback(() => {
@@ -781,20 +819,23 @@ export default function MatchCreateScreen() {
     if (challengeKind === 'direct' && opponent) {
       const res = await listMyMatches(user.id, googleOAuthAccessToken ?? undefined);
       if (res.error || res.data == null) {
-        showAppAlert('Could not verify your matches', res.error ?? 'Something went wrong.');
+        showAppAlert(
+          t('match.create.alerts.verifyMatchesTitle'),
+          res.error ?? t('match.create.alerts.somethingWentWrong')
+        );
         return;
       }
       if (countActiveDirectMatchesForUser(res.data, user.id) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
         showAppAlert(
-          'Challenge limit',
-          `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a new one.`
+          t('match.create.alerts.challengeLimitTitle'),
+          t('match.create.alerts.challengeLimitNew', { count: MAX_ACTIVE_DIRECT_CHALLENGES })
         );
         return;
       }
       if (hasBlockingDirectMatchWithOpponent(res.data, user.id, opponent.userId)) {
         showAppAlert(
-          'Match already in progress',
-          `You already have a match with ${opponent.displayName} that is pending, active, or waiting. Finish or resolve that match before sending a new challenge.`
+          t('match.create.alerts.matchInProgressTitle'),
+          t('match.create.alerts.matchInProgressBody', { name: opponent.displayName })
         );
         return;
       }
@@ -838,7 +879,10 @@ export default function MatchCreateScreen() {
     );
     if (ins.error || !ins.data) {
       setSubmitBusy(false);
-      showAppAlert('Could not create match', ins.error ?? 'Unknown error');
+      showAppAlert(
+        t('match.create.alerts.couldNotCreate'),
+        ins.error ?? t('match.create.alerts.unknownError')
+      );
       return;
     }
     const matchId = ins.data.id;
@@ -854,12 +898,13 @@ export default function MatchCreateScreen() {
       if ('error' in up) {
         setSubmitBusy(false);
         showAppAlert(
-          'Upload failed',
-          `${up.error}\n\nYour challenge was created.${
-            challengeKind === 'direct' && opponent
-              ? ` Share your sim settings screenshot with ${opponent.displayName} another way for now.`
-              : ''
-          }`
+          t('match.create.alerts.uploadFailed'),
+          challengeKind === 'direct' && opponent
+            ? t('match.create.alerts.uploadFailedShare', {
+                error: up.error,
+                name: opponent.displayName,
+              })
+            : t('match.create.alerts.uploadFailedBody', { error: up.error })
         );
         router.replace('/(tabs)/groups' as never);
         return;
@@ -897,15 +942,16 @@ export default function MatchCreateScreen() {
     verificationRequired,
     router,
     googleOAuthAccessToken,
+    t,
   ]);
 
   if (!supabaseOn || !user) {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.fallback, { padding: gutter }]}>
-          <Text style={styles.fallbackTxt}>Sign in with Supabase configured to create a match.</Text>
+          <Text style={styles.fallbackTxt}>{t('match.create.offline')}</Text>
           <Pressable style={styles.secondaryBtn} onPress={() => router.back()}>
-            <Text style={styles.secondaryBtnTxt}>Go back</Text>
+            <Text style={styles.secondaryBtnTxt}>{t('match.create.goBack')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -915,28 +961,32 @@ export default function MatchCreateScreen() {
   const stepTitle = (n: number) => {
     switch (n) {
       case 0:
-        return 'Challenge type';
+        return t('match.create.steps.challengeType');
       case 1:
-        return 'Opponent';
+        return t('match.create.steps.opponent');
       case 2:
-        return 'Sim, course & tee';
+        return t('match.create.steps.simCourseTee');
       case 3:
-        return 'Sim settings';
+        return t('match.create.steps.simSettings');
       case 4:
-        return 'Holes';
+        return t('match.create.steps.holes');
       case 5:
-        return 'Sim setup photo';
+        return t('match.create.steps.simSetupPhoto');
       case 6:
-        return 'Review & send';
+        return t('match.create.steps.reviewSend');
       case 7:
-        return 'Schedule go-live time';
+        return t('match.create.steps.scheduleGoLive');
       default:
         return '';
     }
   };
 
   const holesLabel =
-    holesChoice === '18' ? '18 holes' : holesChoice === 'front' ? 'Front 9 (holes 1–9)' : 'Back 9 (holes 10–18)';
+    holesChoice === '18'
+      ? t('match.create.holesLabel18')
+      : holesChoice === 'front'
+        ? t('match.create.holesLabelFront')
+        : t('match.create.holesLabelBack');
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -944,7 +994,7 @@ export default function MatchCreateScreen() {
         {rematchHydrating ? (
           <View style={styles.rematchHydrateOverlay} pointerEvents="auto">
             <ActivityIndicator size="large" color={colors.header} />
-            <Text style={styles.rematchHydrateTxt}>Setting up rematch…</Text>
+            <Text style={styles.rematchHydrateTxt}>{t('match.create.settingUpRematch')}</Text>
           </View>
         ) : null}
         <ScrollView
@@ -958,24 +1008,24 @@ export default function MatchCreateScreen() {
           showsVerticalScrollIndicator={false}
         >
           <Text style={styles.stepProg}>
-            Step {stepIdx + 1} of {totalSteps}
+            {t('match.create.stepOf', { current: stepIdx + 1, total: totalSteps })}
           </Text>
           <Text style={styles.stepHead}>{stepTitle(screenStep)}</Text>
 
           {screenStep === 0 ? (
             <>
-              <Text style={styles.body}>Choose who can join this match.</Text>
+              <Text style={styles.body}>{t('match.create.chooseWho')}</Text>
               {(
                 [
                   {
                     key: 'direct' as const,
-                    title: 'Direct challenge',
-                    sub: 'Pick a crewmate from your groups. They accept privately on Social.',
+                    title: t('match.create.directTitle'),
+                    sub: t('match.create.directSub'),
                   },
                   {
                     key: 'open' as const,
-                    title: 'Open challenge',
-                    sub: 'Post to the SimCap feed. Any signed-in player can review details and accept.',
+                    title: t('match.create.openTitle'),
+                    sub: t('match.create.openSub'),
                   },
                 ] as const
               ).map((opt) => {
@@ -996,7 +1046,7 @@ export default function MatchCreateScreen() {
               })}
               {challengeKind === 'open' ? (
                 <>
-                  <Text style={styles.sectionLabel}>Open challenge type</Text>
+                  <Text style={styles.sectionLabel}>{t('match.create.openChallengeType')}</Text>
                   <View style={styles.openModeRow}>
                     <Pressable
                       style={[styles.openModeBtn, openChallengeMode === 'now' && styles.openModeBtnOn]}
@@ -1006,7 +1056,7 @@ export default function MatchCreateScreen() {
                       }}
                     >
                       <Text style={[styles.openModeBtnTxt, openChallengeMode === 'now' && styles.openModeBtnTxtOn]}>
-                        Now
+                        {t('match.create.now')}
                       </Text>
                     </Pressable>
                     <Pressable
@@ -1014,7 +1064,7 @@ export default function MatchCreateScreen() {
                       onPress={() => setOpenChallengeMode('future')}
                     >
                       <Text style={[styles.openModeBtnTxt, openChallengeMode === 'future' && styles.openModeBtnTxtOn]}>
-                        Later
+                        {t('match.create.later')}
                       </Text>
                     </Pressable>
                   </View>
@@ -1026,10 +1076,7 @@ export default function MatchCreateScreen() {
           {screenStep === 1 ? (
             <>
               {opponents.length === 0 ? (
-                <Text style={styles.body}>
-                  You need group members to send a direct challenge. Create or join a crew on the Social tab, or ask a
-                  friend to join SimCap — then try again.
-                </Text>
+                <Text style={styles.body}>{t('match.create.noOpponents')}</Text>
               ) : (
                 opponents.map((o) => {
                   const on = opponent?.userId === o.userId;
@@ -1042,7 +1089,10 @@ export default function MatchCreateScreen() {
                       <View style={styles.oppTextCol}>
                         <Text style={styles.oppName}>{o.displayName}</Text>
                         <Text style={styles.oppMeta}>
-                          Index {formatHandicapIndexDisplay(indexByUserId.get(o.userId) ?? null)} · {o.groupLine}
+                          {t('match.create.indexMeta', {
+                            index: formatHandicapIndexDisplay(indexByUserId.get(o.userId) ?? null),
+                            groups: o.groupLine,
+                          })}
                         </Text>
                       </View>
                       {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
@@ -1055,41 +1105,44 @@ export default function MatchCreateScreen() {
 
           {screenStep === 2 ? (
             <>
-              <Text style={styles.sectionLabel}>Sim platform</Text>
+              <Text style={styles.sectionLabel}>{t('match.create.simPlatform')}</Text>
               <Pressable style={[styles.pill, platOpen && styles.pillActive]} onPress={() => setPlatOpen(true)}>
                 <Text style={styles.pillVal}>{platform}</Text>
                 <Text style={styles.chev}>▾</Text>
               </Pressable>
-              <Text style={styles.sectionLabel}>Course</Text>
+              <Text style={styles.sectionLabel}>{t('match.create.course')}</Text>
               <Pressable style={[styles.pill, courseOpen && styles.pillActive]} onPress={() => setCourseOpen(true)}>
-                <Text style={styles.pillVal}>{course?.name ?? 'Select'}</Text>
+                <Text style={styles.pillVal}>{course?.name ?? t('match.create.select')}</Text>
                 <Text style={styles.chev}>▾</Text>
               </Pressable>
 
               {course ? (
                 <>
                   {!showTeeSelector ? (
-                    <Text style={styles.body}>
-                      This course uses a single rating/slope for your platform. We&apos;ll use it for your side of the
-                      match.
-                    </Text>
+                    <Text style={styles.body}>{t('match.create.singleRatingBody')}</Text>
                   ) : (
                     <>
-                      <Text style={styles.sectionLabel}>Tee</Text>
+                      <Text style={styles.sectionLabel}>{t('match.create.tee')}</Text>
                       <View style={styles.teeChipWrap}>
-                        {courseTees.map((t) => (
+                        {courseTees.map((teeRow) => (
                           <Pressable
-                            key={t.name}
-                            style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
+                            key={teeRow.name}
+                            style={[styles.teeChip, teePickKey === teeRow.name && styles.teeChipOn]}
                             onPress={() => {
-                              setTeePickKey(t.name);
+                              setTeePickKey(teeRow.name);
                               setCustomRating('');
                               setCustomSlope('');
                             }}
                           >
-                            <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
-                            <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
-                              {t.rating} / {t.slope}
+                            <Text
+                              style={[styles.teeChipTxt, teePickKey === teeRow.name && styles.teeChipTxtOn]}
+                            >
+                              {teeRow.name}
+                            </Text>
+                            <Text
+                              style={[styles.teeChipSub, teePickKey === teeRow.name && styles.teeChipSubOn]}
+                            >
+                              {teeRow.rating} / {teeRow.slope}
                             </Text>
                           </Pressable>
                         ))}
@@ -1098,33 +1151,33 @@ export default function MatchCreateScreen() {
                           onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
                         >
                           <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>
-                            Custom
+                            {t('match.create.custom')}
                           </Text>
                           <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
-                            Your rating / slope
+                            {t('match.create.customTeeSub')}
                           </Text>
                         </Pressable>
                       </View>
                       {teePickKey === CUSTOM_TEE_ID ? (
                         <View style={styles.teeCustomRow}>
                           <View style={styles.teeCustomField}>
-                            <Text style={styles.teeCustomLbl}>Course rating</Text>
+                            <Text style={styles.teeCustomLbl}>{t('match.create.courseRating')}</Text>
                             <TextInput
                               style={styles.teeNumInput}
                               value={customRating}
                               onChangeText={setCustomRating}
-                              placeholder="e.g. 72.1"
+                              placeholder={t('match.create.ratingPlaceholder')}
                               placeholderTextColor={colors.subtle}
                               keyboardType="decimal-pad"
                             />
                           </View>
                           <View style={styles.teeCustomField}>
-                            <Text style={styles.teeCustomLbl}>Slope</Text>
+                            <Text style={styles.teeCustomLbl}>{t('match.create.slope')}</Text>
                             <TextInput
                               style={styles.teeNumInput}
                               value={customSlope}
                               onChangeText={setCustomSlope}
-                              placeholder="e.g. 128"
+                              placeholder={t('match.create.slopePlaceholder')}
                               placeholderTextColor={colors.subtle}
                               keyboardType="number-pad"
                             />
@@ -1140,57 +1193,74 @@ export default function MatchCreateScreen() {
 
           {screenStep === 3 ? (
             <>
-              <Text style={styles.sectionLabel}>Putting mode</Text>
+              <Text style={styles.sectionLabel}>{t('match.create.puttingMode')}</Text>
               <View style={styles.dayRow}>
-                {PUTTING_OPTS.map((o) => (
+                {PUTTING_KEYS.map((key) => (
                   <Pressable
-                    key={o.key}
-                    style={[styles.dayBtn, putting === o.key && styles.dayBtnOn]}
-                    onPress={() => setPutting(o.key)}
+                    key={key}
+                    style={[styles.dayBtn, putting === key && styles.dayBtnOn]}
+                    onPress={() => setPutting(key)}
                   >
-                    <Text style={[styles.dayDn, putting === o.key && styles.dayDnOn]}>{o.dn}</Text>
-                    <Text style={[styles.dayDs, putting === o.key && styles.dayDsOn]}>{o.ds}</Text>
+                    <Text style={[styles.dayDn, putting === key && styles.dayDnOn]}>
+                      {t(`match.create.putting.${key}.dn`)}
+                    </Text>
+                    <Text style={[styles.dayDs, putting === key && styles.dayDsOn]}>
+                      {t(`match.create.putting.${key}.ds`)}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.sectionLabel}>Pin placement</Text>
+              <Text style={styles.sectionLabel}>{t('match.create.pinPlacement')}</Text>
               <View style={styles.dayRow}>
-                {pinOpts.map((d) => (
+                {pinOpts.map((d) => {
+                  const sub = pinSublabel(d.key, platform);
+                  return (
+                    <Pressable
+                      key={d.key}
+                      style={[styles.dayBtn, pin === d.key && styles.dayBtnOn]}
+                      onPress={() => setPin(d.key)}
+                    >
+                      <Text style={[styles.dayDn, pin === d.key && styles.dayDnOn]}>
+                        {pinLabel(d.key, platform)}
+                      </Text>
+                      {sub ? (
+                        <Text style={[styles.dayDs, pin === d.key && styles.dayDsOn]}>{sub}</Text>
+                      ) : null}
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <Text style={styles.sectionLabel}>{t('match.create.wind')}</Text>
+              <View style={styles.dayRow}>
+                {WIND_KEYS.map((key) => (
                   <Pressable
-                    key={d.key}
-                    style={[styles.dayBtn, pin === d.key && styles.dayBtnOn]}
-                    onPress={() => setPin(d.key)}
+                    key={key}
+                    style={[styles.dayBtn, wind === key && styles.dayBtnOn]}
+                    onPress={() => setWind(key)}
                   >
-                    <Text style={[styles.dayDn, pin === d.key && styles.dayDnOn]}>{d.label}</Text>
-                    {d.sublabel ? (
-                      <Text style={[styles.dayDs, pin === d.key && styles.dayDsOn]}>{d.sublabel}</Text>
-                    ) : null}
+                    <Text style={[styles.dayDn, wind === key && styles.dayDnOn]}>
+                      {t(`match.create.windOpts.${key}.dn`)}
+                    </Text>
+                    <Text style={[styles.dayDs, wind === key && styles.dayDsOn]}>
+                      {t(`match.create.windOpts.${key}.ds`)}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
-              <Text style={styles.sectionLabel}>Wind</Text>
+              <Text style={styles.sectionLabel}>{t('match.create.mulligans')}</Text>
               <View style={styles.dayRow}>
-                {WIND_OPTS.map((w) => (
+                {MULL_KEYS.map((key) => (
                   <Pressable
-                    key={w.key}
-                    style={[styles.dayBtn, wind === w.key && styles.dayBtnOn]}
-                    onPress={() => setWind(w.key)}
+                    key={key}
+                    style={[styles.dayBtn, mulligans === key && styles.dayBtnOn]}
+                    onPress={() => setMulligans(key)}
                   >
-                    <Text style={[styles.dayDn, wind === w.key && styles.dayDnOn]}>{w.dn}</Text>
-                    <Text style={[styles.dayDs, wind === w.key && styles.dayDsOn]}>{w.ds}</Text>
-                  </Pressable>
-                ))}
-              </View>
-              <Text style={styles.sectionLabel}>Mulligans</Text>
-              <View style={styles.dayRow}>
-                {MULL_OPTS.map((m) => (
-                  <Pressable
-                    key={m.key}
-                    style={[styles.dayBtn, mulligans === m.key && styles.dayBtnOn]}
-                    onPress={() => setMulligans(m.key)}
-                  >
-                    <Text style={[styles.dayDn, mulligans === m.key && styles.dayDnOn]}>{m.dn}</Text>
-                    <Text style={[styles.dayDs, mulligans === m.key && styles.dayDsOn]}>{m.ds}</Text>
+                    <Text style={[styles.dayDn, mulligans === key && styles.dayDnOn]}>
+                      {t(`match.create.mulliganOpts.${key}.dn`)}
+                    </Text>
+                    <Text style={[styles.dayDs, mulligans === key && styles.dayDsOn]}>
+                      {t(`match.create.mulliganOpts.${key}.ds`)}
+                    </Text>
                   </Pressable>
                 ))}
               </View>
@@ -1199,12 +1269,24 @@ export default function MatchCreateScreen() {
 
           {screenStep === 4 ? (
             <>
-              <Text style={styles.body}>Choose how many holes you&apos;re playing on this course.</Text>
+              <Text style={styles.body}>{t('match.create.chooseHoles')}</Text>
               {(
                 [
-                  { key: '18' as const, title: '18 holes', sub: 'Full round' },
-                  { key: 'front' as const, title: 'Front 9', sub: 'Holes 1–9' },
-                  { key: 'back' as const, title: 'Back 9', sub: 'Holes 10–18' },
+                  {
+                    key: '18' as const,
+                    title: t('match.create.holes18'),
+                    sub: t('match.create.holes18Sub'),
+                  },
+                  {
+                    key: 'front' as const,
+                    title: t('match.create.front9'),
+                    sub: t('match.create.front9Sub'),
+                  },
+                  {
+                    key: 'back' as const,
+                    title: t('match.create.back9'),
+                    sub: t('match.create.back9Sub'),
+                  },
                 ] as const
               ).map((h) => {
                 const on = holesChoice === h.key;
@@ -1222,20 +1304,19 @@ export default function MatchCreateScreen() {
                   </Pressable>
                 );
               })}
-              <Text style={[styles.sectionLabel, { marginTop: 20 }]}>Scorecard verification</Text>
+              <Text style={[styles.sectionLabel, { marginTop: 20 }]}>
+                {t('match.create.scorecardVerification')}
+              </Text>
               <Pressable
                 style={[styles.holeCard, verificationRequired && styles.holeCardOn]}
                 onPress={() => setVerificationRequired((v) => !v)}
                 accessibilityRole="switch"
                 accessibilityState={{ checked: verificationRequired }}
-                accessibilityLabel="Require scorecard verification"
+                accessibilityLabel={t('match.create.requireVerificationA11y')}
               >
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.holeTitle}>Require scorecard verification</Text>
-                  <Text style={styles.holeSub}>
-                    Both players upload a final scorecard screenshot; AI confirms scores match before the match
-                    completes.
-                  </Text>
+                  <Text style={styles.holeTitle}>{t('match.create.requireVerification')}</Text>
+                  <Text style={styles.holeSub}>{t('match.create.requireVerificationSub')}</Text>
                 </View>
                 {verificationRequired ? <IconCheckmark size={20} color={colors.accent} /> : null}
               </Pressable>
@@ -1244,30 +1325,26 @@ export default function MatchCreateScreen() {
 
           {screenStep === 5 ? (
             <>
-              <Text style={styles.body}>
-                Take a photo of your sim&apos;s settings screen so your opponent can see your exact setup — putting mode,
-                pins, wind, and mulligans. Both players use the honor system for conditions.
-              </Text>
+              <Text style={styles.body}>{t('match.create.photoBody')}</Text>
               {libraryPermissionBlocked ? (
                 <View style={styles.photoPermCallout} accessibilityLiveRegion="polite">
-                  <Text style={styles.photoPermCalloutTxt}>
-                    Photo library access is off. To attach a screenshot, open Settings, allow Photos access for this app,
-                    then come back and tap Choose photo again.
-                  </Text>
+                  <Text style={styles.photoPermCalloutTxt}>{t('match.create.photoPermBlocked')}</Text>
                   {Platform.OS !== 'web' ? (
                     <Pressable
                       style={styles.photoPermSettingsBtn}
                       onPress={openPhotoSettings}
                       accessibilityRole="button"
-                      accessibilityLabel="Open Settings to allow photo access"
+                      accessibilityLabel={t('match.create.openSettingsA11y')}
                     >
-                      <Text style={styles.photoPermSettingsBtnTxt}>Open Settings</Text>
+                      <Text style={styles.photoPermSettingsBtnTxt}>{t('match.create.openSettings')}</Text>
                     </Pressable>
                   ) : null}
                 </View>
               ) : null}
               <Pressable style={styles.pickPhotoBtn} onPress={() => void onPickImage()}>
-                <Text style={styles.pickPhotoBtnTxt}>{settingsImage ? 'Change photo' : 'Choose photo'}</Text>
+                <Text style={styles.pickPhotoBtnTxt}>
+                  {settingsImage ? t('match.create.changePhoto') : t('match.create.choosePhoto')}
+                </Text>
               </Pressable>
               {ALLOW_SKIP_SETTINGS_SCREENSHOT && !settingsImage?.uri && !devSkipSettingsPhoto ? (
                 <Pressable
@@ -1287,11 +1364,10 @@ export default function MatchCreateScreen() {
 
           {screenStep === 7 ? (
             <>
-              <Text style={styles.body}>
-                Pick when this challenge should go live. At that time, you&apos;ll be asked to upload your sim setup
-                photo before it appears in the active feed.
+              <Text style={styles.body}>{t('match.create.scheduleBody')}</Text>
+              <Text style={styles.bodyMuted}>
+                {t('match.create.scheduleWindow', { days: FUTURE_OPEN_MAX_DAYS })}
               </Text>
-              <Text style={styles.bodyMuted}>Schedule window: now through {FUTURE_OPEN_MAX_DAYS} days from now.</Text>
               <View style={styles.schedulePickerWrap}>
                 <DateTimePicker
                   mode="datetime"
@@ -1323,28 +1399,30 @@ export default function MatchCreateScreen() {
               <View style={styles.summaryBlock}>
                 {challengeKind === 'direct' && opponent ? (
                   <Text style={styles.summaryLine}>
-                    <Text style={styles.summaryLbl}>Opponent · </Text>
+                    <Text style={styles.summaryLbl}>{t('match.create.summaryOpponent')}</Text>
                     {opponent.displayName}
                   </Text>
                 ) : null}
                 {challengeKind === 'open' ? (
                   <Text style={styles.summaryLine}>
-                    <Text style={styles.summaryLbl}>Visibility · </Text>
-                    {openChallengeMode === 'future' ? 'Future open challenge — Scheduled feed' : 'Open challenge — Social feed'}
+                    <Text style={styles.summaryLbl}>{t('match.create.summaryVisibility')}</Text>
+                    {openChallengeMode === 'future'
+                      ? t('match.create.visibilityFuture')
+                      : t('match.create.visibilityOpen')}
                   </Text>
                 ) : null}
                 {challengeKind === 'open' && openChallengeMode === 'future' ? (
                   <Text style={styles.summaryLine}>
-                    <Text style={styles.summaryLbl}>Go live · </Text>
+                    <Text style={styles.summaryLbl}>{t('match.create.summaryGoLive')}</Text>
                     {devFutureTwoMinuteMode ? 'Dev only: in 2 minutes' : scheduledForDraft.toLocaleString()}
                   </Text>
                 ) : null}
                 <Text style={styles.summaryLine}>
-                  <Text style={styles.summaryLbl}>Course · </Text>
+                  <Text style={styles.summaryLbl}>{t('match.create.summaryCourse')}</Text>
                   {course.name}
                 </Text>
                 <Text style={styles.summaryLine}>
-                  <Text style={styles.summaryLbl}>Your tee · </Text>
+                  <Text style={styles.summaryLbl}>{t('match.create.summaryTee')}</Text>
                   {resolvePlayer1Tee({
                     course,
                     platform,
@@ -1355,14 +1433,17 @@ export default function MatchCreateScreen() {
                   }).teeName}
                 </Text>
                 <Text style={styles.summaryLine}>
-                  <Text style={styles.summaryLbl}>Holes · </Text>
+                  <Text style={styles.summaryLbl}>{t('match.create.summaryHoles')}</Text>
                   {holesLabel}
                 </Text>
                 <Text style={styles.summaryLine}>
-                  <Text style={styles.summaryLbl}>Conditions · </Text>
-                  {PUTTING_OPTS.find((p) => p.key === putting)?.dn} putting ·{' '}
-                  {pinDisplayLabel(pin, platform)} pins · {WIND_OPTS.find((p) => p.key === wind)?.dn} wind ·{' '}
-                  {mulliganDisplayLabel(mulligans)}
+                  <Text style={styles.summaryLbl}>{t('match.create.summaryConditions')}</Text>
+                  {t('match.create.conditionsLine', {
+                    putting: t(`match.create.putting.${putting}.dn`),
+                    pins: pinLabel(pin, platform),
+                    wind: t(`match.create.windOpts.${wind}.dn`),
+                    mulligans: t(`match.create.mulliganOpts.${mulligans}.ds`),
+                  })}
                 </Text>
               </View>
               {settingsImage?.uri ? (
@@ -1372,7 +1453,7 @@ export default function MatchCreateScreen() {
               ) : null}
               {challengeKind === 'open' && openChallengeMode === 'now' ? (
                 <>
-                  <Text style={styles.sectionLabel}>Open challenge type</Text>
+                  <Text style={styles.sectionLabel}>{t('match.create.openChallengeType')}</Text>
                   <View style={styles.openModeRow}>
                     <Pressable
                       style={[styles.openModeBtn, styles.openModeBtnOn]}
@@ -1381,13 +1462,13 @@ export default function MatchCreateScreen() {
                         setDevFutureTwoMinuteMode(false);
                       }}
                     >
-                      <Text style={[styles.openModeBtnTxt, styles.openModeBtnTxtOn]}>Now</Text>
+                      <Text style={[styles.openModeBtnTxt, styles.openModeBtnTxtOn]}>{t('match.create.now')}</Text>
                     </Pressable>
                     <Pressable
                       style={styles.openModeBtn}
                       onPress={() => setOpenChallengeMode('future')}
                     >
-                      <Text style={styles.openModeBtnTxt}>Later</Text>
+                      <Text style={styles.openModeBtnTxt}>{t('match.create.later')}</Text>
                     </Pressable>
                   </View>
                 </>
@@ -1407,9 +1488,9 @@ export default function MatchCreateScreen() {
                   <Text style={styles.sendBtnTxt}>
                     {challengeKind === 'open'
                       ? openChallengeMode === 'future'
-                        ? 'Schedule future challenge'
-                        : 'Post open challenge'
-                      : 'Send challenge'}
+                        ? t('match.create.scheduleFuture')
+                        : t('match.create.postOpen')
+                      : t('match.create.sendChallenge')}
                   </Text>
                 )}
               </Pressable>
@@ -1419,14 +1500,14 @@ export default function MatchCreateScreen() {
           {stepIdx === totalSteps - 1 && stepIdx > 0 ? (
             <View style={[styles.navFooterReview, isWide && styles.navRowWide]}>
               <Pressable style={styles.secondaryBtnFull} onPress={goBackStep}>
-                <Text style={styles.secondaryBtnTxt}>Back</Text>
+                <Text style={styles.secondaryBtnTxt}>{t('match.create.back')}</Text>
               </Pressable>
             </View>
           ) : (
             <View style={[styles.navRow, isWide && styles.navRowWide]}>
               {stepIdx > 0 ? (
                 <Pressable style={styles.secondaryBtn} onPress={goBackStep}>
-                  <Text style={styles.secondaryBtnTxt}>Back</Text>
+                  <Text style={styles.secondaryBtnTxt}>{t('match.create.back')}</Text>
                 </Pressable>
               ) : (
                 <View style={styles.navSpacer} />
@@ -1443,7 +1524,7 @@ export default function MatchCreateScreen() {
                   {continueBusy ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.primaryBtnTxt}>Continue</Text>
+                    <Text style={styles.primaryBtnTxt}>{t('match.create.continue')}</Text>
                   )}
                 </Pressable>
               ) : (
@@ -1462,7 +1543,7 @@ export default function MatchCreateScreen() {
           <View style={styles.modalRoot}>
             <Pressable style={styles.modalBackdropPress} onPress={() => setPlatOpen(false)} />
             <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
-              <Text style={styles.modalTitle}>Platform</Text>
+              <Text style={styles.modalTitle}>{t('match.create.platformModal')}</Text>
               {PLATFORMS.map((p) => (
                 <Pressable
                   key={p}
@@ -1510,12 +1591,12 @@ export default function MatchCreateScreen() {
                 },
               ]}
             >
-              <Text style={styles.modalTitle}>Course</Text>
+              <Text style={styles.modalTitle}>{t('match.create.courseModal')}</Text>
               <TextInput
                 style={styles.courseSearchInput}
                 value={courseSearchQuery}
                 onChangeText={setCourseSearchQuery}
-                placeholder="Search by course name"
+                placeholder={t('match.create.searchCourse')}
                 placeholderTextColor={colors.subtle}
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -1530,7 +1611,7 @@ export default function MatchCreateScreen() {
                 style={[styles.courseSearchList, { maxHeight: courseListMaxHeight }]}
               >
                 {coursesForPicker.length === 0 ? (
-                  <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+                  <Text style={styles.courseSearchEmpty}>{t('match.create.noCoursesMatch')}</Text>
                 ) : (
                   coursesForPicker.map((c) => (
                     <Pressable

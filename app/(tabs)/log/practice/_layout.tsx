@@ -1,6 +1,7 @@
 import type { NativeStackHeaderProps } from '@react-navigation/native-stack';
 import { Stack, useRouter } from 'expo-router';
 import { ForestStackHeader } from '../../../../src/components/ForestStackHeader';
+import { useTranslation } from '../../../../src/i18n';
 import { colors } from '../../../../src/lib/constants';
 
 function PracticeAnalyzerHeader(props: NativeStackHeaderProps) {
@@ -18,6 +19,8 @@ function PracticeAnalyzerHeader(props: NativeStackHeaderProps) {
 }
 
 export default function PracticeStackLayout() {
+  const { t } = useTranslation();
+
   return (
     <Stack
       screenOptions={{
@@ -33,12 +36,12 @@ export default function PracticeStackLayout() {
       <Stack.Screen
         name="index"
         options={{
-          title: 'Practice Analyzer',
+          title: t('log.stack.practice'),
           header: (props) => <PracticeAnalyzerHeader {...props} />,
         }}
       />
-      <Stack.Screen name="import" options={{ title: 'Import from Computer' }} />
-      <Stack.Screen name="[id]" options={{ title: 'Practice analysis' }} />
+      <Stack.Screen name="import" options={{ title: t('log.practice.stack.import') }} />
+      <Stack.Screen name="[id]" options={{ title: t('log.practice.stack.detail') }} />
     </Stack>
   );
 }

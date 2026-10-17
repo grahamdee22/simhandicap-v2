@@ -4,11 +4,13 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { GroupChatView, type GroupChatMember } from '../../../src/components/GroupChatView';
+import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
 import { useAppStore, initialsFrom } from '../../../src/store/useAppStore';
 
 export default function GroupChatScreen() {
+  const { t } = useTranslation();
   const { groupId: rawId } = useLocalSearchParams<{ groupId: string | string[] }>();
   const groupId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -40,9 +42,9 @@ export default function GroupChatScreen() {
   if (!group || !isMember || !authUserId) {
     return (
       <View style={[styles.fallback, { paddingTop: insets.top + 16 }]}>
-        <Text style={styles.fallbackTxt}>This group chat is not available.</Text>
+        <Text style={styles.fallbackTxt}>{t('groupChat.unavailable')}</Text>
         <Pressable onPress={() => router.replace('/(tabs)/groups' as never)} style={styles.backBtn}>
-          <Text style={styles.backBtnTxt}>Go back</Text>
+          <Text style={styles.backBtnTxt}>{t('groupChat.goBack')}</Text>
         </Pressable>
       </View>
     );
@@ -56,7 +58,7 @@ export default function GroupChatScreen() {
           hitSlop={12}
           accessibilityRole="button"
         >
-          <Text style={styles.backLink}>‹ Back</Text>
+          <Text style={styles.backLink}>{t('groupChat.backLink')}</Text>
         </Pressable>
       </View>
       <GroupChatView

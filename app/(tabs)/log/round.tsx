@@ -1,5 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
+import type { TFunction } from 'i18next';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FlatList, Keyboard, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View, Alert, ActivityIndicator, InputAccessoryView } from 'react-native';
@@ -10,6 +11,7 @@ import { ContentWidth } from '../../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../../src/components/PendingTournamentHolesBanner';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { DatePlayedField } from '../../../src/components/DatePlayedField';
+import i18n, { useTranslation } from '../../../src/i18n';
 import { PLATFORMS, colors, type PlatformId } from '../../../src/lib/constants';
 import { useResponsive } from '../../../src/lib/responsive';
 import {
@@ -55,7 +57,6 @@ import { uploadLogScorecardForParse } from '../../../src/lib/logScorecardStorage
 import { invokeParseScorecard } from '../../../src/lib/parseScorecard';
 import {
   applyParseScorecardToLogForm,
-  scanBannerMessage,
   type ScanBannerKind,
 } from '../../../src/lib/scorecardParseApply';
 import {
@@ -77,7 +78,6 @@ import { currentIndexFromRounds, useAppStore, type SimRound } from '../../../src
 import {
   clampGrossScore,
   grossScoreBounds,
-  holesPlayedLabel,
   isNineHolePlayed,
   nineHoleLoggingUnlocked,
   parAnchorForHoles,
@@ -87,24 +87,15 @@ import {
 
 type DiffInfoKind = 'adjusted' | 'expected' | null;
 
-const PUTTING_OPTS: { key: PuttingMode; dn: string; ds: string }[] = [
-  { key: 'auto_2putt', dn: 'Auto', ds: '2-putt' },
-  { key: 'gimme_5', dn: 'Gimme', ds: '<5ft' },
-  { key: 'putt_all', dn: 'Putt', ds: 'Everything' },
-];
-
-const WIND_OPTS: { key: Wind; dn: string; ds: string }[] = [
-  { key: 'off', dn: 'Off', ds: 'Calm' },
-  { key: 'light', dn: 'Light', ds: 'Breeze' },
-  { key: 'strong', dn: 'Strong', ds: 'Heavy' },
-];
-
-const MULL_OPTS = MULLIGAN_PICKER_OPTS;
+const PUTTING_KEYS: PuttingMode[] = ['auto_2putt', 'gimme_5', 'putt_all'];
+const WIND_KEYS: Wind[] = ['off', 'light', 'strong'];
+const MULL_KEYS = MULLIGAN_PICKER_OPTS.map((o) => o.key);
 
 const LOG_ROUND_NUMERIC_ACCESSORY_ID = 'log-round-numeric-done';
 
 function NumericKeyboardDoneBar() {
   if (Platform.OS !== 'ios') return null;
+  const done = i18n.t('common.done');
   return (
     <InputAccessoryView nativeID={LOG_ROUND_NUMERIC_ACCESSORY_ID}>
       <View style={styles.keyboardAccessory}>
@@ -112,13 +103,47 @@ function NumericKeyboardDoneBar() {
           style={styles.keyboardDoneBtn}
           onPress={() => Keyboard.dismiss()}
           accessibilityRole="button"
-          accessibilityLabel="Done"
+          accessibilityLabel={done}
         >
-          <Text style={styles.keyboardDoneTxt}>Done</Text>
+          <Text style={styles.keyboardDoneTxt}>{done}</Text>
         </Pressable>
       </View>
     </InputAccessoryView>
   );
+}
+
+function scanBannerText(
+  t: TFunction,
+  kind: ScanBannerKind,
+  detail?: {
+    detectedCourseName?: string | null;
+    matchedCourseName?: string | null;
+    courseMatchConfidence?: 'exact' | 'fuzzy' | null;
+  }
+): string | null {
+  if (kind == null) return null;
+  if (kind === 'failed') return t('log.round.scan.failed');
+
+  const detected = detail?.detectedCourseName?.trim();
+  const matched = detail?.matchedCourseName?.trim();
+  const courseBit = (() => {
+    if (matched && detected) {
+      if (detail?.courseMatchConfidence === 'fuzzy') {
+        return t('log.round.scan.courseFuzzy', { matched, detected });
+      }
+      return t('log.round.scan.courseSet', { matched });
+    }
+    if (detected && !matched) {
+      return t('log.round.scan.courseDetectedNoMatch', { detected });
+    }
+    if (matched) {
+      return t('log.round.scan.courseSet', { matched });
+    }
+    return '';
+  })();
+
+  if (kind === 'low') return `${t('log.round.scan.low')}${courseBit}`;
+  return `${t('log.round.scan.review')}${courseBit}`;
 }
 
 /** Set true to log gross resolution in dev tools when saving a round. */
@@ -135,6 +160,7 @@ function ordinalPlace(n: number): string {
 }
 
 export default function LogRoundScreen() {
+  const { t } = useTranslation();
   const { gutter, isWide } = useResponsive();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -149,6 +175,32 @@ export default function LogRoundScreen() {
   const params = useLocalSearchParams<{ editId?: string }>();
   const editId =
     typeof params.editId === 'string' && params.editId.length > 0 ? params.editId : undefined;
+
+  const pinLabel = useCallback(
+    (key: PinDay, platformId: PlatformId) => {
+      if (isGsProPlatform(platformId)) {
+        return t(`log.round.pin.${key}`);
+      }
+      if (key === 'thu') return t('log.round.pin.easy');
+      if (key === 'fri') return t('log.round.pin.medium');
+      if (key === 'sun') return t('log.round.pin.hard');
+      return t(`log.round.pin.${key}`);
+    },
+    [t]
+  );
+  const pinSublabel = useCallback(
+    (key: PinDay, platformId: PlatformId) => {
+      if (!isGsProPlatform(platformId)) return undefined;
+      const map: Record<PinDay, string> = {
+        thu: t('log.round.pin.round1'),
+        fri: t('log.round.pin.round2'),
+        sat: t('log.round.pin.round3'),
+        sun: t('log.round.pin.round4'),
+      };
+      return map[key];
+    },
+    [t]
+  );
 
   const { user } = useAuth();
   const addRound = useAppStore((s) => s.addRound);
@@ -480,14 +532,14 @@ export default function LogRoundScreen() {
         let camPerm = await ImagePicker.getCameraPermissionsAsync();
         if (!camPerm.granted) camPerm = await ImagePicker.requestCameraPermissionsAsync();
         if (!camPerm.granted) {
-          showAppAlert('Camera access needed', 'Allow camera access to photograph your scorecard.');
+          showAppAlert(t('log.round.alerts.cameraTitle'), t('log.round.alerts.cameraBody'));
           return;
         }
       } else {
         let perm = await ImagePicker.getMediaLibraryPermissionsAsync(false);
         if (!perm.granted) perm = await ImagePicker.requestMediaLibraryPermissionsAsync(false);
         if (!perm.granted) {
-          showAppAlert('Photos access needed', 'Allow photo library access to upload your scorecard.');
+          showAppAlert(t('log.round.alerts.photosTitle'), t('log.round.alerts.photosBody'));
           return;
         }
       }
@@ -512,7 +564,7 @@ export default function LogRoundScreen() {
       });
       if ('error' in up) {
         setScanBusy(false);
-        showAppAlert('Upload failed', up.error);
+        showAppAlert(t('log.round.alerts.uploadFailed'), up.error);
         return;
       }
 
@@ -566,12 +618,12 @@ export default function LogRoundScreen() {
       return;
     }
 
-    Alert.alert('Scan scorecard', 'Choose a source', [
-      { text: 'Photo library', onPress: () => void runPick('library') },
-      { text: 'Camera', onPress: () => void runPick('camera') },
-      { text: 'Cancel', style: 'cancel' },
+    Alert.alert(t('log.round.alerts.scanTitle'), t('log.round.alerts.scanChooseSource'), [
+      { text: t('log.round.alerts.photoLibrary'), onPress: () => void runPick('library') },
+      { text: t('log.round.alerts.camera'), onPress: () => void runPick('camera') },
+      { text: t('common.cancel'), style: 'cancel' },
     ]);
-  }, [scanBusy, user?.id, supabaseOn, parseCourseTees, courseTees, communityCourses, platform, courseId]);
+  }, [scanBusy, user?.id, supabaseOn, parseCourseTees, courseTees, communityCourses, platform, courseId, t]);
 
   useEffect(() => {
     if (!isGsProPlatform(platform)) {
@@ -724,29 +776,29 @@ export default function LogRoundScreen() {
   const onSave = () => {
     const L = latestSaveRef.current;
     if (!L?.course) {
-      showAppAlert('Course required', 'Select a course from the list.');
+      showAppAlert(t('log.round.alerts.courseRequiredTitle'), t('log.round.alerts.courseRequiredBody'));
       return;
     }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(L.playedDate.trim())) {
-      showAppAlert('Date played', 'Pick a valid date using the date field.');
+      showAppAlert(t('datePlayed.label'), t('log.round.alerts.datePlayedBody'));
       return;
     }
 
     const finishSave = async () => {
       const snap = latestSaveRef.current;
       if (!snap?.course) {
-        showAppAlert('Course required', 'Select a course from the list.');
+        showAppAlert(t('log.round.alerts.courseRequiredTitle'), t('log.round.alerts.courseRequiredBody'));
         return;
       }
 
       // Eligibility (holes_per_round / match_play_nine) is already enforced upstream in
       // fetchActiveTournamentsForUser via leagueAcceptsLoggedHoles, so activeTournaments only
       // contains tournaments valid for the currently selected holesPlayed value.
-      const optedIn = activeTournaments.filter((t) => tournamentApply[t.leagueId] !== false);
+      const optedIn = activeTournaments.filter((tour) => tournamentApply[tour.leagueId] !== false);
       if (optedIn.length > 0 && snap.course.source === 'community') {
         showAppAlert(
-          'Tournament round',
-          'Community courses cannot be used for tournament rounds. Pick a verified course or set tournament apply to No.'
+          t('log.round.alerts.tournamentRoundTitle'),
+          t('log.round.alerts.tournamentRoundBody')
         );
         return;
       }
@@ -756,10 +808,7 @@ export default function LogRoundScreen() {
           currentIndexFromRounds(useAppStore.getState().rounds) != null ||
           (snap.existing != null && isNineHolePlayed(snap.existing.holesPlayed));
         if (!hasIndex) {
-          showAppAlert(
-            'Full 18 first',
-            'Log a full 18-hole round first to establish your SimCap index. You can log 9-hole rounds after that.'
-          );
+          showAppAlert(t('log.round.alerts.full18Title'), t('log.round.alerts.full18Body'));
           return;
         }
       }
@@ -778,16 +827,16 @@ export default function LogRoundScreen() {
         const yardsMax = isNineHolePlayed(snap.holesPlayed) ? 5000 : 9000;
         if (!Number.isFinite(yards) || yards < yardsMin || yards > yardsMax) {
           showAppAlert(
-            'Yardage',
+            t('log.round.alerts.yardageTitle'),
             isNineHolePlayed(snap.holesPlayed)
-              ? 'Enter the total yardage you played for that nine (about 800–5,000).'
-              : 'Enter the total yardage you played (about 1,000–9,000).'
+              ? t('log.round.alerts.yardageBody9')
+              : t('log.round.alerts.yardageBody18')
           );
           return;
         }
         const tee = nearestTeeByYards(snap.course.tees, yards);
         if (!tee) {
-          showAppAlert('Tee', 'This course has no tee data.');
+          showAppAlert(t('log.round.alerts.teeTitle'), t('log.round.alerts.teeNoData'));
           return;
         }
         const rs = ratingSlopeForHolesPlayed(tee, snap.holesPlayed);
@@ -798,7 +847,7 @@ export default function LogRoundScreen() {
       } else if (snap.course.confident === false && snap.course.seed) {
         const mid = middleCourseTee(snap.course.seed, snap.platform);
         if (!mid) {
-          showAppAlert('Tee', 'This course has no tee data.');
+          showAppAlert(t('log.round.alerts.teeTitle'), t('log.round.alerts.teeNoData'));
           return;
         }
         const rs = ratingSlopeForHolesPlayed(mid, snap.holesPlayed);
@@ -814,10 +863,10 @@ export default function LogRoundScreen() {
         const rMax = nine ? 45 : 85;
         if (!Number.isFinite(r) || !Number.isFinite(s) || s < 55 || s > 155 || r < rMin || r > rMax) {
           showAppAlert(
-            'Custom tee',
+            t('log.round.alerts.customTeeTitle'),
             nine
-              ? `Enter the rating and slope for this nine (rating about ${rMin}–${rMax}, slope 55–155).`
-              : 'Enter a valid course rating and slope (rating about 60–85, slope 55–155).'
+              ? t('log.round.alerts.customTeeBody9', { rMin, rMax })
+              : t('log.round.alerts.customTeeBody18')
           );
           return;
         }
@@ -829,7 +878,7 @@ export default function LogRoundScreen() {
         const tees = getCourseTees(snap.course.seed, snap.platform);
         const row = tees.find((t) => t.name === snap.teePickKey);
         if (!row) {
-          showAppAlert('Tee', 'Pick a tee from the list, or choose Custom and enter rating and slope.');
+          showAppAlert(t('log.round.alerts.teeTitle'), t('log.round.alerts.teePickList'));
           return;
         }
         const rs = ratingSlopeForHolesPlayed(row, snap.holesPlayed);
@@ -838,7 +887,7 @@ export default function LogRoundScreen() {
         nineHoleSourceSave = rs.nineHoleSource ?? undefined;
         teeNameSave = row.name;
       } else {
-        showAppAlert('Tee', 'Pick a tee from the list.');
+        showAppAlert(t('log.round.alerts.teeTitle'), t('log.round.alerts.teePick'));
         return;
       }
 
@@ -885,11 +934,11 @@ export default function LogRoundScreen() {
           router.replace('/(tabs)/analyze');
         } else {
           const optedIn = activeTournaments.filter(
-            (t) => tournamentApply[t.leagueId] !== false
+            (tour) => tournamentApply[tour.leagueId] !== false
           );
-          const hasScrambleOptIn = optedIn.some((t) => t.format === 'scramble');
+          const hasScrambleOptIn = optedIn.some((tour) => tour.format === 'scramble');
           const hasIndexCountingOptIn = optedIn.some(
-            (t) => t.format === 'stroke' || t.format === 'best_ball'
+            (tour) => tour.format === 'stroke' || tour.format === 'best_ball'
           );
           const excludesFromSimcapIndex = hasScrambleOptIn && !hasIndexCountingOptIn;
 
@@ -922,9 +971,9 @@ export default function LogRoundScreen() {
                 roundsForLeagueRecordingAfterSave(storeAfterSave.rounds, saved),
                 latestGhinIndex(storeAfterSave.ghinSnapshots)
               ),
-              selections: activeTournaments.map((t) => ({
-                leagueId: t.leagueId,
-                apply: tournamentApply[t.leagueId] !== false,
+              selections: activeTournaments.map((tour) => ({
+                leagueId: tour.leagueId,
+                apply: tournamentApply[tour.leagueId] !== false,
               })),
               displayNames,
               accessToken: saveAccessToken,
@@ -943,8 +992,8 @@ export default function LogRoundScreen() {
               const isTeamFmt = isTeamLeagueFormat(hit.format);
               leagueBanner =
                 isTeamFmt && hit.teamName
-                  ? `This round counts toward Team ${hit.teamName}'s score! You're currently in ${place} place.`
-                  : `This round counts toward ${hit.leagueName}! You're currently in ${place} place.`;
+                  ? t('log.round.leagueBannerTeam', { teamName: hit.teamName, place })
+                  : t('log.round.leagueBanner', { leagueName: hit.leagueName, place });
             }
 
             if (pendingHoleResults.length > 0) {
@@ -987,7 +1036,7 @@ export default function LogRoundScreen() {
           });
         }
       } catch (e) {
-        showAppAlert('Could not save', String(e));
+        showAppAlert(t('log.round.alerts.couldNotSave'), String(e));
       }
     };
 
@@ -1016,17 +1065,17 @@ export default function LogRoundScreen() {
           <PendingTournamentHolesBanner gutter={0} />
           <View style={isWide ? styles.pickRow : undefined}>
             <View style={isWide ? styles.pickCol : undefined}>
-              <Text style={styles.sectionLabel}>Sim platform</Text>
+              <Text style={styles.sectionLabel}>{t('log.round.simPlatform')}</Text>
               <Pressable style={[styles.pill, platOpen && styles.pillActive]} onPress={() => setPlatOpen(true)}>
                 <Text style={styles.pillVal}>{platform}</Text>
                 <Text style={styles.chev}>▾</Text>
               </Pressable>
             </View>
             <View style={isWide ? styles.pickCol : undefined}>
-              <Text style={styles.sectionLabel}>Course</Text>
+              <Text style={styles.sectionLabel}>{t('log.round.course')}</Text>
               <Pressable style={[styles.pill, courseOpen && styles.pillActive]} onPress={() => setCourseOpen(true)}>
                 <View style={styles.pillValRow}>
-                  <Text style={styles.pillVal}>{resolvedCourse?.name ?? 'Select'}</Text>
+                  <Text style={styles.pillVal}>{resolvedCourse?.name ?? t('log.round.select')}</Text>
                   {resolvedCourse?.handicapSource === 'unverified' ? (
                     <UnverifiedCourseBadge
                       compact
@@ -1049,18 +1098,15 @@ export default function LogRoundScreen() {
                 disabled={scanBusy || !supabaseOn || !user}
                 onPress={() => void onScanScorecard()}
                 accessibilityRole="button"
-                accessibilityLabel="Scan GS Pro scorecard"
+                accessibilityLabel={t('log.round.scanScorecardA11y')}
               >
                 {scanBusy ? (
                   <ActivityIndicator color={colors.sage} size="small" />
                 ) : (
-                  <Text style={styles.scanBtnTxt}>Scan Scorecard 📷</Text>
+                  <Text style={styles.scanBtnTxt}>{t('log.round.scanScorecard')}</Text>
                 )}
               </Pressable>
-              <Text style={styles.scanTip}>
-                Snap a photo of the scorecard on your simulator's screen at the end of the round — not a
-                screenshot from SGT or another website.
-              </Text>
+              <Text style={styles.scanTip}>{t('log.round.scanTip')}</Text>
               {scanBanner ? (
                 <View
                   style={[
@@ -1082,7 +1128,7 @@ export default function LogRoundScreen() {
                           : styles.scanBannerTxtGreen,
                     ]}
                   >
-                    {scanBannerMessage(scanBanner, scanBannerDetail ?? undefined)}
+                    {scanBannerText(t, scanBanner, scanBannerDetail ?? undefined)}
                   </Text>
                 </View>
               ) : null}
@@ -1091,13 +1137,13 @@ export default function LogRoundScreen() {
 
           <DatePlayedField value={playedDate} onChange={setPlayedDate} />
 
-          <Text style={styles.sectionLabel}>Holes</Text>
+          <Text style={styles.sectionLabel}>{t('log.round.holes')}</Text>
           <View style={styles.dayRow}>
             {(
               [
-                { key: '18' as const, title: '18 holes', sub: 'Full round' },
-                { key: 'front' as const, title: 'Front 9', sub: 'Holes 1–9' },
-                { key: 'back' as const, title: 'Back 9', sub: 'Holes 10–18' },
+                { key: '18' as const, title: t('log.round.holes18'), sub: t('log.round.holes18Sub') },
+                { key: 'front' as const, title: t('roundList.front9'), sub: t('log.round.front9Sub') },
+                { key: 'back' as const, title: t('roundList.back9'), sub: t('log.round.back9Sub') },
               ] as const
             ).map((h) => {
               const locked = h.key !== '18' && !canLogNineHole;
@@ -1128,22 +1174,18 @@ export default function LogRoundScreen() {
             })}
           </View>
           {!canLogNineHole ? (
-            <Text style={styles.teeTip}>
-              Log a full 18 first to unlock 9-hole rounds and establish your SimCap index.
-            </Text>
+            <Text style={styles.teeTip}>{t('log.round.nineHoleLockedTip')}</Text>
           ) : null}
 
           {showYardageInput ? (
             <>
-              <Text style={styles.sectionLabel}>Yardage played</Text>
-              <Text style={styles.teeTip}>
-                Enter the total yardage from your round. Helps us describe which tee you played.
-              </Text>
+              <Text style={styles.sectionLabel}>{t('log.round.yardagePlayed')}</Text>
+              <Text style={styles.teeTip}>{t('log.round.yardageTip')}</Text>
               <TextInput
                 style={styles.courseSearchInput}
                 value={yardsPlayed}
                 onChangeText={setYardsPlayed}
-                placeholder="e.g. 6,400"
+                placeholder={t('log.round.yardagePlaceholder')}
                 placeholderTextColor={colors.subtle}
                 keyboardType="number-pad"
                 inputAccessoryViewID={Platform.OS === 'ios' ? LOG_ROUND_NUMERIC_ACCESSORY_ID : undefined}
@@ -1153,38 +1195,46 @@ export default function LogRoundScreen() {
 
           {resolvedCourse && showTeeSelector ? (
             <>
-              <Text style={styles.sectionLabel}>Tee</Text>
-              <Text style={styles.teeTip}>
-                Pick the tee closest to the total yardage you actually played, tee names and colors vary by
-                simulator. If nothing's close, use Custom.
-              </Text>
+              <Text style={styles.sectionLabel}>{t('log.round.tee')}</Text>
+              <Text style={styles.teeTip}>{t('log.round.teeTip')}</Text>
               <View style={styles.teeChipWrap}>
-                {courseTees.map((t) => {
+                {courseTees.map((teeRow) => {
                   const yardsFull =
-                    (typeof t.yards === 'number' && Number.isFinite(t.yards) ? t.yards : undefined) ??
+                    (typeof teeRow.yards === 'number' && Number.isFinite(teeRow.yards)
+                      ? teeRow.yards
+                      : undefined) ??
                     (resolvedCourse.source === 'curated' && resolvedCourse.seed
-                      ? yardageForCourseTee(resolvedCourse.seed.id, t.name)
+                      ? yardageForCourseTee(resolvedCourse.seed.id, teeRow.name)
                       : undefined);
-                  const chipRs = ratingSlopeForHolesPlayed(t, holesPlayed);
+                  const chipRs = ratingSlopeForHolesPlayed(teeRow, holesPlayed);
                   const yards =
                     yardsFull != null && isNineHolePlayed(holesPlayed)
                       ? Math.round(yardsFull / 2)
                       : yardsFull;
                   return (
                   <Pressable
-                    key={t.name}
-                    style={[styles.teeChip, teePickKey === t.name && styles.teeChipOn]}
+                    key={teeRow.name}
+                    style={[styles.teeChip, teePickKey === teeRow.name && styles.teeChipOn]}
                     onPress={() => {
-                      setTeePickKey(t.name);
+                      setTeePickKey(teeRow.name);
                       setCustomRating('');
                       setCustomSlope('');
                     }}
                   >
-                    <Text style={[styles.teeChipTxt, teePickKey === t.name && styles.teeChipTxtOn]}>{t.name}</Text>
-                    <Text style={[styles.teeChipSub, teePickKey === t.name && styles.teeChipSubOn]}>
+                    <Text style={[styles.teeChipTxt, teePickKey === teeRow.name && styles.teeChipTxtOn]}>
+                      {teeRow.name}
+                    </Text>
+                    <Text style={[styles.teeChipSub, teePickKey === teeRow.name && styles.teeChipSubOn]}>
                       {yards != null
-                        ? `${chipRs.rating} / ${chipRs.slope} · ${yards.toLocaleString('en-US')} yds`
-                        : `${chipRs.rating} / ${chipRs.slope}`}
+                        ? t('log.round.teeChipYards', {
+                            rating: chipRs.rating,
+                            slope: chipRs.slope,
+                            yards: yards.toLocaleString('en-US'),
+                          })
+                        : t('log.round.teeChipRatingSlope', {
+                            rating: chipRs.rating,
+                            slope: chipRs.slope,
+                          })}
                     </Text>
                   </Pressable>
                   );
@@ -1193,11 +1243,18 @@ export default function LogRoundScreen() {
                   style={[styles.teeChip, teePickKey === CUSTOM_TEE_ID && styles.teeChipOn]}
                   onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
                 >
-                  <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>Custom</Text>
+                  <Text style={[styles.teeChipTxt, teePickKey === CUSTOM_TEE_ID && styles.teeChipTxtOn]}>
+                    {t('log.round.custom')}
+                  </Text>
                   <Text style={[styles.teeChipSub, teePickKey === CUSTOM_TEE_ID && styles.teeChipSubOn]}>
                     {isNineHolePlayed(holesPlayed)
-                      ? `${holesPlayedLabel(holesPlayed)} rating / slope`
-                      : 'Your rating / slope'}
+                      ? t('log.round.customTeeSubNine', {
+                          holes:
+                            holesPlayed === 'front'
+                              ? t('roundList.front9')
+                              : t('roundList.back9'),
+                        })
+                      : t('log.round.customTeeSub')}
                   </Text>
                 </Pressable>
               </View>
@@ -1206,26 +1263,35 @@ export default function LogRoundScreen() {
                   <View style={styles.teeCustomField}>
                     <Text style={styles.teeCustomLbl}>
                       {isNineHolePlayed(holesPlayed)
-                        ? `${holesPlayedLabel(holesPlayed)} rating`
-                        : 'Course rating'}
+                        ? t('log.round.nineRating', {
+                            holes:
+                              holesPlayed === 'front'
+                                ? t('roundList.front9')
+                                : t('roundList.back9'),
+                          })
+                        : t('log.round.courseRating')}
                     </Text>
                     <TextInput
                       style={styles.teeNumInput}
                       value={customRating}
                       onChangeText={setCustomRating}
-                      placeholder={isNineHolePlayed(holesPlayed) ? 'e.g. 36.1' : 'e.g. 72.1'}
+                      placeholder={
+                        isNineHolePlayed(holesPlayed)
+                          ? t('log.round.ratingPlaceholder9')
+                          : t('log.round.ratingPlaceholder18')
+                      }
                       placeholderTextColor={colors.subtle}
                       keyboardType="decimal-pad"
                       inputAccessoryViewID={Platform.OS === 'ios' ? LOG_ROUND_NUMERIC_ACCESSORY_ID : undefined}
                     />
                   </View>
                   <View style={styles.teeCustomField}>
-                    <Text style={styles.teeCustomLbl}>Slope</Text>
+                    <Text style={styles.teeCustomLbl}>{t('log.round.slope')}</Text>
                     <TextInput
                       style={styles.teeNumInput}
                       value={customSlope}
                       onChangeText={setCustomSlope}
-                      placeholder="e.g. 128"
+                      placeholder={t('log.round.slopePlaceholder')}
                       placeholderTextColor={colors.subtle}
                       keyboardType="number-pad"
                       inputAccessoryViewID={Platform.OS === 'ios' ? LOG_ROUND_NUMERIC_ACCESSORY_ID : undefined}
@@ -1236,7 +1302,7 @@ export default function LogRoundScreen() {
             </>
           ) : null}
 
-        <Text style={styles.sectionLabel}>Score</Text>
+        <Text style={styles.sectionLabel}>{t('log.round.score')}</Text>
         <View style={styles.scoreBlock}>
           <View style={styles.scoreMain}>
             <Pressable
@@ -1261,63 +1327,80 @@ export default function LogRoundScreen() {
           </View>
         </View>
 
-        <Text style={styles.sectionLabel}>Putting mode</Text>
+        <Text style={styles.sectionLabel}>{t('log.round.puttingMode')}</Text>
         <View style={styles.dayRow}>
-          {PUTTING_OPTS.map((o) => (
+          {PUTTING_KEYS.map((key) => (
             <Pressable
-              key={o.key}
-              style={[styles.dayBtn, putting === o.key && styles.dayBtnOn]}
-              onPress={() => setPutting(o.key)}
+              key={key}
+              style={[styles.dayBtn, putting === key && styles.dayBtnOn]}
+              onPress={() => setPutting(key)}
             >
-              <Text style={[styles.dayDn, putting === o.key && styles.dayDnOn]}>{o.dn}</Text>
-              <Text style={[styles.dayDs, putting === o.key && styles.dayDsOn]}>{o.ds}</Text>
+              <Text style={[styles.dayDn, putting === key && styles.dayDnOn]}>
+                {t(`log.round.putting.${key}.dn`)}
+              </Text>
+              <Text style={[styles.dayDs, putting === key && styles.dayDsOn]}>
+                {t(`log.round.putting.${key}.ds`)}
+              </Text>
             </Pressable>
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>Pin placement</Text>
+        <Text style={styles.sectionLabel}>{t('log.round.pinPlacement')}</Text>
         <View style={styles.dayRow}>
-          {pinOpts.map((d) => (
+          {pinOpts.map((d) => {
+            const sub = pinSublabel(d.key, platform);
+            return (
             <Pressable key={d.key} style={[styles.dayBtn, pin === d.key && styles.dayBtnOn]} onPress={() => setPin(d.key)}>
-              <Text style={[styles.dayDn, pin === d.key && styles.dayDnOn]}>{d.label}</Text>
-              {d.sublabel ? (
-                <Text style={[styles.dayDs, pin === d.key && styles.dayDsOn]}>{d.sublabel}</Text>
+              <Text style={[styles.dayDn, pin === d.key && styles.dayDnOn]}>
+                {pinLabel(d.key, platform)}
+              </Text>
+              {sub ? (
+                <Text style={[styles.dayDs, pin === d.key && styles.dayDsOn]}>{sub}</Text>
               ) : null}
             </Pressable>
-          ))}
+            );
+          })}
         </View>
 
-        <Text style={styles.sectionLabel}>Wind</Text>
+        <Text style={styles.sectionLabel}>{t('log.round.wind')}</Text>
         <View style={styles.dayRow}>
-          {WIND_OPTS.map((w) => (
+          {WIND_KEYS.map((key) => (
             <Pressable
-              key={w.key}
-              style={[styles.dayBtn, wind === w.key && styles.dayBtnOn]}
-              onPress={() => setWind(w.key)}
+              key={key}
+              style={[styles.dayBtn, wind === key && styles.dayBtnOn]}
+              onPress={() => setWind(key)}
             >
-              <Text style={[styles.dayDn, wind === w.key && styles.dayDnOn]}>{w.dn}</Text>
-              <Text style={[styles.dayDs, wind === w.key && styles.dayDsOn]}>{w.ds}</Text>
+              <Text style={[styles.dayDn, wind === key && styles.dayDnOn]}>
+                {t(`log.round.windOpts.${key}.dn`)}
+              </Text>
+              <Text style={[styles.dayDs, wind === key && styles.dayDsOn]}>
+                {t(`log.round.windOpts.${key}.ds`)}
+              </Text>
             </Pressable>
           ))}
         </View>
 
-        <Text style={styles.sectionLabel}>Mulligans</Text>
+        <Text style={styles.sectionLabel}>{t('log.round.mulligans')}</Text>
         <View style={styles.dayRow}>
-          {MULL_OPTS.map((m) => (
+          {MULL_KEYS.map((key) => (
             <Pressable
-              key={m.key}
-              style={[styles.dayBtn, mulligans === m.key && styles.dayBtnOn]}
-              onPress={() => setMulligans(m.key)}
+              key={key}
+              style={[styles.dayBtn, mulligans === key && styles.dayBtnOn]}
+              onPress={() => setMulligans(key)}
             >
-              <Text style={[styles.dayDn, mulligans === m.key && styles.dayDnOn]}>{m.dn}</Text>
-              <Text style={[styles.dayDs, mulligans === m.key && styles.dayDsOn]}>{m.ds}</Text>
+              <Text style={[styles.dayDn, mulligans === key && styles.dayDnOn]}>
+                {t(`log.round.mulliganOpts.${key}.dn`)}
+              </Text>
+              <Text style={[styles.dayDs, mulligans === key && styles.dayDsOn]}>
+                {t(`log.round.mulliganOpts.${key}.ds`)}
+              </Text>
             </Pressable>
           ))}
         </View>
 
         <View style={styles.diffWrap}>
           <View style={styles.diffTop}>
-            <Text style={styles.diffLbl}>Difficulty modifier</Text>
+            <Text style={styles.diffLbl}>{t('log.round.difficultyModifier')}</Text>
             <Text style={styles.diffNum}>{modifier.toFixed(2)}</Text>
           </View>
           <View style={styles.diffTrack}>
@@ -1328,14 +1411,14 @@ export default function LogRoundScreen() {
         {resolvedCourse ? (
           <View style={styles.predCard}>
             <View style={styles.predStatRow}>
-              <Text style={styles.predStatLbl}>Adjusted differential:</Text>
+              <Text style={styles.predStatLbl}>{t('log.round.adjustedDifferential')}</Text>
               <View style={styles.predStatRight}>
                 <Text style={styles.predAdjustedNum}>{adjustedDisplay}</Text>
                 <Pressable
                   style={styles.infoBtn}
                   onPress={() => setDiffInfoOpen('adjusted')}
                   accessibilityRole="button"
-                  accessibilityLabel="About adjusted differential"
+                  accessibilityLabel={t('log.round.adjustedDiffA11y')}
                 >
                   <Text style={styles.infoBtnTxt}>ⓘ</Text>
                 </Pressable>
@@ -1344,14 +1427,14 @@ export default function LogRoundScreen() {
             {expectedDiffPre != null ? (
               <>
                 <View style={[styles.predStatRow, styles.predStatRowSpaced]}>
-                  <Text style={styles.predStatLbl}>Expected differential:</Text>
+                  <Text style={styles.predStatLbl}>{t('log.round.expectedDifferential')}</Text>
                   <View style={styles.predStatRight}>
                     <Text style={styles.predExpectedNum}>{formatDifferentialDisplay(expectedDiffPre)}</Text>
                     <Pressable
                       style={styles.infoBtn}
                       onPress={() => setDiffInfoOpen('expected')}
                       accessibilityRole="button"
-                      accessibilityLabel="About expected differential"
+                      accessibilityLabel={t('log.round.expectedDiffA11y')}
                     >
                       <Text style={styles.infoBtnTxt}>ⓘ</Text>
                     </Pressable>
@@ -1361,66 +1444,61 @@ export default function LogRoundScreen() {
                 targetGrossPre >= scoreBounds.min &&
                 targetGrossPre <= scoreBounds.max ? (
                   <Text style={styles.predTarget}>
-                    Shoot {targetGrossPre} or better to improve your index
+                    {t('log.round.shootTarget', { score: targetGrossPre })}
                   </Text>
                 ) : (
                   <Text style={styles.predTargetSoft}>
-                    For these conditions, your index benchmark sits outside the usual gross range (
-                    {scoreBounds.min}–{scoreBounds.max}). Every stroke still feeds your rolling differentials.
+                    {t('log.round.benchmarkOutside', {
+                      min: scoreBounds.min,
+                      max: scoreBounds.max,
+                    })}
                   </Text>
                 )}
               </>
             ) : (
-              <Text style={styles.predNoIndex}>
-                Log at least one round to see your expected differential and a target gross for these conditions.
-              </Text>
+              <Text style={styles.predNoIndex}>{t('log.round.noIndexYet')}</Text>
             )}
           </View>
         ) : null}
 
         {!existing && tournamentsReady && activeTournaments.length > 0 ? (
           <View style={styles.tournamentSection}>
-            <Text style={styles.tournamentSectionTitle}>Active Tournaments</Text>
-            {activeTournaments.map((t) => {
-                const apply = tournamentApply[t.leagueId] !== false;
+            <Text style={styles.tournamentSectionTitle}>{t('log.round.activeTournaments')}</Text>
+            {activeTournaments.map((tour) => {
+                const apply = tournamentApply[tour.leagueId] !== false;
                 return (
-                  <View key={t.leagueId} style={styles.tournamentCard}>
+                  <View key={tour.leagueId} style={styles.tournamentCard}>
                     <Text style={styles.tournamentQ}>
-                      Apply this round to {t.leagueName}?
+                      {t('log.round.applyToTournament', { leagueName: tour.leagueName })}
                     </Text>
-                    <Text style={styles.tournamentMeta}>{t.groupName}</Text>
+                    <Text style={styles.tournamentMeta}>{tour.groupName}</Text>
                     <View style={styles.tournamentYesNo}>
                       <Pressable
                         style={[styles.tournamentOpt, apply && styles.tournamentOptOn]}
                         onPress={() =>
-                          setTournamentApply((prev) => ({ ...prev, [t.leagueId]: true }))
+                          setTournamentApply((prev) => ({ ...prev, [tour.leagueId]: true }))
                         }
                       >
                         <Text style={[styles.tournamentOptTxt, apply && styles.tournamentOptTxtOn]}>
-                          Yes
+                          {t('log.round.yes')}
                         </Text>
                       </Pressable>
                       <Pressable
                         style={[styles.tournamentOpt, !apply && styles.tournamentOptOn]}
                         onPress={() =>
-                          setTournamentApply((prev) => ({ ...prev, [t.leagueId]: false }))
+                          setTournamentApply((prev) => ({ ...prev, [tour.leagueId]: false }))
                         }
                       >
                         <Text style={[styles.tournamentOptTxt, !apply && styles.tournamentOptTxtOn]}>
-                          No
+                          {t('log.round.no')}
                         </Text>
                       </Pressable>
                     </View>
-                    {t.format === 'scramble' ? (
-                      <Text style={styles.tournamentTeamNote}>
-                        Only the designated scorer can apply rounds. Scramble won&apos;t affect your
-                        SimCap index.
-                      </Text>
+                    {tour.format === 'scramble' ? (
+                      <Text style={styles.tournamentTeamNote}>{t('log.round.scrambleNote')}</Text>
                     ) : null}
-                    {t.format === 'best_ball' ? (
-                      <Text style={styles.tournamentTeamNote}>
-                        Best Ball rounds count toward your SimCap index.
-                      </Text>
+                    {tour.format === 'best_ball' ? (
+                      <Text style={styles.tournamentTeamNote}>{t('log.round.bestBallNote')}</Text>
                     ) : null}
                   </View>
                 );
@@ -1436,14 +1514,14 @@ export default function LogRoundScreen() {
           ]}
           onPress={onSave}
           accessibilityRole="button"
-          accessibilityLabel={existing ? 'Update round' : 'Save round'}
+          accessibilityLabel={existing ? t('log.round.updateRoundA11y') : t('log.round.saveRoundA11y')}
           hitSlop={{ top: 8, bottom: 12, left: 8, right: 8 }}
         >
-          <Text style={styles.saveTxt}>{existing ? 'Save changes' : 'Save round'}</Text>
+          <Text style={styles.saveTxt}>
+            {existing ? t('log.round.saveChanges') : t('log.round.saveRound')}
+          </Text>
         </Pressable>
-        <Text style={styles.saveHint}>
-          Saves to your SimCap account, opens Round analysis, and updates your sim index, home chart, and profile.
-        </Text>
+        <Text style={styles.saveHint}>{t('log.round.saveHint')}</Text>
         </ScrollView>
       </KeyboardAvoidingView>
 
@@ -1457,12 +1535,14 @@ export default function LogRoundScreen() {
           <Pressable style={styles.modalBackdropPress} onPress={() => setDiffInfoOpen(null)} />
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
             <Text style={styles.modalTitle}>
-              {diffInfoOpen === 'adjusted' ? 'Adjusted differential' : 'Expected differential'}
+              {diffInfoOpen === 'adjusted'
+                ? t('log.round.diffInfoAdjustedTitle')
+                : t('log.round.diffInfoExpectedTitle')}
             </Text>
             <Text style={styles.diffInfoBody}>
               {diffInfoOpen === 'adjusted'
-                ? 'Your raw score differential after applying a difficulty modifier based on your sim settings — putting mode, wind, pins, and mulligans. This is what gets used to calculate your SimCap index.'
-                : "The differential we'd expect from a golfer at your current index on this course. If your adjusted differential is lower than this, your index will improve."}
+                ? t('log.round.diffInfoAdjustedBody')
+                : t('log.round.diffInfoExpectedBody')}
             </Text>
           </View>
         </View>
@@ -1477,7 +1557,7 @@ export default function LogRoundScreen() {
         <View style={styles.modalRoot}>
           <Pressable style={styles.modalBackdropPress} onPress={() => setPlatOpen(false)} />
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.modalTitle}>Platform</Text>
+            <Text style={styles.modalTitle}>{t('log.round.platformModal')}</Text>
             {PLATFORMS.map((p) => (
               <Pressable
                 key={p}
@@ -1525,12 +1605,12 @@ export default function LogRoundScreen() {
               },
             ]}
           >
-            <Text style={styles.modalTitle}>Course</Text>
+            <Text style={styles.modalTitle}>{t('log.round.course')}</Text>
             <TextInput
               style={styles.courseSearchInput}
               value={courseSearchQuery}
               onChangeText={setCourseSearchQuery}
-              placeholder="Search by course name"
+              placeholder={t('log.round.searchCourse')}
               placeholderTextColor={colors.subtle}
               autoCapitalize="none"
               autoCorrect={false}
@@ -1548,7 +1628,7 @@ export default function LogRoundScreen() {
               initialNumToRender={24}
               windowSize={10}
               ListEmptyComponent={
-                <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+                <Text style={styles.courseSearchEmpty}>{t('log.round.noCoursesMatch')}</Text>
               }
               renderItem={({ item: c }) => (
                 <Pressable

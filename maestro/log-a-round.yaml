@@ -1,0 +1,105 @@
+appId: com.simcap.app
+---
+# Log a round at Pebble Beach — human-paced for demo footage.
+# Assumes already signed in as Jordan Ellis (is_test). Use clearState: false.
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd:
+    timeout: 10000
+
+# iOS tab a11y: "Log a round, tab, 2 of 22"
+- extendedWaitUntil:
+    visible: "Log a round, tab.*"
+    timeout: 30000
+- tapOn: "Log a round, tab.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "SIM PLATFORM"
+    timeout: 20000
+- waitForAnimationToEnd
+
+# Open course sheet from the course pill
+- tapOn:
+    text: ".*Pebble Beach Golf Links.*"
+    optional: true
+- tapOn:
+    text: "Select.*"
+    optional: true
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Search by course name"
+    timeout: 15000
+- tapOn: "Search by course name"
+- waitForAnimationToEnd
+- eraseText
+- inputText: "Pebble Beach"
+- waitForAnimationToEnd
+- tapOn: "Pebble Beach Golf Links"
+- waitForAnimationToEnd
+
+- swipe:
+    direction: UP
+    duration: 700
+- waitForAnimationToEnd
+
+# Tee (White on Pebble)
+- tapOn:
+    text: "White.*"
+    optional: true
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element: "SCORE"
+    direction: DOWN
+    timeout: 10000
+- waitForAnimationToEnd
+
+# Gross score: custom − / + stepper (not a TextInput). Default ~72 → low 80s.
+# Box the "+" match strictly between SCORE and PUTTING MODE so a stray "+" elsewhere
+# on screen (e.g. the tab bar) can never match — this is what caused a prior recording
+# to drift onto the Profile tab mid-repeat.
+- repeat:
+    times: 10
+    commands:
+      - tapOn:
+          text: "^\\+$"
+          below: "SCORE"
+          above: "PUTTING MODE"
+
+# Safety net: if the taps above somehow navigated us away from the round screen,
+# fail fast here instead of silently recording bad footage all the way to the end.
+- assertVisible: "PUTTING MODE"
+
+- waitForAnimationToEnd
+- swipe:
+    direction: UP
+    duration: 600
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "Auto.*"
+    optional: true
+- waitForAnimationToEnd
+- tapOn:
+    text: "Sat.*"
+    optional: true
+- waitForAnimationToEnd
+
+- swipe:
+    direction: UP
+    duration: 500
+- waitForAnimationToEnd
+
+- scrollUntilVisible:
+    element: "Save round"
+    direction: DOWN
+    timeout: 10000
+- waitForAnimationToEnd
+- tapOn: "Save round"
+
+# Round analysis / share — hold for the ta-da beat
+- extendedWaitUntil:
+    visible: ".*Pebble Beach.*"
+    timeout: 45000
+- waitForAnimationToEnd
+- waitForAnimationToEnd

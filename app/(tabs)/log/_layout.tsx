@@ -1,5 +1,6 @@
 import { Stack } from 'expo-router';
 import { ForestStackHeader } from '../../../src/components/ForestStackHeader';
+import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { PRACTICE_ANALYZER_ENABLED } from '../../../src/lib/featureFlags';
 
@@ -9,6 +10,8 @@ import { PRACTICE_ANALYZER_ENABLED } from '../../../src/lib/featureFlags';
  * Custom header avoids native headerRight liquid-glass/pill wrapping.
  */
 export default function LogStackLayout() {
+  const { t } = useTranslation();
+
   return (
     <Stack
       initialRouteName={PRACTICE_ANALYZER_ENABLED ? 'index' : 'round'}
@@ -22,9 +25,9 @@ export default function LogStackLayout() {
         contentStyle: { backgroundColor: colors.bg },
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'Log a round' }} />
-      <Stack.Screen name="round" options={{ title: 'Log a round' }} />
-      <Stack.Screen name="practice" options={{ headerShown: false, title: 'Practice Analyzer' }} />
+      <Stack.Screen name="index" options={{ title: t('log.stack.logRound') }} />
+      <Stack.Screen name="round" options={{ title: t('log.stack.logRound') }} />
+      <Stack.Screen name="practice" options={{ headerShown: false, title: t('log.stack.practice') }} />
     </Stack>
   );
 }

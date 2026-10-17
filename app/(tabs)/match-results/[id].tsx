@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { useTranslation } from '../../../src/i18n';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { localYmdToIso, todayLocalYmd } from '../../../src/lib/dates';
@@ -31,7 +32,7 @@ import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken'
 import {
   playerVerificationUiState,
   verificationStatusEmoji,
-  verificationStatusLabel,
+  type ScorecardVerificationUiState,
 } from '../../../src/lib/matchVerification';
 import { grossMapsForPlayers, matchHoleNumbers } from '../../../src/lib/matchStrokeMath';
 import { useResponsive } from '../../../src/lib/responsive';
@@ -40,7 +41,24 @@ import { useAppStore } from '../../../src/store/useAppStore';
 
 type IndexRoundUi = 'off' | 'loading' | 'prompt' | 'saving' | 'saved' | 'skipped';
 
+function verificationLabel(
+  state: ScorecardVerificationUiState,
+  t: (key: string) => string
+): string {
+  switch (state) {
+    case 'verified':
+      return t('match.results.verifyStatus.verified');
+    case 'pending':
+      return t('match.results.verifyStatus.pending');
+    case 'failed':
+      return t('match.results.verifyStatus.failed');
+    default:
+      return t('match.results.verifyStatus.unverified');
+  }
+}
+
 export default function MatchResultsScreen() {
+  const { t } = useTranslation();
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const matchId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -52,7 +70,10 @@ export default function MatchResultsScreen() {
   const preferredLogPlatform = useAppStore((s) => s.preferredLogPlatform);
 
   const [match, setMatch] = useState<DbMatchRow | null>(null);
-  const [names, setNames] = useState<{ p1: string; p2: string }>({ p1: 'Player 1', p2: 'Player 2' });
+  const [names, setNames] = useState<{ p1: string; p2: string }>({
+    p1: '',
+    p2: '',
+  });
   const [holesRows, setHolesRows] = useState<DbMatchHoleRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
@@ -68,17 +89,25 @@ export default function MatchResultsScreen() {
     return grossMapsForPlayers(holesRows, match.player_1_id, match.player_2_id);
   }, [holesRows, match]);
 
+  const displayNames = useMemo(
+    () => ({
+      p1: names.p1 || t('match.results.player1'),
+      p2: names.p2 || t('match.results.player2'),
+    }),
+    [names.p1, names.p2, t]
+  );
+
   const load = useCallback(async () => {
     if (!matchId || !supabaseOn) {
       setLoading(false);
-      setErr('Missing match.');
+      setErr(t('match.results.missingMatch'));
       return;
     }
     setLoading(true);
     setErr(null);
     const res = await getMatchById(matchId, googleOAuthAccessToken ?? undefined);
     if (res.error || !res.data) {
-      setErr(res.error ?? 'Could not load match.');
+      setErr(res.error ?? t('match.results.couldNotLoad'));
       setMatch(null);
       setHolesRows([]);
       setLoading(false);
@@ -91,12 +120,12 @@ export default function MatchResultsScreen() {
     if (m.player_2_id) {
       const nm = await fetchMatchPlayerDisplayNames([m], googleOAuthAccessToken ?? undefined);
       setNames({
-        p1: nm[m.player_1_id] ?? 'Player 1',
-        p2: nm[m.player_2_id] ?? 'Player 2',
+        p1: nm[m.player_1_id] ?? '',
+        p2: nm[m.player_2_id] ?? '',
       });
     }
     setLoading(false);
-  }, [matchId, supabaseOn, googleOAuthAccessToken]);
+  }, [matchId, supabaseOn, googleOAuthAccessToken, t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -140,42 +169,49 @@ export default function MatchResultsScreen() {
     const res = await listMyMatches(userId, googleOAuthAccessToken ?? undefined);
     setRematchBusy(false);
     if (res.error || !res.data) {
-      showAppAlert('Rematch', res.error ?? 'Could not verify your matches.');
+      showAppAlert(
+        t('match.results.alerts.rematchTitle'),
+        res.error ?? t('match.results.alerts.couldNotVerifyMatches')
+      );
       return;
     }
     const p1 = match.player_1_id;
     const p2 = match.player_2_id;
     const oppId = userId === p1 ? p2 : p1;
-    const oppName = userId === p1 ? names.p2 : names.p1;
+    const oppName = userId === p1 ? displayNames.p2 : displayNames.p1;
     const existing = findActiveDirectMatchBetween(res.data, userId, oppId);
     if (existing) {
       if (userId === existing.player_2_id && existing.status === 'pending') {
-        showAppAlert('Rematch', 'Your opponent already wants a rematch!', {
+        showAppAlert(t('match.results.alerts.rematchTitle'), t('match.results.alerts.opponentWantsRematch'), {
           onOk: () => router.push(`/(tabs)/match-accept/${existing.id}` as never),
         });
         return;
       }
       if (userId === existing.player_1_id && existing.status === 'pending') {
         showAppAlert(
-          'Rematch',
-          `You already have a challenge waiting on ${oppName}. Wait for them to accept before sending another.`
+          t('match.results.alerts.rematchTitle'),
+          t('match.results.alerts.challengeWaiting', { name: oppName })
         );
         return;
       }
-      showAppAlert('Rematch', `You and ${oppName} already have a match in progress.`, {
-        onOk: () => router.push(`/(tabs)/match-score/${existing.id}` as never),
-      });
+      showAppAlert(
+        t('match.results.alerts.rematchTitle'),
+        t('match.results.alerts.matchInProgress', { name: oppName }),
+        {
+          onOk: () => router.push(`/(tabs)/match-score/${existing.id}` as never),
+        }
+      );
       return;
     }
     if (countActiveDirectMatchesForUser(res.data, userId) >= MAX_ACTIVE_DIRECT_CHALLENGES) {
       showAppAlert(
-        'Challenge limit',
-        `You have ${MAX_ACTIVE_DIRECT_CHALLENGES} active challenges. Finish or resolve an existing match before sending a rematch.`
+        t('match.results.alerts.challengeLimitTitle'),
+        t('match.results.alerts.challengeLimitBody', { count: MAX_ACTIVE_DIRECT_CHALLENGES })
       );
       return;
     }
     router.push(`/(tabs)/match-create?rematchFrom=${matchId}` as never);
-  }, [match, matchId, names.p1, names.p2, router, userId, googleOAuthAccessToken]);
+  }, [match, matchId, displayNames.p1, displayNames.p2, router, userId, googleOAuthAccessToken, t]);
 
   const onSaveToIndex = useCallback(async () => {
     if (!match || !userId || !matchId) return;
@@ -188,7 +224,7 @@ export default function MatchResultsScreen() {
       platform: preferredLogPlatform,
     });
     if (!built.ok) {
-      showAppAlert('Could not prepare round', built.error);
+      showAppAlert(t('match.results.alerts.couldNotPrepareRound'), built.error);
       return;
     }
     setIndexRoundUi('saving');
@@ -198,15 +234,15 @@ export default function MatchResultsScreen() {
       setIndexRoundUi('saved');
     } catch (e) {
       setIndexRoundUi('prompt');
-      showAppAlert('Could not save', String(e));
+      showAppAlert(t('match.results.alerts.couldNotSave'), String(e));
     }
-  }, [addRound, holesRows, match, matchId, preferredLogPlatform, userId]);
+  }, [addRound, holesRows, match, matchId, preferredLogPlatform, userId, t]);
 
   if (!supabaseOn) {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.muted}>Supabase not configured.</Text>
+          <Text style={styles.muted}>{t('match.results.supabaseNotConfigured')}</Text>
         </View>
       </ContentWidth>
     );
@@ -226,9 +262,9 @@ export default function MatchResultsScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.muted}>{err ?? 'Match not found.'}</Text>
+          <Text style={styles.muted}>{err ?? t('match.results.matchNotFound')}</Text>
           <Pressable style={styles.primaryBtn} onPress={() => router.replace('/(tabs)/groups' as never)}>
-            <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+            <Text style={styles.primaryBtnTxt}>{t('match.results.backToSocial')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -241,9 +277,9 @@ export default function MatchResultsScreen() {
       return (
         <ContentWidth bg={colors.surface}>
           <View style={[styles.centered, { padding: gutter }]}>
-            <Text style={styles.title}>Match was abandoned</Text>
+            <Text style={styles.title}>{t('match.results.abandonedTitle')}</Text>
             <Pressable style={styles.primaryBtn} onPress={backSocial}>
-              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+              <Text style={styles.primaryBtnTxt}>{t('match.results.backToSocial')}</Text>
             </Pressable>
           </View>
         </ContentWidth>
@@ -253,10 +289,10 @@ export default function MatchResultsScreen() {
       return (
         <ContentWidth bg={colors.surface}>
           <View style={[styles.centered, { padding: gutter }]}>
-            <Text style={styles.title}>Challenge declined</Text>
-            <Text style={styles.muted}>This match was declined and will not be played.</Text>
+            <Text style={styles.title}>{t('match.results.declinedTitle')}</Text>
+            <Text style={styles.muted}>{t('match.results.declinedBody')}</Text>
             <Pressable style={styles.primaryBtn} onPress={backSocial}>
-              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+              <Text style={styles.primaryBtnTxt}>{t('match.results.backToSocial')}</Text>
             </Pressable>
           </View>
         </ContentWidth>
@@ -266,12 +302,10 @@ export default function MatchResultsScreen() {
       return (
         <ContentWidth bg={colors.surface}>
           <View style={[styles.centered, { padding: gutter }]}>
-            <Text style={styles.title}>Challenge pending</Text>
-            <Text style={styles.muted}>
-              This direct challenge is waiting on the other player to respond on the Social tab.
-            </Text>
+            <Text style={styles.title}>{t('match.results.pendingTitle')}</Text>
+            <Text style={styles.muted}>{t('match.results.pendingBody')}</Text>
             <Pressable style={styles.primaryBtn} onPress={backSocial}>
-              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+              <Text style={styles.primaryBtnTxt}>{t('match.results.backToSocial')}</Text>
             </Pressable>
           </View>
         </ContentWidth>
@@ -281,12 +315,10 @@ export default function MatchResultsScreen() {
       return (
         <ContentWidth bg={colors.surface}>
           <View style={[styles.centered, { padding: gutter }]}>
-            <Text style={styles.title}>Open challenge</Text>
-            <Text style={styles.muted}>
-              This challenge is still posted to the open feed and waiting for a SimCap player to accept.
-            </Text>
+            <Text style={styles.title}>{t('match.results.openTitle')}</Text>
+            <Text style={styles.muted}>{t('match.results.openBody')}</Text>
             <Pressable style={styles.primaryBtn} onPress={backSocial}>
-              <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+              <Text style={styles.primaryBtnTxt}>{t('match.results.backToSocial')}</Text>
             </Pressable>
           </View>
         </ContentWidth>
@@ -296,13 +328,13 @@ export default function MatchResultsScreen() {
       return (
         <ContentWidth bg={colors.surface}>
           <View style={[styles.centered, { padding: gutter }]}>
-            <Text style={styles.title}>Match still in progress</Text>
-            <Text style={styles.muted}>Final results appear here when both players finish every hole.</Text>
+            <Text style={styles.title}>{t('match.results.inProgressTitle')}</Text>
+            <Text style={styles.muted}>{t('match.results.inProgressBody')}</Text>
             <Pressable style={styles.primaryBtn} onPress={() => router.replace(`/(tabs)/match-score/${matchId}` as never)}>
-              <Text style={styles.primaryBtnTxt}>Continue scoring</Text>
+              <Text style={styles.primaryBtnTxt}>{t('match.results.continueScoring')}</Text>
             </Pressable>
             <Pressable style={styles.secondaryBtn} onPress={backSocial}>
-              <Text style={styles.secondaryBtnTxt}>Social</Text>
+              <Text style={styles.secondaryBtnTxt}>{t('match.results.social')}</Text>
             </Pressable>
           </View>
         </ContentWidth>
@@ -311,10 +343,10 @@ export default function MatchResultsScreen() {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.title}>Match unavailable</Text>
-          <Text style={styles.muted}>This match is not in a results-ready state.</Text>
+          <Text style={styles.title}>{t('match.results.unavailableTitle')}</Text>
+          <Text style={styles.muted}>{t('match.results.unavailableBody')}</Text>
           <Pressable style={styles.primaryBtn} onPress={backSocial}>
-            <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+            <Text style={styles.primaryBtnTxt}>{t('match.results.backToSocial')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -332,18 +364,19 @@ export default function MatchResultsScreen() {
     : 0;
 
   const fmtGrossNet = (gross: number, net: number | null | undefined) => {
-    const gStr = gross > 0 ? String(gross) : '—';
+    const dash = t('match.results.emDash');
+    const gStr = gross > 0 ? String(gross) : dash;
     const nNum = net != null && Number.isFinite(Number(net)) ? Number(net) : null;
-    const nStr = nNum != null ? (Number.isInteger(nNum) ? String(nNum) : nNum.toFixed(1)) : '—';
-    return `${gStr} gross · ${nStr} net`;
+    const nStr = nNum != null ? (Number.isInteger(nNum) ? String(nNum) : nNum.toFixed(1)) : dash;
+    return t('match.results.grossNet', { gross: gStr, net: nStr });
   };
 
   const winnerLine =
     match.winner_id == null
-      ? 'Tied match — halved on net stroke play.'
+      ? t('match.results.tied')
       : match.winner_id === match.player_1_id
-        ? `${names.p1} wins on net score.`
-        : `${names.p2} wins on net score.`;
+        ? t('match.results.wins', { name: displayNames.p1 })
+        : t('match.results.wins', { name: displayNames.p2 });
 
   return (
     <ContentWidth bg={colors.surface}>
@@ -354,20 +387,20 @@ export default function MatchResultsScreen() {
           paddingBottom: insets.bottom + 28,
         }}
       >
-        <Text style={styles.eyebrow}>Match results</Text>
+        <Text style={styles.eyebrow}>{t('match.results.eyebrow')}</Text>
         <Text style={styles.course}>{match.course_name}</Text>
         <Text style={styles.winner}>{winnerLine}</Text>
 
         <View style={styles.scoreCard}>
           <View style={styles.scoreRow}>
             <Text style={styles.scoreName} numberOfLines={1}>
-              {names.p1}
+              {displayNames.p1}
             </Text>
             <Text style={styles.scoreVal}>{fmtGrossNet(grossP1, n1)}</Text>
           </View>
           <View style={styles.scoreRow}>
             <Text style={styles.scoreName} numberOfLines={1}>
-              {names.p2}
+              {displayNames.p2}
             </Text>
             <Text style={styles.scoreVal}>{fmtGrossNet(grossP2, n2)}</Text>
           </View>
@@ -375,15 +408,21 @@ export default function MatchResultsScreen() {
 
         {match.verification_required ? (
           <View style={styles.verifyCard}>
-            <Text style={styles.verifyTitle}>Scorecard verification</Text>
+            <Text style={styles.verifyTitle}>{t('match.results.scorecardVerification')}</Text>
             <Text style={styles.verifyRow}>
               {verificationStatusEmoji(playerVerificationUiState(match, true))}{' '}
-              {names.p1}: {verificationStatusLabel(playerVerificationUiState(match, true))}
+              {t('match.results.verifyRow', {
+                name: displayNames.p1,
+                status: verificationLabel(playerVerificationUiState(match, true), t),
+              })}
             </Text>
             {match.player_2_id ? (
               <Text style={styles.verifyRow}>
                 {verificationStatusEmoji(playerVerificationUiState(match, false))}{' '}
-                {names.p2}: {verificationStatusLabel(playerVerificationUiState(match, false))}
+                {t('match.results.verifyRow', {
+                  name: displayNames.p2,
+                  status: verificationLabel(playerVerificationUiState(match, false), t),
+                })}
               </Text>
             ) : null}
           </View>
@@ -397,26 +436,26 @@ export default function MatchResultsScreen() {
             disabled={rematchBusy}
             onPress={() => void onRematch()}
             accessibilityRole="button"
-            accessibilityLabel="Rematch this opponent"
+            accessibilityLabel={t('match.results.rematchA11y')}
           >
             {rematchBusy ? (
               <ActivityIndicator color={colors.accent} />
             ) : (
-              <Text style={styles.secondaryBtnTxt}>Rematch</Text>
+              <Text style={styles.secondaryBtnTxt}>{t('match.results.rematch')}</Text>
             )}
           </Pressable>
         ) : null}
 
         {match.player_2_id ? (
           <View style={styles.holeByHole}>
-            <Text style={styles.holeByHoleTitle}>Hole-by-hole</Text>
+            <Text style={styles.holeByHoleTitle}>{t('match.results.holeByHole')}</Text>
             <View style={styles.hbhHead}>
-              <Text style={[styles.hbhTh, styles.hbhHole]}>Hole</Text>
+              <Text style={[styles.hbhTh, styles.hbhHole]}>{t('match.results.hole')}</Text>
               <Text style={[styles.hbhTh, styles.hbhCol]} numberOfLines={1}>
-                {names.p1}
+                {displayNames.p1}
               </Text>
               <Text style={[styles.hbhTh, styles.hbhCol]} numberOfLines={1}>
-                {names.p2}
+                {displayNames.p2}
               </Text>
             </View>
             {holeNumsList.map((h) => {
@@ -430,18 +469,19 @@ export default function MatchResultsScreen() {
               );
               const rx1 = row1?.player_2_reaction?.trim();
               const rx2 = row2?.player_1_reaction?.trim();
+              const dash = t('match.results.emDash');
               return (
                 <View key={h} style={styles.hbhRow}>
                   <Text style={[styles.hbhTd, styles.hbhHole]}>{h}</Text>
                   <View style={[styles.hbhCell, styles.hbhCol]}>
                     <View style={styles.hbhGrossRow}>
-                      <Text style={styles.hbhGrossNum}>{g1 ?? '—'}</Text>
+                      <Text style={styles.hbhGrossNum}>{g1 ?? dash}</Text>
                       {rx1 ? <Text style={styles.hbhRxInline}>{rx1}</Text> : null}
                     </View>
                   </View>
                   <View style={[styles.hbhCell, styles.hbhCol]}>
                     <View style={styles.hbhGrossRow}>
-                      <Text style={styles.hbhGrossNum}>{g2 ?? '—'}</Text>
+                      <Text style={styles.hbhGrossNum}>{g2 ?? dash}</Text>
                       {rx2 ? <Text style={styles.hbhRxInline}>{rx2}</Text> : null}
                     </View>
                   </View>
@@ -454,66 +494,58 @@ export default function MatchResultsScreen() {
         {indexRoundUi === 'prompt' || indexRoundUi === 'saving' ? (
           isNineHoleSocialMatch(match) ? (
             <View style={styles.indexPromptCard}>
-              <Text style={styles.indexPromptTitle}>Save to SimCap index</Text>
-              <Text style={styles.indexPromptBody}>
-                9-hole matches can&apos;t be saved to your index from here yet. Log the round on the Log
-                tab if you want it to count.
-              </Text>
+              <Text style={styles.indexPromptTitle}>{t('match.results.saveToIndexNineTitle')}</Text>
+              <Text style={styles.indexPromptBody}>{t('match.results.saveToIndexNineBody')}</Text>
               <Pressable
                 style={[styles.secondaryBtn, styles.indexBtnFlex]}
                 onPress={() => void onSkipSaveToIndex()}
                 accessibilityRole="button"
-                accessibilityLabel="Dismiss"
+                accessibilityLabel={t('match.results.dismissA11y')}
               >
-                <Text style={styles.secondaryBtnTxt}>Got it</Text>
+                <Text style={styles.secondaryBtnTxt}>{t('match.results.gotIt')}</Text>
               </Pressable>
             </View>
           ) : (
           <View style={styles.indexPromptCard}>
-            <Text style={styles.indexPromptTitle}>Save this round to your SimCap index?</Text>
-            <Text style={styles.indexPromptBody}>
-              This will count toward your handicap calculation like a regular logged round.
-            </Text>
+            <Text style={styles.indexPromptTitle}>{t('match.results.saveToIndexTitle')}</Text>
+            <Text style={styles.indexPromptBody}>{t('match.results.saveToIndexBody')}</Text>
             <View style={styles.indexBtnRow}>
               <Pressable
                 style={[styles.secondaryBtn, styles.indexBtnFlex]}
                 disabled={indexRoundUi === 'saving'}
                 onPress={() => void onSkipSaveToIndex()}
                 accessibilityRole="button"
-                accessibilityLabel="Skip saving to index"
+                accessibilityLabel={t('match.results.skipA11y')}
               >
-                <Text style={styles.secondaryBtnTxt}>Skip</Text>
+                <Text style={styles.secondaryBtnTxt}>{t('match.results.skip')}</Text>
               </Pressable>
               <Pressable
                 style={[styles.primaryBtn, styles.indexBtnFlex, indexRoundUi === 'saving' && styles.btnBusy]}
                 disabled={indexRoundUi === 'saving'}
                 onPress={() => void onSaveToIndex()}
                 accessibilityRole="button"
-                accessibilityLabel="Save to index"
+                accessibilityLabel={t('match.results.saveToIndexA11y')}
               >
                 {indexRoundUi === 'saving' ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
-                  <Text style={styles.primaryBtnTxt}>Save to index</Text>
+                  <Text style={styles.primaryBtnTxt}>{t('match.results.saveToIndex')}</Text>
                 )}
               </Pressable>
             </View>
           </View>
           )
         ) : indexRoundUi === 'saved' ? (
-          <Text style={styles.indexSavedNote}>This match is saved to your SimCap index.</Text>
+          <Text style={styles.indexSavedNote}>{t('match.results.savedNote')}</Text>
         ) : null}
 
-        <Text style={styles.note}>
-          Lower net wins. Course handicaps use each player&apos;s SimCap index and their tee (rating / slope) vs course par,
-          with strokes given on the hardest holes by stroke index — no round-logging difficulty modifier.
-        </Text>
+        <Text style={styles.note}>{t('match.results.note')}</Text>
 
         <Pressable
           style={[styles.primaryBtn, styles.primaryBtnSpaced]}
           onPress={() => router.replace('/(tabs)/groups' as never)}
         >
-          <Text style={styles.primaryBtnTxt}>Back to Social</Text>
+          <Text style={styles.primaryBtnTxt}>{t('match.results.backToSocial')}</Text>
         </Pressable>
       </ScrollView>
     </ContentWidth>

@@ -20,6 +20,7 @@ import { ContentWidth } from '../../src/components/ContentWidth';
 import { GolferPickerModal } from '../../src/components/GolferPickerModal';
 import { SimCapMark } from '../../src/components/SimCapMark';
 import { IconCheckmark } from '../../src/components/SvgUiIcons';
+import { useTranslation } from '../../src/i18n';
 import { PLATFORMS, colors, type PlatformId } from '../../src/lib/constants';
 import { COURSE_SEEDS, courseMatchesSearch, getCourseById, ratingForCourse } from '../../src/lib/courses';
 import type { NetPickerGolfer } from '../../src/lib/netPickerGolfer';
@@ -37,31 +38,19 @@ import {
   difficultyProduct,
   formatHandicapIndexDisplay,
   MULLIGAN_PICKER_OPTS,
-  mulliganDisplayLabel,
   normalizeMulligans,
   type Mulligans,
   type PinDay,
   type PuttingMode,
   type Wind,
 } from '../../src/lib/handicap';
-import { pinDisplayLabel, pinOptionsForPlatform } from '../../src/lib/pinPlacement';
+import { isGsProPlatform, pinOptionsForPlatform } from '../../src/lib/pinPlacement';
 import { useResponsive } from '../../src/lib/responsive';
 import { useAppStore, type GroupMember } from '../../src/store/useAppStore';
+import type { TFunction } from 'i18next';
 
-const PUTTING_OPTS: { key: PuttingMode; label: string }[] = [
-  { key: 'auto_2putt', label: 'Auto 2-putt' },
-  { key: 'gimme_5', label: 'Gimme' },
-  { key: 'putt_all', label: 'Full' },
-];
-
-
-const WIND_OPTS: { key: Wind; label: string }[] = [
-  { key: 'off', label: 'Off' },
-  { key: 'light', label: 'Light' },
-  { key: 'strong', label: 'Strong' },
-];
-
-const MULL_OPTS = MULLIGAN_PICKER_OPTS.map((o) => ({ key: o.key, label: o.dn }));
+const PUTTING_KEYS: PuttingMode[] = ['auto_2putt', 'gimme_5', 'putt_all'];
+const WIND_KEYS: Wind[] = ['off', 'light', 'strong'];
 
 type PlayerSlot =
   | { kind: 'empty' }
@@ -88,6 +77,7 @@ function memberToPickerGolfer(m: GroupMember): NetPickerGolfer {
 }
 
 function giftPhrase(
+  t: TFunction,
   strokes: number,
   giver: string,
   receiver: string,
@@ -95,14 +85,39 @@ function giftPhrase(
   name2: string
 ): string {
   if (strokes === 0) {
-    return `${name1.trim()} & ${name2.trim()} — match from scratch.`;
+    return t('netCalculator.giftScratch', { name1: name1.trim(), name2: name2.trim() });
   }
-  return `${giver} gives ${receiver} ${strokes} stroke${strokes === 1 ? '' : 's'}`;
+  return t('netCalculator.giftStrokes', {
+    count: strokes,
+    giver,
+    receiver,
+  });
+}
+
+function pinLabel(t: TFunction, key: PinDay, platformId: PlatformId): string {
+  if (isGsProPlatform(platformId)) {
+    return t(`log.round.pin.${key}`);
+  }
+  if (key === 'thu') return t('log.round.pin.easy');
+  if (key === 'fri') return t('log.round.pin.medium');
+  if (key === 'sun') return t('log.round.pin.hard');
+  return t(`log.round.pin.${key}`);
+}
+
+function puttingSettingsLabel(t: TFunction, putting: PuttingMode): string {
+  if (putting === 'auto_2putt') return t('analyze.filter.putting.auto2putt');
+  if (putting === 'gimme_5') return t('netCalculator.puttingSettings.gimme_5');
+  return t('netCalculator.puttingSettings.putt_all');
+}
+
+function windSettingsLabel(t: TFunction, wind: Wind): string {
+  return t(`netCalculator.windLabel.${wind}`);
 }
 
 type PickerTarget = 1 | 2 | null;
 
 export default function CrewMatchCalculatorScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const keyboardBottomInset = useKeyboardBottomInset();
@@ -112,7 +127,7 @@ export default function CrewMatchCalculatorScreen() {
     const available = windowHeight - keyboardBottomInset;
     return Math.max(140, available * sheetCap - 120);
   }, [windowHeight, keyboardBottomInset]);
-  const { gutter, isWide } = useResponsive();
+  const { gutter } = useResponsive();
   const { session } = useAuth();
   const groups = useAppStore((s) => s.groups);
   const supabaseOn = isSupabaseConfigured();
@@ -246,7 +261,7 @@ export default function CrewMatchCalculatorScreen() {
     const ph2 = simPlayingHandicap(parsed2, rating, slope, par, putting, pin, wind, mulligans);
     const gift = strokeGiftBetweenPlayers(p1Name, ph1, p2Name, ph2);
     if (!gift) return null;
-    const phrase = giftPhrase(gift.strokes, gift.giverName, gift.receiverName, p1Name, p2Name);
+    const phrase = giftPhrase(t, gift.strokes, gift.giverName, gift.receiverName, p1Name, p2Name);
     const si = strokeIdx.length === 18 ? strokeIdx : strokeIndexForCourse(course);
     const holesSummary = gift.strokes > 0 ? formatHolesStrokeSummary(gift.strokes, si) : '';
     const modifier = difficultyProduct(putting, pin, wind, mulligans);
@@ -273,16 +288,54 @@ export default function CrewMatchCalculatorScreen() {
     wind,
     mulligans,
     strokeIdx,
+    t,
   ]);
 
   const settingsLine = useMemo(() => {
-    const windL = wind === 'off' ? 'No wind' : wind === 'light' ? 'Light wind' : 'Wind';
-    const put =
-      putting === 'auto_2putt' ? 'Auto 2-putt' : putting === 'gimme_5' ? 'Gimme <5ft' : 'Putt everything';
-    const pinL = pinDisplayLabel(pin, platform);
-    const mull = mulliganDisplayLabel(mulligans);
-    return `${platform} · ${put} · ${pinL} · ${windL} · ${mull}`;
-  }, [platform, putting, pin, wind, mulligans]);
+    const windL = windSettingsLabel(t, wind);
+    const put = puttingSettingsLabel(t, putting);
+    const pinL = pinLabel(t, pin, platform);
+    const mull = t(`log.round.mulliganOpts.${normalizeMulligans(mulligans)}.ds`);
+    return t('netCalculator.settingsLine', {
+      platform,
+      putting: put,
+      pin: pinL,
+      wind: windL,
+      mulligans: mull,
+    });
+  }, [platform, putting, pin, wind, mulligans, t]);
+
+  const puttingOpts = useMemo(
+    () =>
+      PUTTING_KEYS.map((key) => ({
+        key,
+        label:
+          key === 'auto_2putt'
+            ? t('analyze.filter.putting.auto2putt')
+            : key === 'gimme_5'
+              ? t('analyze.filter.putting.gimme')
+              : t('analyze.filter.putting.full'),
+      })),
+    [t]
+  );
+
+  const windOpts = useMemo(
+    () =>
+      WIND_KEYS.map((key) => ({
+        key,
+        label: t(`analyze.filter.wind.${key}`),
+      })),
+    [t]
+  );
+
+  const mullOpts = useMemo(
+    () =>
+      MULLIGAN_PICKER_OPTS.map((o) => ({
+        key: o.key,
+        label: t(`log.round.mulliganOpts.${o.key}.dn`),
+      })),
+    [t]
+  );
 
   const excludePickerIds = useMemo(() => {
     if (pickerTarget === 1) {
@@ -329,8 +382,8 @@ export default function CrewMatchCalculatorScreen() {
       if (!m) {
         return (
           <Pressable style={styles.slotEmpty} onPress={open}>
-            <Text style={styles.slotEmptyTitle}>Tap to choose</Text>
-            <Text style={styles.slotEmptyHint}>Player {which}</Text>
+            <Text style={styles.slotEmptyTitle}>{t('netCalculator.tapToChoose')}</Text>
+            <Text style={styles.slotEmptyHint}>{t('netCalculator.playerN', { n: which })}</Text>
           </Pressable>
         );
       }
@@ -361,15 +414,15 @@ export default function CrewMatchCalculatorScreen() {
       <View style={styles.slotEmpty}>
         {which === 2 && selectedGroupHasOpponent ? (
           <Pressable onPress={open}>
-            <Text style={styles.slotEmptyTitle}>Add golfer</Text>
-            <Text style={styles.slotEmptyHint}>Player 2 · Group roster</Text>
+            <Text style={styles.slotEmptyTitle}>{t('netCalculator.addGolfer')}</Text>
+            <Text style={styles.slotEmptyHint}>{t('netCalculator.player2RosterHint')}</Text>
           </Pressable>
         ) : (
           <>
-            <Text style={styles.slotEmptyTitle}>Add members to your group to use this feature</Text>
-            <Text style={styles.slotEmptyHint}>Invite at least one other player in Groups.</Text>
+            <Text style={styles.slotEmptyTitle}>{t('netCalculator.addMembersTitle')}</Text>
+            <Text style={styles.slotEmptyHint}>{t('netCalculator.addMembersHint')}</Text>
             <Pressable style={styles.slotActionBtn} onPress={() => router.push('/(tabs)/groups')}>
-              <Text style={styles.slotActionBtnTxt}>Manage Group</Text>
+              <Text style={styles.slotActionBtnTxt}>{t('netCalculator.manageGroup')}</Text>
             </Pressable>
           </>
         )}
@@ -391,7 +444,7 @@ export default function CrewMatchCalculatorScreen() {
       >
         <View style={styles.playersCard}>
           {rosterUnavailable ? (
-            <Text style={styles.rosterHint}>Select which crew you're playing with</Text>
+            <Text style={styles.rosterHint}>{t('netCalculator.rosterHint')}</Text>
           ) : null}
           <Pressable
             style={[styles.picker, !canOpenGroupPicker && styles.pickerDisabled]}
@@ -399,13 +452,13 @@ export default function CrewMatchCalculatorScreen() {
               if (canOpenGroupPicker) setGroupOpen(true);
             }}
           >
-            <Text style={styles.pickerLbl}>Crew</Text>
+            <Text style={styles.pickerLbl}>{t('netCalculator.crew')}</Text>
             <Text style={styles.pickerVal} numberOfLines={1}>
-              {selectedGroup?.name ?? 'Select'}
+              {selectedGroup?.name ?? t('log.round.select')}
             </Text>
             <Text style={styles.chev}>▾</Text>
           </Pressable>
-          <Text style={styles.fieldLbl}>Player 1</Text>
+          <Text style={styles.fieldLbl}>{t('match.results.player1')}</Text>
           {p1Slot.kind === 'pick' ? (
             <View style={styles.slotCard}>
               <View style={styles.slotAvatar}>
@@ -413,7 +466,7 @@ export default function CrewMatchCalculatorScreen() {
               </View>
               <View style={styles.slotBody}>
                 <Text style={styles.slotName} numberOfLines={1}>
-                  {p1Member?.displayName ?? 'You'}
+                  {p1Member?.displayName ?? t('netCalculator.you')}
                 </Text>
                 <View style={styles.slotMetaRow}>
                   <View style={styles.slotIdxPill}>
@@ -427,23 +480,28 @@ export default function CrewMatchCalculatorScreen() {
             </View>
           ) : (
             <View style={styles.slotEmpty}>
-              <Text style={styles.slotEmptyTitle}>Add members to your group to use this feature</Text>
-              <Text style={styles.slotEmptyHint}>Invite at least one other player in Groups.</Text>
+              <Text style={styles.slotEmptyTitle}>{t('netCalculator.addMembersTitle')}</Text>
+              <Text style={styles.slotEmptyHint}>{t('netCalculator.addMembersHint')}</Text>
               <Pressable style={styles.slotActionBtn} onPress={() => router.push('/(tabs)/groups')}>
-                <Text style={styles.slotActionBtnTxt}>Manage Group</Text>
+                <Text style={styles.slotActionBtnTxt}>{t('netCalculator.manageGroup')}</Text>
               </Pressable>
             </View>
           )}
-          <Text style={[styles.fieldLbl, styles.fieldSp]}>Player 2</Text>
+          <Text style={[styles.fieldLbl, styles.fieldSp]}>{t('match.results.player2')}</Text>
           {renderSlot(2, p2Slot)}
         </View>
 
         {result ? (
           <View style={styles.summaryBlock}>
-            <Text style={styles.metaLine}>{course?.name} · {course?.defaultTee ?? 'Tees'}</Text>
+            <Text style={styles.metaLine}>{course?.name} · {course?.defaultTee ?? t('netCalculator.tees')}</Text>
             <Text style={styles.metaLine}>{settingsLine}</Text>
             <Text style={styles.metaMuted}>
-              Difficulty modifier {result.modifier.toFixed(2)} · Slope {slope} · Rating {rating} · Par {par}
+              {t('netCalculator.difficultyMeta', {
+                modifier: result.modifier.toFixed(2),
+                slope,
+                rating,
+                par,
+              })}
             </Text>
           </View>
         ) : null}
@@ -458,7 +516,7 @@ export default function CrewMatchCalculatorScreen() {
                 <Text style={styles.avName} numberOfLines={2}>
                   {p1Name.trim()}
                 </Text>
-                <Text style={styles.avHcp}>PH {result.ph1}</Text>
+                <Text style={styles.avHcp}>{t('netCalculator.ph', { value: result.ph1 })}</Text>
               </View>
               <View style={styles.resultMid}>
                 <Text style={styles.strokePhrase} numberOfLines={4}>
@@ -477,50 +535,50 @@ export default function CrewMatchCalculatorScreen() {
                 <Text style={styles.avName} numberOfLines={2}>
                   {p2Name.trim()}
                 </Text>
-                <Text style={styles.avHcp}>PH {result.ph2}</Text>
+                <Text style={styles.avHcp}>{t('netCalculator.ph', { value: result.ph2 })}</Text>
               </View>
             </View>
           </View>
         ) : (
           <Text style={[styles.needInput, styles.needInputTop]}>
-            Pick two players, then adjust course and sim settings below to see strokes.
+            {t('netCalculator.needInput')}
           </Text>
         )}
 
         <View style={styles.card}>
-          <Text style={styles.cardSection}>Course & platform</Text>
+          <Text style={styles.cardSection}>{t('netCalculator.courseAndPlatform')}</Text>
           <Pressable style={styles.picker} onPress={() => setCourseOpen(true)}>
-            <Text style={styles.pickerLbl}>Course</Text>
-            <Text style={styles.pickerVal}>{course?.name ?? 'Select'}</Text>
+            <Text style={styles.pickerLbl}>{t('log.round.course')}</Text>
+            <Text style={styles.pickerVal}>{course?.name ?? t('log.round.select')}</Text>
             <Text style={styles.chev}>▾</Text>
           </Pressable>
           <Pressable style={styles.picker} onPress={() => setPlatOpen(true)}>
-            <Text style={styles.pickerLbl}>Platform</Text>
+            <Text style={styles.pickerLbl}>{t('log.round.platformModal')}</Text>
             <Text style={styles.pickerVal}>{platform}</Text>
             <Text style={styles.chev}>▾</Text>
           </Pressable>
 
           {pillRow(
-            'Putting',
-            PUTTING_OPTS.map((o) => ({ key: o.key, label: o.label })),
+            t('analyze.cat.putting'),
+            puttingOpts,
             putting,
             (k) => setPutting(k as PuttingMode)
           )}
           {pillRow(
-            'Pin',
-            pinOpts.map((o) => ({ key: o.key, label: o.label })),
+            t('analyze.cat.pin'),
+            pinOpts.map((o) => ({ key: o.key, label: pinLabel(t, o.key, platform) })),
             pin,
             (k) => setPin(k as PinDay)
           )}
           {pillRow(
-            'Wind',
-            WIND_OPTS.map((o) => ({ key: o.key, label: o.label })),
+            t('analyze.cat.wind'),
+            windOpts,
             wind,
             (k) => setWind(k as Wind)
           )}
           {pillRow(
-            'Mulligans',
-            MULL_OPTS.map((o) => ({ key: o.key, label: o.label })),
+            t('analyze.cat.mulligans'),
+            mullOpts,
             mulligans,
             (k) => setMulligans(k as Mulligans)
           )}
@@ -529,7 +587,7 @@ export default function CrewMatchCalculatorScreen() {
 
       <GolferPickerModal
         visible={pickerTarget != null}
-        title={pickerTarget === 2 ? 'Choose player 2' : 'Choose player 1'}
+        title={pickerTarget === 2 ? t('netCalculator.choosePlayer2') : t('netCalculator.choosePlayer1')}
         golfers={pickerGolfers}
         excludeIds={excludePickerIds}
         onClose={closePicker}
@@ -549,7 +607,7 @@ export default function CrewMatchCalculatorScreen() {
         <View style={styles.modalRoot}>
           <Pressable style={styles.modalBackdropPress} onPress={() => setGroupOpen(false)} />
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.modalTitle}>Crew</Text>
+            <Text style={styles.modalTitle}>{t('netCalculator.crew')}</Text>
             <ScrollView keyboardShouldPersistTaps="handled">
               {groups.map((g) => (
                 <Pressable
@@ -598,12 +656,12 @@ export default function CrewMatchCalculatorScreen() {
               },
             ]}
           >
-            <Text style={styles.modalTitle}>Course</Text>
+            <Text style={styles.modalTitle}>{t('log.round.course')}</Text>
             <TextInput
               style={styles.courseSearchInput}
               value={courseSearchQuery}
               onChangeText={setCourseSearchQuery}
-              placeholder="Search by course name"
+              placeholder={t('log.round.searchCourse')}
               placeholderTextColor={colors.subtle}
               autoCapitalize="none"
               autoCorrect={false}
@@ -618,7 +676,7 @@ export default function CrewMatchCalculatorScreen() {
               style={[styles.courseSearchList, { maxHeight: courseListMaxHeight }]}
             >
               {coursesForPicker.length === 0 ? (
-                <Text style={styles.courseSearchEmpty}>No courses match that search.</Text>
+                <Text style={styles.courseSearchEmpty}>{t('log.round.noCoursesMatch')}</Text>
               ) : (
                 coursesForPicker.map((c) => (
                   <Pressable
@@ -649,7 +707,7 @@ export default function CrewMatchCalculatorScreen() {
         <View style={styles.modalRoot}>
           <Pressable style={styles.modalBackdropPress} onPress={() => setPlatOpen(false)} />
           <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.modalTitle}>Platform</Text>
+            <Text style={styles.modalTitle}>{t('log.round.platformModal')}</Text>
             <ScrollView keyboardShouldPersistTaps="handled">
               {PLATFORMS.map((p) => (
                 <Pressable

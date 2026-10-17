@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/src/auth/AuthContext';
 import { AuthBrandBanner } from '@/src/components/AuthBrandBanner';
 import { OAuthSignInButtons } from '@/src/components/OAuthSignInButtons';
+import { useTranslation } from '@/src/i18n';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 
@@ -35,6 +36,7 @@ const clearAllStorage = async () => {
 };
 
 export default function SignInScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { signIn, resetOnboardingForDev } = useAuth();
@@ -44,14 +46,14 @@ export default function SignInScreen() {
 
   const onSubmit = async () => {
     if (!email.trim() || !password) {
-      showAppAlert('Sign in', 'Enter your email and password.');
+      showAppAlert(t('auth.signIn.alertTitle'), t('auth.signIn.enterEmailPassword'));
       return;
     }
     setBusy(true);
     const { error } = await signIn(email, password);
     setBusy(false);
     if (error) {
-      showAppAlert('Sign in', error);
+      showAppAlert(t('auth.signIn.alertTitle'), error);
       return;
     }
     router.replace('/');
@@ -76,42 +78,42 @@ export default function SignInScreen() {
         <AuthBrandBanner />
 
         <View style={styles.signUpPrompt}>
-          <Text style={styles.signUpPromptText}>New here? </Text>
+          <Text style={styles.signUpPromptText}>{t('auth.signIn.newHere')}</Text>
           <Link href="/(auth)/sign-up" asChild>
             <Pressable accessibilityRole="link" hitSlop={8} style={({ pressed }) => [pressed && styles.signUpLinkPressed]}>
-              <Text style={styles.signUpLink}>Create an account</Text>
+              <Text style={styles.signUpLink}>{t('auth.signIn.createAccountLink')}</Text>
             </Pressable>
           </Link>
         </View>
 
-        <Text style={styles.sectionTitle}>Sign in to your account</Text>
+        <Text style={styles.sectionTitle}>{t('auth.signIn.title')}</Text>
 
-        <OAuthSignInButtons dividerLabel="or use email" />
+        <OAuthSignInButtons dividerLabel={t('auth.signIn.orUseEmail')} />
 
-        <Text style={styles.lbl}>Email</Text>
+        <Text style={styles.lbl}>{t('common.email')}</Text>
         <TextInput
           style={styles.input}
           value={email}
           onChangeText={setEmail}
-          placeholder="you@example.com"
+          placeholder={t('common.emailPlaceholder')}
           placeholderTextColor={colors.subtle}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
           textContentType="emailAddress"
-          accessibilityLabel="Email"
+          accessibilityLabel={t('common.email')}
         />
 
-        <Text style={styles.lbl}>Password</Text>
+        <Text style={styles.lbl}>{t('common.password')}</Text>
         <TextInput
           style={styles.input}
           value={password}
           onChangeText={setPassword}
-          placeholder="Password"
+          placeholder={t('auth.signIn.passwordPlaceholder')}
           placeholderTextColor={colors.subtle}
           secureTextEntry
           textContentType="password"
-          accessibilityLabel="Password"
+          accessibilityLabel={t('common.password')}
         />
 
         <Pressable
@@ -122,14 +124,14 @@ export default function SignInScreen() {
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.primaryTxt}>Sign in</Text>
+            <Text style={styles.primaryTxt}>{t('common.signIn')}</Text>
           )}
         </Pressable>
 
         <View style={styles.forgotRow}>
           <Link href={'/(auth)/forgot-password' as Href} asChild>
             <Pressable accessibilityRole="link" hitSlop={8} style={({ pressed }) => [pressed && styles.forgotLinkPressed]}>
-              <Text style={styles.forgotLink}>Forgot password?</Text>
+              <Text style={styles.forgotLink}>{t('auth.signIn.forgotPassword')}</Text>
             </Pressable>
           </Link>
         </View>

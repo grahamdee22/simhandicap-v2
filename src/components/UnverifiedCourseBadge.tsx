@@ -1,6 +1,6 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
-import { communityCourseAttributionLabel } from '../lib/communityEnrichment';
 
 type Props = {
   compact?: boolean;
@@ -18,10 +18,13 @@ export function UnverifiedCourseBadge({
   source,
   confident,
 }: Props) {
+  const { t } = useTranslation();
   const label =
     source === 'curated' && confident === false
-      ? 'Estimated rating'
-      : communityCourseAttributionLabel(enrichmentTier, enrichmentSource);
+      ? t('course.badge.estimatedRating')
+      : enrichmentTier === 3 || enrichmentSource === 'gspro_difficulty'
+        ? t('course.badge.slopeByGspro')
+        : t('course.badge.estimated');
 
   return (
     <View style={[styles.badge, compact && styles.badgeCompact]}>

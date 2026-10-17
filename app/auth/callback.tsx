@@ -2,6 +2,7 @@ import * as Linking from 'expo-linking';
 import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '@/src/i18n';
 import { colors } from '@/src/lib/constants';
 import {
   parseOAuthCallbackUrl,
@@ -15,6 +16,7 @@ function firstParam(v: string | string[] | undefined): string | undefined {
 }
 
 export default function AuthOAuthCallbackScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const params = useLocalSearchParams<{
     code?: string | string[];
@@ -32,7 +34,7 @@ export default function AuthOAuthCallbackScreen() {
       if (!href || finished.current || inFlight.current) return;
       if (!isSupabaseConfigured() || !supabase) {
         finished.current = true;
-        setMessage('Supabase is not configured.');
+        setMessage(t('auth.callback.supabaseNotConfigured'));
         return;
       }
       const client = supabase;
@@ -117,14 +119,14 @@ export default function AuthOAuthCallbackScreen() {
         router.replace('/(auth)/onboarding' as Href);
       }
     },
-    [params.code, params.error, params.error_description, router]
+    [params.code, params.error, params.error_description, router, t]
   );
 
   useEffect(() => {
     if (finished.current) return;
     if (!isSupabaseConfigured() || !supabase) {
       finished.current = true;
-      setMessage('Supabase is not configured.');
+      setMessage(t('auth.callback.supabaseNotConfigured'));
       return;
     }
 
@@ -160,7 +162,7 @@ export default function AuthOAuthCallbackScreen() {
       const hasImplicitTokens = !!(implicit?.access_token && implicit?.refresh_token);
       if (href && !code && !err && !hasImplicitTokens) {
         finished.current = true;
-        setMessage('Missing authorization code.');
+        setMessage(t('auth.callback.missingCode'));
       }
     };
 
@@ -175,21 +177,21 @@ export default function AuthOAuthCallbackScreen() {
       alive = false;
       sub.remove();
     };
-  }, [params.code, params.error, params.error_description, tryConsumeOAuthUrl]);
+  }, [params.code, params.error, params.error_description, t, tryConsumeOAuthUrl]);
 
   return (
     <View style={styles.wrap}>
       {message ? (
         <>
-          <Text style={styles.title}>Sign in</Text>
+          <Text style={styles.title}>{t('auth.callback.title')}</Text>
           <Text style={styles.body}>{message}</Text>
           <Pressable onPress={() => router.replace('/(auth)/sign-in')} style={styles.btn}>
-            <Text style={styles.btnTxt}>Back to sign in</Text>
+            <Text style={styles.btnTxt}>{t('auth.callback.backToSignIn')}</Text>
           </Pressable>
         </>
       ) : (
         <>
-          <Text style={styles.title}>Signing you in…</Text>
+          <Text style={styles.title}>{t('auth.callback.signingIn')}</Text>
           <ActivityIndicator size="large" color={colors.header} style={styles.spinner} />
         </>
       )}

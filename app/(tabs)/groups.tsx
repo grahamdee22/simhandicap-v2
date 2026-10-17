@@ -23,6 +23,7 @@ import { PendingTournamentHolesBanner } from '../../src/components/PendingTourna
 import { GroupTournamentsSection } from '../../src/components/GroupTournamentsSection';
 import { MatchPlayHub } from '../../src/components/MatchPlayHub';
 import { IconPlus } from '../../src/components/SvgUiIcons';
+import { useTranslation } from '../../src/i18n';
 import { confirmDestructive, showAppAlert } from '../../src/lib/alertCompat';
 import { colors } from '../../src/lib/constants';
 import { socialPageSectionTitleStyles } from '../../src/lib/socialPageSectionTitle';
@@ -47,39 +48,38 @@ import {
 import { googleOAuthAccessToken } from '../../src/lib/googleOAuthAccessToken';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 import { useAppStore, type GroupMember } from '../../src/store/useAppStore';
+import type { TFunction } from 'i18next';
 
 const APP_INVITE_URL = 'https://simhandicap-v2.vercel.app';
 
-const SOCIAL_SECTION_INFO_COPY: Record<
+function socialSectionInfoCopy(t: TFunction): Record<
   'match' | 'groups' | 'net' | 'tournaments',
   { title: string; body: string }
-> = {
-  match: {
-    title: 'Match Play',
-    body:
-      'Challenge any SimCap golfer to a head-to-head stroke play match from any simulator, anywhere. Net scores are calculated from your SimCap index and your tee.',
-  },
-  groups: {
-    title: 'My Groups',
-    body:
-      'Groups let you track handicaps and compete with your regular sim crew. Invite friends to see how your indexes compare.',
-  },
-  tournaments: {
-    title: 'Tournaments',
-    body:
-      'Run a tournament for your crew. The group creator or admins can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards. Want to tie several tournaments together into one points race? Start a season — it tracks placement points across every tournament in it, with its own standings.',
-  },
-  net: {
-    title: 'Crew Match Calculator',
-    body:
-      "Playing an in-person sim match with your crew? Calculate who gets strokes based on each player's SimCap index, course, and sim settings.",
-  },
-};
+> {
+  return {
+    match: {
+      title: t('groups.section.match.title'),
+      body: t('groups.section.match.body'),
+    },
+    groups: {
+      title: t('groups.section.groups.title'),
+      body: t('groups.section.groups.body'),
+    },
+    tournaments: {
+      title: t('groups.section.tournaments.title'),
+      body: t('groups.section.tournaments.body'),
+    },
+    net: {
+      title: t('groups.section.net.title'),
+      body: t('groups.section.net.body'),
+    },
+  };
+}
 
-function openMailtoSimCapInvite(email: string, inviterName: string) {
-  const who = inviterName.trim() || 'A friend';
-  const body = `${who} invited you to join their SimCap group. SimCap tracks your simulator golf handicap — sign up free at ${APP_INVITE_URL} and you'll be added to the group automatically.`;
-  const subject = 'Join SimCap';
+function openMailtoSimCapInvite(email: string, inviterName: string, t: TFunction) {
+  const who = inviterName.trim() || t('groups.invite.aFriend');
+  const body = t('groups.invite.mailtoBody', { who, url: APP_INVITE_URL });
+  const subject = t('groups.invite.mailtoSubject');
   const url = `mailto:${encodeURIComponent(email)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   void Linking.openURL(url);
 }
@@ -97,10 +97,10 @@ function avatarStyle(i: number) {
   return { backgroundColor: bg, color: fg as string };
 }
 
-function trendLabel(t: GroupMember['trend']): { text: string; style: object } {
-  if (t === 'down') return { text: '↓ improving', style: styles.trendUp };
-  if (t === 'up') return { text: '↑ needs work', style: styles.trendDn };
-  return { text: '→ steady', style: styles.trendFl };
+function trendLabel(trend: GroupMember['trend'], t: TFunction): { text: string; style: object } {
+  if (trend === 'down') return { text: t('groups.trend.improving'), style: styles.trendUp };
+  if (trend === 'up') return { text: t('groups.trend.needsWork'), style: styles.trendDn };
+  return { text: t('groups.trend.steady'), style: styles.trendFl };
 }
 
 function indexSortKey(m: GroupMember): number {
@@ -108,12 +108,14 @@ function indexSortKey(m: GroupMember): number {
 }
 
 export default function GroupsScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const navigation = useNavigation();
   const { user, session } = useAuth();
   const { gutter } = useResponsive();
   const insets = useSafeAreaInsets();
   const supabaseOn = isSupabaseConfigured();
+  const sectionInfoCopy = socialSectionInfoCopy(t);
 
   const groups = useAppStore((s) => s.groups);
   const inboundGroupInvites = useAppStore((s) => s.inboundGroupInvites);
@@ -236,10 +238,10 @@ export default function GroupsScreen() {
             showsVerticalScrollIndicator={false}
           >
             <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
-              <Text style={styles.modalTitle}>New group</Text>
+              <Text style={styles.modalTitle}>{t('groups.newGroup.title')}</Text>
               <TextInput
                 style={styles.modalInput}
-                placeholder="Group name"
+                placeholder={t('groups.newGroup.namePlaceholder')}
                 placeholderTextColor={colors.subtle}
                 value={newName}
                 onChangeText={setNewName}
@@ -248,7 +250,7 @@ export default function GroupsScreen() {
               />
               <View style={styles.modalActions}>
                 <Pressable onPress={() => !createBusy && setCreateOpen(false)} style={styles.modalBtn}>
-                  <Text style={styles.modalBtnTxt}>Cancel</Text>
+                  <Text style={styles.modalBtnTxt}>{t('common.cancel')}</Text>
                 </Pressable>
                 <Pressable
                   onPress={() => void submitCreate()}
@@ -258,7 +260,7 @@ export default function GroupsScreen() {
                   {createBusy ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Create</Text>
+                    <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>{t('groups.newGroup.create')}</Text>
                   )}
                 </Pressable>
               </View>
@@ -272,7 +274,7 @@ export default function GroupsScreen() {
   const submitCreate = async () => {
     const n = newName.trim();
     if (!n) {
-      showAppAlert('New group', 'Enter a group name.');
+      showAppAlert(t('groups.newGroup.title'), t('groups.newGroup.enterName'));
       return;
     }
     if (supabaseOn) {
@@ -282,7 +284,7 @@ export default function GroupsScreen() {
           googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
         const res = await createSocialGroup(n, accessToken);
         if ('error' in res) {
-          showAppAlert('Create group', res.error);
+          showAppAlert(t('groups.createGroup.alertTitle'), res.error);
           return;
         }
         setNewName('');
@@ -297,14 +299,14 @@ export default function GroupsScreen() {
             else setTab(Math.max(0, ng.length - 1));
           } catch (e) {
             console.warn('[groups] refresh after create', e);
-            showAppAlert(
-              'Group created',
-              'Your group was saved. Pull to refresh or revisit this tab if it does not appear yet.'
-            );
+            showAppAlert(t('groups.createGroup.createdTitle'), t('groups.createGroup.createdBody'));
           }
         })();
       } catch (e) {
-        showAppAlert('Create group', e instanceof Error ? e.message : 'Something went wrong');
+        showAppAlert(
+          t('groups.createGroup.alertTitle'),
+          e instanceof Error ? e.message : t('common.somethingWentWrong')
+        );
       } finally {
         setCreateBusy(false);
       }
@@ -357,7 +359,7 @@ export default function GroupsScreen() {
     if (!g) return;
     const email = inviteEmail.trim();
     if (!emailLooksValid(email)) {
-      showAppAlert('Check email', 'Enter a valid email address.');
+      showAppAlert(t('groups.invite.checkEmailTitle'), t('groups.invite.checkEmailBody'));
       return;
     }
     if (supabaseOn) {
@@ -365,18 +367,18 @@ export default function GroupsScreen() {
       const { error, result } = await sendGroupInvite(g.id, email, googleOAuthAccessToken ?? undefined);
       setInviteBusy(false);
       if (error) {
-        showAppAlert('Invite', error);
+        showAppAlert(t('groups.invite.alertTitle'), error);
         return;
       }
       if (result?.kind === 'already_member') {
-        showAppAlert('Already in crew', `${email} is already a member of this group.`);
+        showAppAlert(t('groups.invite.alreadyMemberTitle'), t('groups.invite.alreadyMemberBody', { email }));
         return;
       }
       if (result?.kind === 'in_app') {
         const detail = result.duplicate
-          ? `${email} already has a pending invite from this crew.`
-          : `They will see it at the top of the Social tab with Accept and Decline.`;
-        setInviteSuccessDetail(`Invite sent to ${email}.\n\n${detail}`);
+          ? t('groups.invite.pendingDuplicate', { email })
+          : t('groups.invite.inAppDetail');
+        setInviteSuccessDetail(t('groups.invite.sentDetail', { email, detail }));
         if (!result.duplicate) {
           await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
           recomputeGroupsFromYou();
@@ -386,24 +388,21 @@ export default function GroupsScreen() {
       }
       if (result?.kind === 'email') {
         const detail = result.duplicate
-          ? `We already have an open email invite for that address.`
-          : `Your email app should open with a signup message. They can join at ${APP_INVITE_URL}.`;
+          ? t('groups.invite.emailDuplicate')
+          : t('groups.invite.emailDetail', { url: APP_INVITE_URL });
         if (!result.duplicate) {
-          openMailtoSimCapInvite(email, displayName);
+          openMailtoSimCapInvite(email, displayName, t);
           await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
           recomputeGroupsFromYou();
         }
-        setInviteSuccessDetail(`Invite sent to ${email}.\n\n${detail}`);
+        setInviteSuccessDetail(t('groups.invite.sentDetail', { email, detail }));
         setInvitePhase('success');
         return;
       }
-      showAppAlert('Invite', 'Something went wrong.');
+      showAppAlert(t('groups.invite.alertTitle'), t('common.somethingWentWrong'));
       return;
     }
-    showAppAlert(
-      'Invite',
-      `Sign in with Supabase to send invites. (Offline mode: no server.)`
-    );
+    showAppAlert(t('groups.invite.alertTitle'), t('groups.invite.offline'));
     closeInvite();
   };
 
@@ -411,14 +410,11 @@ export default function GroupsScreen() {
     if (!g) return;
     const { valid, invalid } = parseBulkInviteEmails(bulkInviteText);
     if (valid.length === 0 && invalid.length === 0) {
-      showAppAlert('Bulk invite', 'Enter at least one email address.');
+      showAppAlert(t('groups.bulk.title'), t('groups.bulk.enterOne'));
       return;
     }
     if (!supabaseOn) {
-      showAppAlert(
-        'Bulk invite',
-        'Sign in with Supabase to send invites. (Offline mode: no server.)'
-      );
+      showAppAlert(t('groups.bulk.title'), t('groups.invite.offline'));
       closeBulkInvite();
       return;
     }
@@ -432,7 +428,7 @@ export default function GroupsScreen() {
     const invalidItems = invalid.map((email) => ({
       email,
       ok: false as const,
-      reason: 'Invalid email address',
+      reason: t('groups.bulk.invalidEmail'),
     }));
     const combined: SendBulkGroupInvitesResult = {
       items: [...apiResult.items, ...invalidItems],
@@ -456,7 +452,7 @@ export default function GroupsScreen() {
     const { error } = await respondToGroupInvite(inv.id, true, googleOAuthAccessToken ?? undefined);
     setInboundBusy(false);
     if (error) {
-      showAppAlert('Accept invite', error);
+      showAppAlert(t('groups.inbound.acceptTitle'), error);
       return;
     }
     await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
@@ -465,7 +461,7 @@ export default function GroupsScreen() {
     const ng = useAppStore.getState().groups;
     const gi = ng.findIndex((gr) => gr.id === inv.groupId);
     if (gi >= 0) setTab(gi);
-    showAppAlert('Welcome', "You've joined the crew.");
+    showAppAlert(t('groups.inbound.welcomeTitle'), t('groups.inbound.welcomeBody'));
   };
 
   const onDeclineInboundInvite = async (inviteId: string) => {
@@ -473,7 +469,7 @@ export default function GroupsScreen() {
     const { error } = await respondToGroupInvite(inviteId, false, googleOAuthAccessToken ?? undefined);
     setInboundBusy(false);
     if (error) {
-      showAppAlert('Decline invite', error);
+      showAppAlert(t('groups.inbound.declineTitle'), error);
       return;
     }
     await fetchInboundGroupInvitesIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
@@ -482,7 +478,7 @@ export default function GroupsScreen() {
   const onCancelOutboundInvite = async (kind: 'in_app' | 'email', id: string) => {
     const { error } = await cancelOutboundGroupInvite(kind, id, googleOAuthAccessToken ?? undefined);
     if (error) {
-      showAppAlert('Cancel invite', error);
+      showAppAlert(t('groups.cancelInviteTitle'), error);
       return;
     }
     await fetchMySocialGroupsIntoStore(user?.id, googleOAuthAccessToken ?? undefined);
@@ -549,7 +545,7 @@ export default function GroupsScreen() {
     );
     setAdminBusyUserId(null);
     if (res.error) {
-      showAppAlert('Admin role', res.error);
+      showAppAlert(t('groups.admin.roleTitle'), res.error);
       return;
     }
     patchGroupMemberAdminInStore(g.id, memberUserId, makeAdmin);
@@ -558,9 +554,9 @@ export default function GroupsScreen() {
   const onDeleteGroup = async () => {
     if (!g?.id || !isGroupCreator) return;
     const ok = await confirmDestructive(
-      'Delete this group?',
-      'This cannot be undone. All members, invites, and head-to-head history for this crew will be removed.',
-      'Delete group'
+      t('groups.delete.confirmTitle'),
+      t('groups.delete.confirmBody'),
+      t('groups.delete.confirmAction')
     );
     if (!ok) return;
     const deletedId = g.id;
@@ -575,7 +571,7 @@ export default function GroupsScreen() {
           setTimeout(
             () =>
               resolve({
-                error: `Delete request timed out after ${DELETE_MS / 1000}s. Check your connection; you can try again or sign out.`,
+                error: t('groups.delete.timeout', { seconds: DELETE_MS / 1000 }),
               }),
             DELETE_MS
           )
@@ -583,7 +579,7 @@ export default function GroupsScreen() {
       ]);
       if ('error' in res) {
         console.warn('[groups] onDeleteGroup:failed', res.error);
-        showAppAlert('Delete group', res.error);
+        showAppAlert(t('groups.delete.alertTitle'), res.error);
         return;
       }
       console.warn('[groups] onDeleteGroup:server_ok, updating store');
@@ -600,7 +596,10 @@ export default function GroupsScreen() {
       setTab(Math.max(0, nextTab));
     } catch (e) {
       console.warn('[groups] onDeleteGroup:throw', e instanceof Error ? e.message : e);
-      showAppAlert('Delete group', e instanceof Error ? e.message : 'Something went wrong.');
+      showAppAlert(
+        t('groups.delete.alertTitle'),
+        e instanceof Error ? e.message : t('common.somethingWentWrong')
+      );
     } finally {
       setDeleteGroupBusy(false);
       console.warn('[groups] onDeleteGroup:finally');
@@ -613,7 +612,7 @@ export default function GroupsScreen() {
           <View key={inv.id} style={styles.inboundCard}>
             <Text style={styles.inboundText}>
               <Text style={styles.inboundStrong}>{inv.inviterName}</Text>
-              {` invited you to join `}
+              {t('groups.inbound.invitedJoin')}
               <Text style={styles.inboundStrong}>{inv.groupName}</Text>
             </Text>
             <View style={styles.inboundActions}>
@@ -622,14 +621,14 @@ export default function GroupsScreen() {
                 disabled={inboundBusy}
                 style={[styles.inboundBtn, styles.inboundBtnAccept, inboundBusy && styles.modalBtnDisabled]}
               >
-                <Text style={styles.inboundBtnAcceptTxt}>Accept</Text>
+                <Text style={styles.inboundBtnAcceptTxt}>{t('groups.inbound.accept')}</Text>
               </Pressable>
               <Pressable
                 onPress={() => void onDeclineInboundInvite(inv.id)}
                 disabled={inboundBusy}
                 style={[styles.inboundBtn, styles.inboundBtnDecline, inboundBusy && styles.modalBtnDisabled]}
               >
-                <Text style={styles.inboundBtnDeclineTxt}>Decline</Text>
+                <Text style={styles.inboundBtnDeclineTxt}>{t('groups.inbound.decline')}</Text>
               </Pressable>
             </View>
           </View>
@@ -652,25 +651,24 @@ export default function GroupsScreen() {
               <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
                 <View style={styles.sectionHeaderRow}>
                   <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
-                    My Groups
+                    {t('groups.myGroups')}
                   </Text>
                   <Pressable
                     style={styles.infoBtn}
                     onPress={() => setSocialSectionInfo('groups')}
                     hitSlop={6}
                     accessibilityRole="button"
-                    accessibilityLabel="About My Groups"
+                    accessibilityLabel={t('groups.aboutMyGroupsA11y')}
                   >
                     <Text style={styles.infoBtnTxt}>ⓘ</Text>
                   </Pressable>
                 </View>
               </View>
               <Text style={[styles.emptyLead, { marginHorizontal: gutter }]}>
-                Crews you create or join show up here. Each tab is a group — with a live leaderboard and invites.
+                {t('groups.emptyLead')}
               </Text>
               <Text style={[styles.emptyMuted, { marginHorizontal: gutter }]}>
-                You don’t have any groups yet. Create one to get started, then invite friends from the Social tab once
-                they’re on SimHandicap.
+                {t('groups.emptyMuted')}
               </Text>
               {listRefreshing ? (
                 <View style={[styles.inlineLoader, { marginHorizontal: gutter }]}>
@@ -679,7 +677,7 @@ export default function GroupsScreen() {
               ) : null}
               <Pressable style={[styles.emptyCta, { marginHorizontal: gutter }]} onPress={onCreate}>
                 <IconPlus size={18} color="#fff" />
-                <Text style={styles.emptyCtaTxt}>Create your first group</Text>
+                <Text style={styles.emptyCtaTxt}>{t('groups.createFirstGroup')}</Text>
               </Pressable>
               <View style={styles.socialMatchPlaySection}>
                 <MatchPlayHub
@@ -706,8 +704,8 @@ export default function GroupsScreen() {
                 <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
                   {socialSectionInfo != null ? (
                     <>
-                      <Text style={styles.infoExplainTitle}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].title}</Text>
-                      <Text style={styles.infoExplainBody}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].body}</Text>
+                      <Text style={styles.infoExplainTitle}>{sectionInfoCopy[socialSectionInfo].title}</Text>
+                      <Text style={styles.infoExplainBody}>{sectionInfoCopy[socialSectionInfo].body}</Text>
                     </>
                   ) : null}
                 </View>
@@ -736,14 +734,14 @@ export default function GroupsScreen() {
             <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter }]}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
-                  My Groups
+                  {t('groups.myGroups')}
                 </Text>
                 <Pressable
                   style={styles.infoBtn}
                   onPress={() => setSocialSectionInfo('groups')}
                   hitSlop={6}
                   accessibilityRole="button"
-                  accessibilityLabel="About My Groups"
+                  accessibilityLabel={t('groups.aboutMyGroupsA11y')}
                 >
                   <Text style={styles.infoBtnTxt}>ⓘ</Text>
                 </Pressable>
@@ -771,9 +769,9 @@ export default function GroupsScreen() {
               ]}
               onPress={onCreate}
               accessibilityRole="button"
-              accessibilityLabel="Create a new group"
+              accessibilityLabel={t('groups.createNewGroupA11y')}
             >
-              <Text style={styles.createGroupBtnTxt}>Create a New Group</Text>
+              <Text style={styles.createGroupBtnTxt}>{t('groups.createNewGroup')}</Text>
             </Pressable>
 
             <View style={[styles.card, { marginHorizontal: gutter }]}>
@@ -786,24 +784,24 @@ export default function GroupsScreen() {
                   <Pressable
                     onPress={() => router.push(`/(tabs)/group-chat/${g.id}` as never)}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open chat for ${g.name}`}
+                    accessibilityLabel={t('groups.chatA11y', { name: g.name })}
                   >
-                    <Text style={styles.invite}>Chat</Text>
+                    <Text style={styles.invite}>{t('groups.chat')}</Text>
                   </Pressable>
                   <Pressable
                     onPress={openInvite}
                     accessibilityRole="button"
-                    accessibilityLabel={`Invite someone to ${g.name}`}
+                    accessibilityLabel={t('groups.invite.inviteA11y', { name: g.name })}
                   >
-                    <Text style={styles.invite}>+ Invite</Text>
+                    <Text style={styles.invite}>{t('groups.invite.plusInvite')}</Text>
                   </Pressable>
                   {isGroupManager ? (
                     <Pressable
                       onPress={openBulkInvite}
                       accessibilityRole="button"
-                      accessibilityLabel={`Bulk invite members to ${g.name}`}
+                      accessibilityLabel={t('groups.invite.bulkA11y', { name: g.name })}
                     >
-                      <Text style={styles.invite}>Bulk Invite</Text>
+                      <Text style={styles.invite}>{t('groups.invite.bulkLabel')}</Text>
                     </Pressable>
                   ) : null}
                   {isGroupCreator ? (
@@ -813,7 +811,7 @@ export default function GroupsScreen() {
                       style={({ pressed }) => [styles.groupDeleteBtn, pressed && styles.groupDeleteBtnPressed]}
                       hitSlop={10}
                       accessibilityRole="button"
-                      accessibilityLabel={`Delete ${g.name}`}
+                      accessibilityLabel={t('groups.delete.a11y', { name: g.name })}
                     >
                       {deleteGroupBusy ? (
                         <ActivityIndicator size="small" color={colors.subtle} />
@@ -826,12 +824,12 @@ export default function GroupsScreen() {
               </View>
               {!hasMemberOrPending ? (
                 <Text style={[styles.membersEmpty, { paddingHorizontal: 12, paddingVertical: 14 }]}>
-                  No members in this crew yet. Invited friends will appear here after they join.
+                  {t('groups.membersEmpty')}
                 </Text>
               ) : (
                 <>
                   {ranked.map((m, rank) => {
-                    const tr = trendLabel(m.trend);
+                    const tr = trendLabel(m.trend, t);
                     const av = avatarStyle(rank);
                     return (
                       <View key={m.id} style={[styles.lbRow, m.isYou && styles.lbRowMe]}>
@@ -854,13 +852,13 @@ export default function GroupsScreen() {
                               {m.displayName}
                             </Text>
                             {memberIsCreator(m.userId) ? (
-                              <Text style={styles.creatorBadge}>Creator</Text>
+                              <Text style={styles.creatorBadge}>{t('groups.creatorBadge')}</Text>
                             ) : m.isAdmin ? (
-                              <Text style={styles.adminBadge}>Admin</Text>
+                              <Text style={styles.adminBadge}>{t('groups.admin.badge')}</Text>
                             ) : null}
                           </View>
                           <Text style={styles.lbSub} numberOfLines={1}>
-                            {m.roundsLogged} rounds · {m.platform}
+                            {t('groups.roundsPlatform', { count: m.roundsLogged, platform: m.platform })}
                           </Text>
                         </View>
                         <View style={styles.lbRight}>
@@ -879,8 +877,8 @@ export default function GroupsScreen() {
                                 {adminBusyUserId === m.userId
                                   ? '…'
                                   : m.isAdmin
-                                    ? 'Remove admin'
-                                    : 'Make admin'}
+                                    ? t('groups.admin.remove')
+                                    : t('groups.admin.make')}
                               </Text>
                             </Pressable>
                           ) : null}
@@ -899,7 +897,7 @@ export default function GroupsScreen() {
                           {p.label}
                         </Text>
                         <Text style={styles.lbSub} numberOfLines={1}>
-                          Pending invite
+                          {t('groups.pendingInvite')}
                         </Text>
                       </View>
                       {isGroupManager ? (
@@ -908,11 +906,11 @@ export default function GroupsScreen() {
                           hitSlop={8}
                           style={styles.cancelInvitePress}
                         >
-                          <Text style={styles.cancelInviteTxt}>Cancel</Text>
+                          <Text style={styles.cancelInviteTxt}>{t('common.cancel')}</Text>
                         </Pressable>
                       ) : (
                         <View style={styles.lbRight}>
-                          <Text style={styles.pendingBadge}>Pending</Text>
+                          <Text style={styles.pendingBadge}>{t('groups.pendingBadge')}</Text>
                         </View>
                       )}
                     </View>
@@ -928,7 +926,7 @@ export default function GroupsScreen() {
                           {p.email}
                         </Text>
                         <Text style={styles.lbSub} numberOfLines={1}>
-                          Pending · email invite
+                          {t('groups.pendingEmailInvite')}
                         </Text>
                       </View>
                       {isGroupManager ? (
@@ -937,11 +935,11 @@ export default function GroupsScreen() {
                           hitSlop={8}
                           style={styles.cancelInvitePress}
                         >
-                          <Text style={styles.cancelInviteTxt}>Cancel</Text>
+                          <Text style={styles.cancelInviteTxt}>{t('common.cancel')}</Text>
                         </Pressable>
                       ) : (
                         <View style={styles.lbRight}>
-                          <Text style={styles.pendingBadge}>Pending</Text>
+                          <Text style={styles.pendingBadge}>{t('groups.pendingBadge')}</Text>
                         </View>
                       )}
                     </View>
@@ -974,14 +972,14 @@ export default function GroupsScreen() {
             <View style={[styles.myGroupsHeader, { paddingHorizontal: gutter, marginTop: 16 }]}>
               <View style={styles.sectionHeaderRow}>
                 <Text style={socialPageSectionTitleStyles.text} accessibilityRole="header">
-                  Crew Match Calculator
+                  {t('groups.section.net.title')}
                 </Text>
                 <Pressable
                   style={styles.infoBtn}
                   onPress={() => setSocialSectionInfo('net')}
                   hitSlop={6}
                   accessibilityRole="button"
-                  accessibilityLabel="About Crew Match Calculator"
+                  accessibilityLabel={t('groups.net.aboutA11y')}
                 >
                   <Text style={styles.infoBtnTxt}>ⓘ</Text>
                 </Pressable>
@@ -991,14 +989,11 @@ export default function GroupsScreen() {
               style={[styles.netCalcCard, { marginHorizontal: gutter }]}
               onPress={() => router.push('/(tabs)/net-calculator')}
               accessibilityRole="button"
-              accessibilityLabel="Open Crew Match Calculator"
+              accessibilityLabel={t('groups.net.openA11y')}
             >
               <View style={styles.netCalcCardInner}>
                 <View style={styles.netCalcCardTextCol}>
-                  <Text style={styles.netCalcCardDesc}>
-                    Playing an in-person sim match with your crew? Calculate who gets strokes from each player&apos;s
-                    SimCap index, course, and sim settings.
-                  </Text>
+                  <Text style={styles.netCalcCardDesc}>{t('groups.net.cardDesc')}</Text>
                 </View>
                 <Text style={styles.netCalcChev} accessible={false}>
                   ›
@@ -1025,15 +1020,15 @@ export default function GroupsScreen() {
                   <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
                     {invitePhase === 'form' ? (
                       <>
-                        <Text style={styles.modalTitle}>Invite to group</Text>
+                        <Text style={styles.modalTitle}>{t('groups.invite.modalTitle')}</Text>
                         <Text style={styles.modalSub}>
-                          If they already use SimCap, they’ll get an in-app invite. Otherwise we’ll record the invite and open
-                          your email app with a signup message for{' '}
-                          <Text style={styles.modalSubStrong}>{g.name}</Text>.
+                          {t('groups.invite.modalSubBefore')}
+                          <Text style={styles.modalSubStrong}>{g.name}</Text>
+                          {t('groups.invite.modalSubAfter')}
                         </Text>
                         <TextInput
                           style={styles.modalInput}
-                          placeholder="Email address"
+                          placeholder={t('groups.invite.emailPlaceholder')}
                           placeholderTextColor={colors.subtle}
                           value={inviteEmail}
                           onChangeText={setInviteEmail}
@@ -1046,7 +1041,7 @@ export default function GroupsScreen() {
                         />
                         <View style={styles.modalActions}>
                           <Pressable onPress={() => !inviteBusy && closeInvite()} style={styles.modalBtn}>
-                            <Text style={styles.modalBtnTxt}>Cancel</Text>
+                            <Text style={styles.modalBtnTxt}>{t('common.cancel')}</Text>
                           </Pressable>
                           <Pressable
                             onPress={() => void submitInvite()}
@@ -1056,14 +1051,14 @@ export default function GroupsScreen() {
                             {inviteBusy ? (
                               <ActivityIndicator color="#fff" />
                             ) : (
-                              <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Send invite</Text>
+                              <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>{t('groups.invite.send')}</Text>
                             )}
                           </Pressable>
                         </View>
                       </>
                     ) : (
                       <>
-                        <Text style={styles.modalTitle}>Invite sent</Text>
+                        <Text style={styles.modalTitle}>{t('groups.invite.sentTitle')}</Text>
                         <Text style={styles.modalSuccessBody}>{inviteSuccessDetail}</Text>
                         <View style={styles.modalActionsCol}>
                           <Pressable
@@ -1074,10 +1069,10 @@ export default function GroupsScreen() {
                             }}
                             style={[styles.modalBtn, styles.modalBtnGhost]}
                           >
-                            <Text style={styles.modalBtnGhostTxt}>Invite someone else</Text>
+                            <Text style={styles.modalBtnGhostTxt}>{t('groups.invite.inviteSomeoneElse')}</Text>
                           </Pressable>
                           <Pressable onPress={closeInvite} style={[styles.modalBtn, styles.modalBtnPrimary]}>
-                            <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Done</Text>
+                            <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>{t('common.done')}</Text>
                           </Pressable>
                         </View>
                       </>
@@ -1104,15 +1099,15 @@ export default function GroupsScreen() {
                   <Pressable style={styles.modalBox} onPress={(e) => e.stopPropagation()}>
                     {bulkInvitePhase === 'form' ? (
                       <>
-                        <Text style={styles.modalTitle}>Bulk invite</Text>
+                        <Text style={styles.modalTitle}>{t('groups.bulk.title')}</Text>
                         <Text style={styles.modalSub}>
-                          Enter multiple email addresses for{' '}
-                          <Text style={styles.modalSubStrong}>{g.name}</Text>, separated by commas or one per line.
-                          Registered SimCap users get in-app invites; others get email invites recorded for follow-up.
+                          {t('groups.bulk.modalSubBefore')}
+                          <Text style={styles.modalSubStrong}>{g.name}</Text>
+                          {t('groups.bulk.modalSubAfter')}
                         </Text>
                         <TextInput
                           style={[styles.modalInput, styles.modalTextArea]}
-                          placeholder={'friend@example.com\nbuddy@example.com'}
+                          placeholder={t('groups.bulk.placeholder')}
                           placeholderTextColor={colors.subtle}
                           value={bulkInviteText}
                           onChangeText={setBulkInviteText}
@@ -1125,7 +1120,7 @@ export default function GroupsScreen() {
                         />
                         <View style={styles.modalActions}>
                           <Pressable onPress={() => !bulkInviteBusy && closeBulkInvite()} style={styles.modalBtn}>
-                            <Text style={styles.modalBtnTxt}>Cancel</Text>
+                            <Text style={styles.modalBtnTxt}>{t('common.cancel')}</Text>
                           </Pressable>
                           <Pressable
                             onPress={() => void submitBulkInvite()}
@@ -1135,16 +1130,19 @@ export default function GroupsScreen() {
                             {bulkInviteBusy ? (
                               <ActivityIndicator color="#fff" />
                             ) : (
-                              <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Send invites</Text>
+                              <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>{t('groups.bulk.send')}</Text>
                             )}
                           </Pressable>
                         </View>
                       </>
                     ) : bulkInviteResults ? (
                       <>
-                        <Text style={styles.modalTitle}>Bulk invite results</Text>
+                        <Text style={styles.modalTitle}>{t('groups.bulk.resultsTitle')}</Text>
                         <Text style={styles.modalSuccessBody}>
-                          {bulkInviteResults.succeeded} succeeded · {bulkInviteResults.failed} failed
+                          {t('groups.bulk.resultsSummary', {
+                            succeeded: bulkInviteResults.succeeded,
+                            failed: bulkInviteResults.failed,
+                          })}
                         </Text>
                         {bulkInviteResults.items.length > 0 ? (
                           <View style={styles.bulkInviteResultsList}>
@@ -1173,10 +1171,10 @@ export default function GroupsScreen() {
                             }}
                             style={[styles.modalBtn, styles.modalBtnGhost]}
                           >
-                            <Text style={styles.modalBtnGhostTxt}>Invite more</Text>
+                            <Text style={styles.modalBtnGhostTxt}>{t('groups.bulk.inviteMore')}</Text>
                           </Pressable>
                           <Pressable onPress={closeBulkInvite} style={[styles.modalBtn, styles.modalBtnPrimary]}>
-                            <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>Done</Text>
+                            <Text style={[styles.modalBtnTxt, styles.modalBtnTxtPri]}>{t('common.done')}</Text>
                           </Pressable>
                         </View>
                       </>
@@ -1198,8 +1196,8 @@ export default function GroupsScreen() {
               <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
                 {socialSectionInfo != null ? (
                   <>
-                    <Text style={styles.infoExplainTitle}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].title}</Text>
-                    <Text style={styles.infoExplainBody}>{SOCIAL_SECTION_INFO_COPY[socialSectionInfo].body}</Text>
+                    <Text style={styles.infoExplainTitle}>{sectionInfoCopy[socialSectionInfo].title}</Text>
+                    <Text style={styles.infoExplainBody}>{sectionInfoCopy[socialSectionInfo].body}</Text>
                   </>
                 ) : null}
               </View>

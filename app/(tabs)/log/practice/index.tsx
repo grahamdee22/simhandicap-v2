@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../../src/components/ContentWidth';
 import { IconDesktopOutline } from '../../../../src/components/SvgUiIcons';
+import { useTranslation } from '../../../../src/i18n';
 import { showAppAlert } from '../../../../src/lib/alertCompat';
 import { colors } from '../../../../src/lib/constants';
 import { PRACTICE_ANALYZER_ENABLED } from '../../../../src/lib/featureFlags';
@@ -41,6 +42,7 @@ function formatWhen(iso: string): string {
 }
 
 export default function PracticeAnalyzerScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
@@ -80,25 +82,31 @@ export default function PracticeAnalyzerScreen() {
 
   const onImport = useCallback(() => {
     if (!supabaseOn) {
-      showAppAlert('Unavailable', 'Supabase is not configured for Practice Analyzer.');
+      showAppAlert(t('common.unavailable'), t('log.practice.index.unavailableBody'));
       return;
     }
     if (!user?.id) {
       if (Platform.OS === 'web') {
         const go =
           typeof window !== 'undefined' &&
-          window.confirm('Sign in required\n\nSign in to import practice CSVs and save history.');
+          window.confirm(
+            `${t('log.practice.index.signInRequiredTitle')}\n\n${t('log.practice.index.signInRequiredBody')}`
+          );
         if (go) router.push('/(auth)/sign-in' as never);
       } else {
-        Alert.alert('Sign in required', 'Sign in to import practice CSVs and save history.', [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Sign in', onPress: () => router.push('/(auth)/sign-in' as never) },
-        ]);
+        Alert.alert(
+          t('log.practice.index.signInRequiredTitle'),
+          t('log.practice.index.signInRequiredBody'),
+          [
+            { text: t('common.cancel'), style: 'cancel' },
+            { text: t('common.signIn'), onPress: () => router.push('/(auth)/sign-in' as never) },
+          ]
+        );
       }
       return;
     }
     router.push('/(tabs)/log/practice/import' as never);
-  }, [supabaseOn, user?.id, router]);
+  }, [supabaseOn, user?.id, router, t]);
 
   if (!PRACTICE_ANALYZER_ENABLED) {
     return <Redirect href={'/(tabs)/log/round' as never} />;
@@ -108,7 +116,7 @@ export default function PracticeAnalyzerScreen() {
     return (
       <ContentWidth bg={colors.bg}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.muted}>Supabase is not configured.</Text>
+          <Text style={styles.muted}>{t('matchChat.notConfigured')}</Text>
         </View>
       </ContentWidth>
     );
@@ -125,22 +133,17 @@ export default function PracticeAnalyzerScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.lead}>
-          Import a GSPro practice CSV from the sim computer. We group shots by club and only write a coaching
-          takeaway when a club has at least 3 shots — this never affects your SimCap index.
-        </Text>
+        <Text style={styles.lead}>{t('log.practice.index.lead')}</Text>
 
         {!user?.id ? (
           <View style={styles.signInCard}>
-            <Text style={styles.signInTitle}>Sign in to analyze practice</Text>
-            <Text style={styles.signInSub}>
-              Practice Analyzer needs an account so your import codes and history stay private to you.
-            </Text>
+            <Text style={styles.signInTitle}>{t('log.practice.index.signInTitle')}</Text>
+            <Text style={styles.signInSub}>{t('log.practice.index.signInSub')}</Text>
             <Pressable
               style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
               onPress={() => router.push('/(auth)/sign-in' as never)}
             >
-              <Text style={styles.primaryBtnTxt}>Sign in</Text>
+              <Text style={styles.primaryBtnTxt}>{t('common.signIn')}</Text>
             </Pressable>
           </View>
         ) : (
@@ -148,50 +151,57 @@ export default function PracticeAnalyzerScreen() {
             style={({ pressed }) => [styles.actionBtn, pressed && styles.pressed]}
             onPress={onImport}
             accessibilityRole="button"
-            accessibilityLabel="Import practice session from computer"
+            accessibilityLabel={t('log.practice.index.importA11y')}
           >
             <IconDesktopOutline size={20} color={colors.accent} />
-            <Text style={styles.actionBtnTxt}>Import from Computer</Text>
+            <Text style={styles.actionBtnTxt}>{t('log.practice.index.importBtn')}</Text>
           </Pressable>
         )}
 
-        <Text style={styles.sectionTitle}>Recent sessions</Text>
+        <Text style={styles.sectionTitle}>{t('log.practice.index.recentSessions')}</Text>
         {!user?.id ? (
-          <Text style={styles.empty}>Sign in to see your practice history.</Text>
+          <Text style={styles.empty}>{t('log.practice.index.signInForHistory')}</Text>
         ) : historyLoading ? (
           <ActivityIndicator color={colors.header} style={{ marginVertical: 16 }} />
         ) : historyErr ? (
           <Text style={styles.empty}>{historyErr}</Text>
         ) : history.length === 0 ? (
-          <Text style={styles.empty}>No practice sessions yet. Import a GSPro CSV to get started.</Text>
+          <Text style={styles.empty}>{t('log.practice.index.emptyHistory')}</Text>
         ) : (
-          history.map((row) => (
-            <Pressable
-              key={row.id}
-              style={({ pressed }) => [styles.historyCard, pressed && styles.pressed]}
-              onPress={() => router.push(`/(tabs)/log/practice/${row.id}` as never)}
-              accessibilityRole="button"
-              accessibilityLabel={`Open practice analysis from ${formatWhen(row.session_played_at ?? row.created_at)}`}
-            >
-              <Text style={styles.historyTitle} numberOfLines={1}>
-                {row.detected_system?.trim() || 'Practice session'}
-              </Text>
-              <Text style={styles.historyMeta}>
-                {formatWhen(row.session_played_at ?? row.created_at)}
-                {row.status === 'processing' ? ' · Analyzing' : row.status === 'failed' ? ' · Failed' : ''}
-              </Text>
-              {row.session_notes ? (
-                <Text style={styles.historySnippet} numberOfLines={2}>
-                  {row.session_notes}
+          history.map((row) => {
+            const when = formatWhen(row.session_played_at ?? row.created_at);
+            return (
+              <Pressable
+                key={row.id}
+                style={({ pressed }) => [styles.historyCard, pressed && styles.pressed]}
+                onPress={() => router.push(`/(tabs)/log/practice/${row.id}` as never)}
+                accessibilityRole="button"
+                accessibilityLabel={t('log.practice.index.openA11y', { when })}
+              >
+                <Text style={styles.historyTitle} numberOfLines={1}>
+                  {row.detected_system?.trim() || t('log.practice.index.sessionFallback')}
                 </Text>
-              ) : row.takeaways[0] ? (
-                <Text style={styles.historySnippet} numberOfLines={2}>
-                  {row.takeaways[0]}
+                <Text style={styles.historyMeta}>
+                  {when}
+                  {row.status === 'processing'
+                    ? t('log.practice.index.statusAnalyzing')
+                    : row.status === 'failed'
+                      ? t('log.practice.index.statusFailed')
+                      : ''}
                 </Text>
-              ) : null}
-              <Text style={styles.historyHint}>Tap for per-club breakdown</Text>
-            </Pressable>
-          ))
+                {row.session_notes ? (
+                  <Text style={styles.historySnippet} numberOfLines={2}>
+                    {row.session_notes}
+                  </Text>
+                ) : row.takeaways[0] ? (
+                  <Text style={styles.historySnippet} numberOfLines={2}>
+                    {row.takeaways[0]}
+                  </Text>
+                ) : null}
+                <Text style={styles.historyHint}>{t('log.practice.index.tapHint')}</Text>
+              </Pressable>
+            );
+          })
         )}
       </ScrollView>
     </ContentWidth>

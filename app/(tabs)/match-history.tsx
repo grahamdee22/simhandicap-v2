@@ -4,6 +4,7 @@ import { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
+import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
 import {
   fetchMatchPlayerDisplayNames,
@@ -13,20 +14,21 @@ import {
 import { useResponsive } from '../../src/lib/responsive';
 import { isSupabaseConfigured } from '../../src/lib/supabase';
 
-function formatHoles(m: DbMatchRow): string {
-  if (m.holes === 18) return '18 holes';
-  if (m.nine_selection === 'front') return 'Front 9';
-  if (m.nine_selection === 'back') return 'Back 9';
-  return `${m.holes} holes`;
+function formatHoles(m: DbMatchRow, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  if (m.holes === 18) return t('match.history.holes18');
+  if (m.nine_selection === 'front') return t('match.history.front9');
+  if (m.nine_selection === 'back') return t('match.history.back9');
+  return t('match.history.holesCount', { count: m.holes });
 }
 
-function historyStatusLine(m: DbMatchRow): string {
-  if (m.status === 'complete') return 'Complete';
-  if (m.status === 'abandoned') return 'Abandoned';
+function historyStatusLine(m: DbMatchRow, t: (key: string) => string): string {
+  if (m.status === 'complete') return t('match.history.statusComplete');
+  if (m.status === 'abandoned') return t('match.history.statusAbandoned');
   return m.status;
 }
 
 export default function MatchHistoryScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
@@ -40,7 +42,7 @@ export default function MatchHistoryScreen() {
   const load = useCallback(async () => {
     if (!supabaseOn) {
       setLoading(false);
-      setErr('Supabase not configured.');
+      setErr(t('match.history.supabaseNotConfigured'));
       setRows([]);
       return;
     }
@@ -48,7 +50,7 @@ export default function MatchHistoryScreen() {
     setErr(null);
     const res = await listMyMatches();
     if (res.error || res.data == null) {
-      setErr(res.error ?? 'Could not load matches.');
+      setErr(res.error ?? t('match.history.couldNotLoad'));
       setRows([]);
       setLoading(false);
       return;
@@ -59,7 +61,7 @@ export default function MatchHistoryScreen() {
     setRows(hist);
     setNames(await fetchMatchPlayerDisplayNames(hist));
     setLoading(false);
-  }, [supabaseOn]);
+  }, [supabaseOn, t]);
 
   useFocusEffect(
     useCallback(() => {
@@ -67,13 +69,14 @@ export default function MatchHistoryScreen() {
     }, [load])
   );
 
-  const nameFor = (id: string | null) => (id ? names[id] ?? 'Golfer' : '—');
+  const nameFor = (id: string | null) =>
+    id ? names[id] ?? t('match.history.golferFallback') : t('match.history.emDash');
 
   if (!supabaseOn) {
     return (
       <ContentWidth bg={colors.surface}>
         <View style={[styles.centered, { padding: gutter }]}>
-          <Text style={styles.muted}>Supabase not configured.</Text>
+          <Text style={styles.muted}>{t('match.history.supabaseNotConfigured')}</Text>
         </View>
       </ContentWidth>
     );
@@ -109,34 +112,40 @@ export default function MatchHistoryScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.lead}>
-          Completed and abandoned stroke-play matches, newest first. Tap a row for details.
-        </Text>
+        <Text style={styles.lead}>{t('match.history.lead')}</Text>
         {rows.length === 0 ? (
-          <Text style={styles.empty}>No completed or abandoned matches yet.</Text>
+          <Text style={styles.empty}>{t('match.history.empty')}</Text>
         ) : (
           rows.map((m) => {
             const p1 = nameFor(m.player_1_id);
-            const p2 = m.player_2_id ? nameFor(m.player_2_id) : '—';
-            const peopleLine = m.player_2_id ? `${p1} vs ${p2}` : `${p1}`;
+            const p2 = m.player_2_id ? nameFor(m.player_2_id) : t('match.history.emDash');
+            const peopleLine = m.player_2_id ? t('match.history.vs', { p1, p2 }) : `${p1}`;
+            const status = historyStatusLine(m, t);
             return (
               <Pressable
                 key={m.id}
                 style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
                 onPress={() => router.push(`/(tabs)/match-results/${m.id}` as never)}
                 accessibilityRole="button"
-                accessibilityLabel={`Match on ${m.course_name}, ${historyStatusLine(m)}`}
+                accessibilityLabel={t('match.history.a11yMatch', {
+                  course: m.course_name,
+                  status,
+                })}
               >
                 <Text style={styles.course} numberOfLines={1}>
                   {m.course_name}
                 </Text>
                 <Text style={styles.meta}>
-                  {historyStatusLine(m)} · {formatHoles(m)} · Stroke play
+                  {t('match.history.meta', {
+                    status,
+                    holes: formatHoles(m, t),
+                    strokePlay: t('match.history.strokePlay'),
+                  })}
                 </Text>
                 <Text style={styles.people} numberOfLines={2}>
                   {peopleLine}
                 </Text>
-                <Text style={styles.hint}>Tap for results</Text>
+                <Text style={styles.hint}>{t('match.history.tapForResults')}</Text>
               </Pressable>
             );
           })

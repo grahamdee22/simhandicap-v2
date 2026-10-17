@@ -1,0 +1,85 @@
+appId: com.simcap.app
+---
+# Create Stroke Play tournament in Fairway Collective — human-paced.
+# Assumes already signed in as Jordan Ellis (is_test).
+- launchApp:
+    clearState: false
+- waitForAnimationToEnd:
+    timeout: 10000
+
+- tapOn: "Social, tab.*"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Fairway Collective"
+    timeout: 30000
+- tapOn: "Fairway Collective"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Create Tournament"
+    timeout: 20000
+- tapOn: "Create Tournament"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Basic info"
+    timeout: 30000
+- waitForAnimationToEnd
+- tapOn: "Spring League"
+- eraseText
+- inputText: "Coastal Scratch Cup"
+- waitForAnimationToEnd
+- tapOn: "Stroke Play"
+- waitForAnimationToEnd
+- tapOn: "Continue"
+- waitForAnimationToEnd
+
+# Wizard order in app: Basic info → Who's playing? → Settings (course)
+- extendedWaitUntil:
+    visible: "Who's playing\\?"
+    timeout: 20000
+- waitForAnimationToEnd
+- tapOn:
+    text: "Select all"
+    optional: true
+- waitForAnimationToEnd
+- tapOn: "Continue"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Choose course"
+    timeout: 20000
+- tapOn: "Choose course"
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: "Search courses"
+    timeout: 15000
+- tapOn: "Search courses"
+- eraseText
+- inputText: "Pebble Beach"
+- waitForAnimationToEnd
+- tapOn: "Pebble Beach Golf Links"
+- waitForAnimationToEnd
+- tapOn:
+    text: "18 holes"
+    optional: true
+- waitForAnimationToEnd
+- tapOn: "Continue"
+- waitForAnimationToEnd
+
+# Dates / launch
+- extendedWaitUntil:
+    visible: "Launch Tournament"
+    timeout: 60000
+- waitForAnimationToEnd
+- tapOn:
+    text: "Continue"
+    optional: true
+- waitForAnimationToEnd
+- tapOn: "Launch Tournament"
+
+- extendedWaitUntil:
+    visible: "Coastal Scratch Cup"
+    timeout: 45000
+- waitForAnimationToEnd
+- waitForAnimationToEnd

@@ -1,12 +1,15 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../../i18n';
 import { colors } from '../../lib/constants';
 import type { MatchPlayHoleResult } from '../../lib/tournamentTypes';
 
-const OPTIONS: { key: MatchPlayHoleResult; label: string }[] = [
-  { key: 'W', label: 'W' },
-  { key: 'L', label: 'L' },
-  { key: 'H', label: 'H' },
-];
+const OPTION_KEYS: MatchPlayHoleResult[] = ['W', 'L', 'H'];
+
+const RESULT_I18N: Record<MatchPlayHoleResult, string> = {
+  W: 'league.match.holeResultW',
+  L: 'league.match.holeResultL',
+  H: 'league.match.holeResultH',
+};
 
 type Props = {
   value: MatchPlayHoleResult | null;
@@ -14,24 +17,27 @@ type Props = {
 };
 
 export function MatchPlayHoleToggle({ value, onChange }: Props) {
+  const { t } = useTranslation();
+
   return (
     <View style={styles.row}>
-      {OPTIONS.map((opt) => {
-        const on = value === opt.key;
+      {OPTION_KEYS.map((key) => {
+        const on = value === key;
+        const label = t(RESULT_I18N[key]);
         return (
           <Pressable
-            key={opt.key}
-            onPress={() => onChange(opt.key)}
+            key={key}
+            onPress={() => onChange(key)}
             style={[
               styles.btn,
-              on && opt.key === 'W' && styles.btnWin,
-              on && opt.key === 'L' && styles.btnLoss,
-              on && opt.key === 'H' && styles.btnHalve,
+              on && key === 'W' && styles.btnWin,
+              on && key === 'L' && styles.btnLoss,
+              on && key === 'H' && styles.btnHalve,
             ]}
             accessibilityRole="button"
-            accessibilityLabel={`Hole result ${opt.label}`}
+            accessibilityLabel={t('tournament.holeToggle.resultA11y', { result: label })}
           >
-            <Text style={[styles.btnTxt, on && styles.btnTxtOn]}>{opt.label}</Text>
+            <Text style={[styles.btnTxt, on && styles.btnTxtOn]}>{label}</Text>
           </Pressable>
         );
       })}

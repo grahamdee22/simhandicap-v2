@@ -16,6 +16,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { DatePlayedField } from '../../../src/components/DatePlayedField';
+import { useTranslation } from '../../../src/i18n';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { todayLocalYmd } from '../../../src/lib/dates';
@@ -26,6 +27,7 @@ import { createSeason } from '../../../src/lib/seasons';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 export default function SeasonCreateScreen() {
+  const { t } = useTranslation();
   const { groupId: rawGroupId } = useLocalSearchParams<{ groupId: string | string[] }>();
   const groupId = typeof rawGroupId === 'string' ? rawGroupId : rawGroupId?.[0] ?? '';
   const router = useRouter();
@@ -47,11 +49,11 @@ export default function SeasonCreateScreen() {
     if (!user?.id || !group) return;
     const trimmed = name.trim();
     if (!trimmed) {
-      showAppAlert('Season name', 'Give this season a name.');
+      showAppAlert(t('season.create.alertNameTitle'), t('season.create.alertNameBody'));
       return;
     }
     if (!openEnded && endDateYmd < startDateYmd) {
-      showAppAlert('Dates', 'The end date has to be on or after the start date.');
+      showAppAlert(t('season.create.alertDatesTitle'), t('season.create.alertDatesBody'));
       return;
     }
     setBusy(true);
@@ -70,7 +72,7 @@ export default function SeasonCreateScreen() {
     );
     setBusy(false);
     if (res.error || !res.data) {
-      showAppAlert('Could not start season', res.error ?? 'Try again.');
+      showAppAlert(t('season.create.alertCouldNotStart'), res.error ?? t('season.create.tryAgain'));
       return;
     }
     router.replace(`/(tabs)/season/${res.data.id}` as never);
@@ -90,29 +92,26 @@ export default function SeasonCreateScreen() {
             paddingBottom: insets.bottom + 32,
           }}
         >
-          <Text style={styles.head}>Start a season</Text>
-          <Text style={styles.helper}>
-            A season ties this crew’s tournaments together and awards points for where each player
-            finishes. One season can be active at a time.
-          </Text>
-          <Text style={styles.lbl}>Name</Text>
+          <Text style={styles.head}>{t('season.create.title')}</Text>
+          <Text style={styles.helper}>{t('season.create.helper')}</Text>
+          <Text style={styles.lbl}>{t('season.create.nameLabel')}</Text>
           <TextInput
             style={styles.input}
             value={name}
             onChangeText={setName}
-            placeholder="e.g. Summer 2026"
+            placeholder={t('season.create.namePlaceholder')}
             placeholderTextColor={colors.subtle}
             maxLength={80}
           />
           <DatePlayedField
-            label="Start date"
+            label={t('season.create.startDate')}
             hint={null}
             large
             value={startDateYmd}
             onChange={setStartDateYmd}
           />
           <View style={styles.toggleRow}>
-            <Text style={styles.toggleLbl}>Open-ended</Text>
+            <Text style={styles.toggleLbl}>{t('season.create.openEnded')}</Text>
             <Switch
               value={openEnded}
               onValueChange={setOpenEnded}
@@ -123,7 +122,7 @@ export default function SeasonCreateScreen() {
           </View>
           {openEnded ? null : (
             <DatePlayedField
-              label="End date"
+              label={t('season.create.endDate')}
               hint={null}
               large
               value={endDateYmd}
@@ -131,7 +130,7 @@ export default function SeasonCreateScreen() {
             />
           )}
           <View style={styles.toggleRow}>
-            <Text style={styles.toggleLbl}>Every event counts</Text>
+            <Text style={styles.toggleLbl}>{t('tournaments.section.everyEventCounts')}</Text>
             <Switch
               value={everyEventCounts}
               onValueChange={setEveryEventCounts}
@@ -141,10 +140,10 @@ export default function SeasonCreateScreen() {
             />
           </View>
           {everyEventCounts ? (
-            <Text style={styles.helper}>Every finished tournament in the season adds its points.</Text>
+            <Text style={styles.helper}>{t('season.create.everyFinishedAddsPoints')}</Text>
           ) : (
             <>
-              <Text style={styles.lbl}>Events that count</Text>
+              <Text style={styles.lbl}>{t('season.create.eventsThatCount')}</Text>
               <View style={styles.stepperRow}>
                 <Pressable
                   style={styles.stepperBtn}
@@ -161,8 +160,7 @@ export default function SeasonCreateScreen() {
                 </Pressable>
               </View>
               <Text style={styles.helper}>
-                Best {eventsThatCount} finishes count. A skipped tournament is left out, not scored
-                as zero.
+                {t('season.create.bestFinishesHelper', { count: eventsThatCount })}
               </Text>
             </>
           )}
@@ -174,7 +172,7 @@ export default function SeasonCreateScreen() {
             {busy ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.primaryBtnTxt}>Start season</Text>
+              <Text style={styles.primaryBtnTxt}>{t('tournaments.section.startSeason')}</Text>
             )}
           </Pressable>
         </ScrollView>

@@ -1,0 +1,4 @@
+# Shared Maestro defaults for SimCap demo recordings (iOS Simulator).
+appId: com.simcap.app
+---
+# This file is intentionally empty of steps; flows import via runFlow / copy appId.

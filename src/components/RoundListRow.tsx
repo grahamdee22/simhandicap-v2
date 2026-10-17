@@ -1,4 +1,5 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import { formatDifferentialDisplay } from '../lib/handicap';
 import { formatRoundMeta, type SimRound } from '../store/useAppStore';
@@ -26,6 +27,7 @@ export function RoundListRow({
   showTopBorder = true,
   paddingHorizontal,
 }: Props) {
+  const { t } = useTranslation();
   return (
     <View
       style={[
@@ -38,7 +40,7 @@ export function RoundListRow({
         style={styles.main}
         onPress={onPress}
         accessibilityRole="button"
-        accessibilityLabel={`Open ${round.courseName} round`}
+        accessibilityLabel={t('roundList.openA11y', { course: round.courseName })}
       >
         <View style={styles.icon}>
           <IconGolf size={isWide ? 18 : 16} color={colors.subtle} />
@@ -55,10 +57,12 @@ export function RoundListRow({
           <Text style={[styles.score, isWide && styles.scoreLg]}>{round.grossScore}</Text>
           {round.holesPlayed === 'front' || round.holesPlayed === 'back' ? (
             <Text style={styles.holesBadge}>
-              {round.holesPlayed === 'front' ? 'Front 9' : 'Back 9'}
+              {round.holesPlayed === 'front' ? t('roundList.front9') : t('roundList.back9')}
             </Text>
           ) : null}
-          <Text style={styles.diff}>diff {formatDifferentialDisplay(round.adjustedDiff)}</Text>
+          <Text style={styles.diff}>
+            {t('roundList.diff', { value: formatDifferentialDisplay(round.adjustedDiff) })}
+          </Text>
         </View>
       </Pressable>
       <Pressable
@@ -66,7 +70,7 @@ export function RoundListRow({
         onPress={onShare}
         hitSlop={8}
         accessibilityRole="button"
-        accessibilityLabel={`Share ${round.courseName} round`}
+        accessibilityLabel={t('roundList.shareA11y', { course: round.courseName })}
       >
         <IconShareOutline size={18} color={colors.sage} />
       </Pressable>

@@ -14,6 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
+import { useTranslation } from '../../../src/i18n';
 import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
@@ -26,6 +27,7 @@ import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { useAppStore } from '../../../src/store/useAppStore';
 
 export default function SeasonScreen() {
+  const { t } = useTranslation();
   const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
   const seasonId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
   const router = useRouter();
@@ -85,9 +87,9 @@ export default function SeasonScreen() {
   const onEnd = async () => {
     if (!board || board.season.status !== 'active') return;
     const choice = await confirmAppChoice(
-      'End this season?',
-      'Standings stay available. Tournaments keep their own results. You can start a new season after this one ends.',
-      { cancelText: 'Cancel', confirmText: 'End season' }
+      t('season.detail.endConfirmTitle'),
+      t('season.detail.endConfirmBody'),
+      { cancelText: t('common.cancel'), confirmText: t('season.detail.endSeason') }
     );
     if (choice !== 'confirm') return;
     setEnding(true);
@@ -96,7 +98,7 @@ export default function SeasonScreen() {
     const res = await updateSeasonStatus(board.season.id, 'completed', accessToken);
     setEnding(false);
     if (res.error) {
-      showAppAlert('Could not end season', res.error);
+      showAppAlert(t('season.detail.alertCouldNotEnd'), res.error);
       return;
     }
     void load();
@@ -113,7 +115,7 @@ export default function SeasonScreen() {
   if (missing || !board) {
     return (
       <ContentWidth bg={colors.surface}>
-        <Text style={{ padding: gutter, color: colors.muted }}>Season not found.</Text>
+        <Text style={{ padding: gutter, color: colors.muted }}>{t('season.detail.notFound')}</Text>
       </ContentWidth>
     );
   }
@@ -132,39 +134,46 @@ export default function SeasonScreen() {
       >
         <View style={styles.badgeRow}>
           <View style={styles.pill}>
-            <Text style={styles.pillTxt}>{active ? 'Active' : 'Completed'}</Text>
+            <Text style={styles.pillTxt}>
+              {active ? t('season.detail.statusActive') : t('season.detail.statusCompleted')}
+            </Text>
           </View>
         </View>
         <Text style={styles.title}>{season.name}</Text>
         <Text style={styles.meta}>{formatSeasonDateRange(season.start_date, season.end_date)}</Text>
         <Text style={styles.meta}>
           {season.events_that_count == null
-            ? 'Every finished event counts'
-            : `Best ${season.events_that_count} events count`}
+            ? t('season.detail.everyFinishedEventCounts')
+            : t('season.detail.bestEventsCount', { count: season.events_that_count })}
         </Text>
 
         <View style={styles.sectionRow}>
-          <Text style={[styles.section, styles.sectionInRow]}>Standings</Text>
+          <Text style={[styles.section, styles.sectionInRow]}>{t('season.detail.standings')}</Text>
           <Pressable
             style={styles.infoBtn}
             onPress={() => setStandingsInfoOpen(true)}
             hitSlop={6}
             accessibilityRole="button"
-            accessibilityLabel="About season standings"
+            accessibilityLabel={t('season.detail.standingsA11y')}
           >
             <Text style={styles.infoBtnTxt}>ⓘ</Text>
           </Pressable>
         </View>
         {standings.length === 0 ? (
-          <Text style={styles.empty}>No finished events yet. Points show up after a tournament ends.</Text>
+          <Text style={styles.empty}>{t('season.detail.standingsEmpty')}</Text>
         ) : (
           standings.map((row) => (
             <View key={row.userId} style={styles.row}>
               <Text style={styles.rank}>{row.rank}</Text>
               <View style={{ flex: 1 }}>
-                <Text style={styles.name}>{displayNames[row.userId] ?? 'Golfer'}</Text>
+                <Text style={styles.name}>
+                  {displayNames[row.userId] ?? t('match.history.golferFallback')}
+                </Text>
                 <Text style={styles.sub}>
-                  {row.eventsCounted} of {row.eventsPlayed} counted
+                  {t('season.detail.eventsCountedOfPlayed', {
+                    counted: row.eventsCounted,
+                    played: row.eventsPlayed,
+                  })}
                 </Text>
               </View>
               <Text style={styles.points}>{row.totalPoints}</Text>
@@ -172,9 +181,9 @@ export default function SeasonScreen() {
           ))
         )}
 
-        <Text style={styles.section}>Tournaments</Text>
+        <Text style={styles.section}>{t('tournaments.section.title')}</Text>
         {leagues.length === 0 ? (
-          <Text style={styles.empty}>No tournaments in this season yet.</Text>
+          <Text style={styles.empty}>{t('season.detail.tournamentsEmpty')}</Text>
         ) : (
           leagues.map((league) => (
             <Pressable
@@ -196,7 +205,9 @@ export default function SeasonScreen() {
             disabled={ending}
             onPress={() => void onEnd()}
           >
-            <Text style={styles.endBtnTxt}>{ending ? 'Ending…' : 'End season'}</Text>
+            <Text style={styles.endBtnTxt}>
+              {ending ? t('season.detail.ending') : t('season.detail.endSeason')}
+            </Text>
           </Pressable>
         ) : null}
       </ScrollView>
@@ -210,13 +221,8 @@ export default function SeasonScreen() {
         <View style={styles.infoExplainRoot}>
           <Pressable style={styles.infoExplainBackdrop} onPress={() => setStandingsInfoOpen(false)} />
           <View style={[styles.infoExplainSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.infoExplainTitle}>Season standings</Text>
-            <Text style={styles.infoExplainBody}>
-              Each finished tournament in this season awards placement points — 1st through 8th place score 10, 8, 6,
-              5, 4, 3, 2, 1, and anything below that scores 0. If this season only counts your best N events, a
-              tournament you skip just isn&apos;t counted toward your total — it&apos;s left out, not scored as a
-              zero.
-            </Text>
+            <Text style={styles.infoExplainTitle}>{t('season.detail.standingsInfoTitle')}</Text>
+            <Text style={styles.infoExplainBody}>{t('season.detail.standingsInfoBody')}</Text>
           </View>
         </View>
       </Modal>

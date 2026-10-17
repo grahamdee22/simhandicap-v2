@@ -1,4 +1,5 @@
 import { StyleSheet, Text, View } from 'react-native';
+import { useTranslation } from '../../i18n';
 import { colors } from '../../lib/constants';
 import type { GrossReconciliation } from '../../lib/tournamentHoleScores';
 
@@ -7,14 +8,16 @@ type Props = {
 };
 
 export function ScoreReconciliationBanner({ reconciliation }: Props) {
+  const { t } = useTranslation();
   if (reconciliation.matches || reconciliation.holeTotal == null) return null;
 
   return (
     <View style={styles.banner}>
       <Text style={styles.txt}>
-        Hole total ({reconciliation.holeTotal}) doesn&apos;t match your logged gross (
-        {reconciliation.loggedGross}). Tournament scoring uses hole-by-hole totals; your SimCap
-        differential still uses the logged gross.
+        {t('tournament.reconciliation.mismatch', {
+          holeTotal: reconciliation.holeTotal,
+          loggedGross: reconciliation.loggedGross,
+        })}
       </Text>
     </View>
   );

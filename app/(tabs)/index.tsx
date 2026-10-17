@@ -3,6 +3,7 @@ import { Fragment, useMemo, useState } from 'react';
 import { Modal, Platform, Pressable as RNPressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Pressable } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import type { TFunction } from 'i18next';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { PendingTournamentHolesBanner } from '../../src/components/PendingTournamentHolesBanner';
 import { HomeHeroInstagramButton } from '../../src/components/HeaderInstagramSimCap';
@@ -10,6 +11,7 @@ import { RoundListRow } from '../../src/components/RoundListRow';
 import { ShareRoundCardModal } from '../../src/components/ShareCard';
 import { IconChevronForward, IconGolf } from '../../src/components/SvgUiIcons';
 import { SimCapLogoHero, SIM_CAP_LOGO_ASPECT } from '../../src/components/SimCapLogoHero';
+import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
 import { formatDifferentialDisplay, formatHandicapIndexDisplay, indexHistoryFromRounds } from '../../src/lib/handicap';
 import { mergeViewStyles } from '../../src/lib/mergeStyles';
@@ -20,13 +22,13 @@ import {
   type SimRound,
 } from '../../src/store/useAppStore';
 
-function greetingFromHour(h: number): string {
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+function greetingFromHour(h: number, t: TFunction): string {
+  if (h < 12) return t('home.greeting.morning');
+  if (h < 17) return t('home.greeting.afternoon');
+  return t('home.greeting.evening');
 }
 
-function trendBadge(rounds: SimRound[]): string | null {
+function trendBadge(rounds: SimRound[], t: TFunction): string | null {
   const hist = indexHistoryFromRounds(
     [...rounds].map((r) => ({ playedAt: r.playedAt, adjustedDiff: r.adjustedDiff }))
   );
@@ -36,9 +38,9 @@ function trendBadge(rounds: SimRound[]): string | null {
   const past = [...hist].filter((h) => new Date(h.date).getTime() <= monthAgo).pop();
   if (!past) return null;
   const d = now - past.index;
-  if (Math.abs(d) < 0.05) return 'Flat vs last month';
-  if (d < 0) return `Down ${Math.abs(d).toFixed(1)} from last month`;
-  return `Up ${d.toFixed(1)} from last month`;
+  if (Math.abs(d) < 0.05) return t('home.trend.flat');
+  if (d < 0) return t('home.trend.down', { value: Math.abs(d).toFixed(1) });
+  return t('home.trend.up', { value: d.toFixed(1) });
 }
 
 /** In-card horizontal padding (matches latest row); body uses `gutter` for outer alignment only. */
@@ -47,6 +49,7 @@ const CARD_INNER_PAD = 14;
 const RECENT_LIST_INSET = 18;
 
 export default function HomeScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const {
     gutter,
@@ -80,7 +83,7 @@ export default function HomeScreen() {
     };
   }, [rounds]);
 
-  const badge = trendBadge(rounds);
+  const badge = trendBadge(rounds, t);
   const latest = rounds[0];
   const heroPadTop = Math.max(insets.top, 12) + 4;
   const statsRowStyle = useMemo(
@@ -103,17 +106,17 @@ export default function HomeScreen() {
   const roundList = (
     <>
       <View style={styles.sectionHead}>
-        <Text style={[styles.sectionTitle, isWide && styles.sectionTitleLg]}>Recent rounds</Text>
+        <Text style={[styles.sectionTitle, isWide && styles.sectionTitleLg]}>{t('home.recentRounds')}</Text>
         <Link href="/(tabs)/analyze" asChild>
           <Pressable style={styles.analyzeLink}>
-            <Text style={styles.analyzeLinkTxt}>Analyze</Text>
+            <Text style={styles.analyzeLinkTxt}>{t('home.analyze')}</Text>
             <IconChevronForward size={14} color={colors.sage} />
           </Pressable>
         </Link>
       </View>
       {rounds.length === 0 ? (
         <Text style={styles.emptyRounds}>
-          No rounds yet. Log your first sim round.
+          {t('home.emptyRounds')}
         </Text>
       ) : (
         rounds.slice(0, 8).map((r, idx) => (
@@ -133,12 +136,12 @@ export default function HomeScreen() {
   const statsTiles = (
     <View style={statsRowStyle}>
       <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-        <Text style={styles.statLbl}>Rounds</Text>
+        <Text style={styles.statLbl}>{t('home.stats.rounds')}</Text>
         <Text style={[styles.statVal, isWide && styles.statValLg]}>{stats.roundsN}</Text>
-        <Text style={styles.statSub}>Logged</Text>
+        <Text style={styles.statSub}>{t('home.stats.logged')}</Text>
       </View>
       <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-        <Text style={styles.statLbl}>Best diff.</Text>
+        <Text style={styles.statLbl}>{t('home.stats.bestDiff')}</Text>
         <Text style={[styles.statVal, isWide && styles.statValLg]}>
           {formatDifferentialDisplay(stats.bestDiff)}
         </Text>
@@ -147,11 +150,11 @@ export default function HomeScreen() {
         </Text>
       </View>
       <View style={mergeViewStyles(styles.statCard, statCardDyn, isWide && styles.statCardLg)}>
-        <Text style={styles.statLbl}>Avg score</Text>
+        <Text style={styles.statLbl}>{t('home.stats.avgScore')}</Text>
         <Text style={[styles.statVal, isWide && styles.statValLg]}>
           {stats.avg != null ? stats.avg : '—'}
         </Text>
-        <Text style={styles.statSub}>Gross</Text>
+        <Text style={styles.statSub}>{t('home.stats.gross')}</Text>
       </View>
     </View>
   );
@@ -187,7 +190,7 @@ export default function HomeScreen() {
             style={[styles.heroGreet, isWide && styles.heroGreetLg]}
             {...(Platform.OS === 'web' ? { suppressHydrationWarning: true } : {})}
           >
-            {greetingFromHour(new Date().getHours()).toUpperCase()}
+            {greetingFromHour(new Date().getHours(), t).toUpperCase()}
           </Text>
           <Text style={[styles.heroName, isWide && styles.heroNameLg]}>{displayName}</Text>
         </View>
@@ -196,12 +199,12 @@ export default function HomeScreen() {
             {formatHandicapIndexDisplay(index)}
           </Text>
           <View style={styles.indexLblCluster}>
-            <Text style={[styles.indexLbl, isWide && styles.indexLblLg]}>Sim handicap index</Text>
+            <Text style={[styles.indexLbl, isWide && styles.indexLblLg]}>{t('home.indexLabel')}</Text>
             <RNPressable
               style={styles.indexInfoBtn}
               onPress={() => setIndexInfoOpen(true)}
               accessibilityRole="button"
-              accessibilityLabel="About Sim handicap index"
+              accessibilityLabel={t('home.indexInfoA11y')}
               hitSlop={{ top: 8, bottom: 8, left: 4, right: 8 }}
             >
               <Text style={styles.indexInfoBtnTxt}>ⓘ</Text>
@@ -216,11 +219,11 @@ export default function HomeScreen() {
         ) : null}
         {rounds.length > 0 ? (
           <Text style={[styles.indexFoot, isWide && styles.indexFootLg]}>
-            Based on {rounds.length} logged round{rounds.length === 1 ? '' : 's'} · updates when you save from Log
+            {t('home.indexFoot', { count: rounds.length })}
           </Text>
         ) : (
           <Text style={[styles.indexFoot, styles.indexFootMuted]}>
-            Log a round to calculate your sim index from differentials.
+            {t('home.indexFootEmpty')}
           </Text>
         )}
       </View>
@@ -234,10 +237,9 @@ export default function HomeScreen() {
         <View style={styles.infoModalRoot}>
           <RNPressable style={styles.infoModalBackdrop} onPress={() => setIndexInfoOpen(false)} />
           <View style={[styles.infoModalSheet, { paddingBottom: insets.bottom + 16 }]}>
-            <Text style={styles.infoModalTitle}>Sim handicap index</Text>
+            <Text style={styles.infoModalTitle}>{t('home.indexInfoTitle')}</Text>
             <Text style={styles.infoModalBody}>
-              Your SimCap index is calculated from your logged rounds using a WHS-style formula, adjusted for your
-              simulator settings. The more rounds you log, the more accurate it gets.
+              {t('home.indexInfoBody')}
             </Text>
           </View>
         </View>
@@ -266,29 +268,31 @@ export default function HomeScreen() {
                 <Pressable
                   style={styles.latestCard}
                   accessibilityRole="button"
-                  accessibilityLabel="Open latest saved round"
+                  accessibilityLabel={t('home.latestRoundA11y')}
                 >
                   <View style={styles.latestIcon}>
                     <IconGolf size={20} color={colors.sage} />
                   </View>
                   <View style={styles.latestBody}>
-                    <Text style={styles.latestKicker}>Latest round</Text>
+                    <Text style={styles.latestKicker}>{t('home.latestRound')}</Text>
                     <Text style={styles.latestTitle} numberOfLines={1}>
                       {latest.courseName}
                     </Text>
                     <Text style={styles.latestMeta} numberOfLines={2}>
-                      {new Date(latest.playedAt).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}{' '}
-                      · Gross {latest.grossScore}
-                      {latest.holesPlayed === 'front'
-                        ? ' · Front 9'
-                        : latest.holesPlayed === 'back'
-                          ? ' · Back 9'
-                          : ''}{' '}
-                      · Diff {formatDifferentialDisplay(latest.adjustedDiff)}
+                      {[
+                        new Date(latest.playedAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        }),
+                        t('home.latestGross', { score: latest.grossScore }),
+                        ...(latest.holesPlayed === 'front'
+                          ? [t('home.latestFront9')]
+                          : latest.holesPlayed === 'back'
+                            ? [t('home.latestBack9')]
+                            : []),
+                        t('home.latestDiff', { value: formatDifferentialDisplay(latest.adjustedDiff) }),
+                      ].join(' · ')}
                     </Text>
                   </View>
                   <View style={styles.latestChevron} pointerEvents="none">
@@ -299,9 +303,9 @@ export default function HomeScreen() {
             ) : (
               <Link href={'/(tabs)/log/round' as Href} asChild>
                 <Pressable style={styles.ctaCard}>
-                  <Text style={styles.ctaTitle}>Log your first round</Text>
+                  <Text style={styles.ctaTitle}>{t('home.ctaTitle')}</Text>
                   <Text style={styles.ctaSub}>
-                    Score + sim settings → your index, Trends, and profile update instantly.
+                    {t('home.ctaSub')}
                   </Text>
                 </Pressable>
               </Link>

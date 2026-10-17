@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import {
   buildBracketViewModel,
@@ -31,6 +32,7 @@ function RoundSection({
   defaultCollapsed: boolean;
   onOpenPairing: (pairingId: string) => void;
 }) {
+  const { t } = useTranslation();
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
 
   return (
@@ -42,9 +44,11 @@ function RoundSection({
       >
         <Text style={[styles.roundTitle, section.isCurrent && styles.roundTitleCurrent]}>
           {section.label}
-          {section.isCurrent ? ' · current' : ''}
+          {section.isCurrent ? t('bracket.currentSuffix') : ''}
         </Text>
-        <Text style={styles.collapseHint}>{collapsed ? 'Show' : 'Hide'}</Text>
+        <Text style={styles.collapseHint}>
+          {collapsed ? t('bracket.show') : t('bracket.hide')}
+        </Text>
       </Pressable>
       {!collapsed ? (
         <View style={styles.cardsCol}>
@@ -56,12 +60,14 @@ function RoundSection({
                 if (card.pairing.id) onOpenPairing(card.pairing.id);
               }}
             >
-              {card.isMine ? <Text style={styles.yourMatch}>Your match</Text> : null}
+              {card.isMine ? (
+                <Text style={styles.yourMatch}>{t('bracket.yourMatch')}</Text>
+              ) : null}
               <Text style={styles.matchNames}>
-                {card.seed1 != null ? `(#${card.seed1}) ` : ''}
+                {card.seed1 != null ? t('bracket.seed', { seed: card.seed1 }) : ''}
                 {card.name1}
-                {' vs. '}
-                {card.seed2 != null ? `(#${card.seed2}) ` : ''}
+                {t('bracket.vs')}
+                {card.seed2 != null ? t('bracket.seed', { seed: card.seed2 }) : ''}
                 {card.name2}
               </Text>
               <View style={styles.statusRow}>
@@ -89,6 +95,7 @@ export function MatchPlayBracketSection({
   myEntryId,
   playerCount,
 }: Props) {
+  const { t } = useTranslation();
   const router = useRouter();
 
   const vm = useMemo(
@@ -117,9 +124,9 @@ export function MatchPlayBracketSection({
 
       {vm.showBye && vm.byeSeed1Name ? (
         <View style={styles.byeCard}>
-          <Text style={styles.byeTitle}>Bye — Final</Text>
+          <Text style={styles.byeTitle}>{t('bracket.byeFinal')}</Text>
           <Text style={styles.byeLine}>
-            #{1} {vm.byeSeed1Name} advances to the Final after Round 1.
+            {t('bracket.byeLine', { name: vm.byeSeed1Name })}
           </Text>
         </View>
       ) : null}
@@ -128,7 +135,7 @@ export function MatchPlayBracketSection({
         <View style={styles.championCard}>
           <Text style={styles.championEmoji}>🏆</Text>
           <Text style={styles.championName}>{vm.championName}</Text>
-          <Text style={styles.championSub}>Tournament champion</Text>
+          <Text style={styles.championSub}>{t('bracket.tournamentChampion')}</Text>
         </View>
       ) : null}
 

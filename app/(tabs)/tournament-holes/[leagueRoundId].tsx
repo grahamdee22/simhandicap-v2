@@ -13,15 +13,14 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { TournamentHoleScorecard } from '../../../src/components/tournament/TournamentHoleScorecard';
 import { ScoreReconciliationBanner } from '../../../src/components/tournament/ScoreReconciliationBanner';
+import { useTranslation } from '../../../src/i18n';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { getCourseById } from '../../../src/lib/courses';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { fetchLeagueBundle, type LeagueFormat } from '../../../src/lib/leagues';
-import { formatLeagueFormatLabel } from '../../../src/lib/leagueStandings';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { restSelect } from '../../../src/lib/tournamentApi';
-import { formatBestBallPartialNote } from '../../../src/lib/bestBallTournament';
 import { invokeCalculateMatchPlayResult, type MatchPlayCompareHandicap } from '../../../src/lib/matchPlayTournament';
 import {
   fetchLeagueMatchPairings,
@@ -64,6 +63,7 @@ function parseQueue(raw: string | string[] | undefined): QueueItem[] {
 }
 
 export default function TournamentHolesScreen() {
+  const { t } = useTranslation();
   const params = useLocalSearchParams<{
     leagueRoundId: string | string[];
     leagueId?: string | string[];
@@ -91,7 +91,9 @@ export default function TournamentHolesScreen() {
   const courseId =
     typeof params.courseId === 'string' ? params.courseId : params.courseId?.[0] ?? 'pebble';
   const leagueName =
-    typeof params.leagueName === 'string' ? params.leagueName : params.leagueName?.[0] ?? 'Tournament';
+    typeof params.leagueName === 'string'
+      ? params.leagueName
+      : params.leagueName?.[0] ?? t('tabs.league.title');
   const queue = parseQueue(params.queue);
   const shareRoundId =
     typeof params.shareRoundId === 'string' ? params.shareRoundId : params.shareRoundId?.[0];
@@ -152,7 +154,7 @@ export default function TournamentHolesScreen() {
           const entry = bundle.entries.find((e) => e.user_id === user.id);
           const team = bundle.teams.find((t) => t.id === entry?.league_team_id);
           if (team?.designated_scorer_id && team.designated_scorer_id !== user.id) {
-            setScrambleBlocked('Only the designated scorer can enter team hole scores for this tournament.');
+            setScrambleBlocked(t('league.holes.scrambleBlocked'));
           } else {
             setScrambleBlocked(null);
           }
@@ -235,7 +237,7 @@ export default function TournamentHolesScreen() {
     }
 
     setLoading(false);
-  }, [leagueRoundId, leagueId, user?.id]);
+  }, [leagueRoundId, leagueId, user?.id, t]);
 
   useEffect(() => {
     void load();
@@ -289,11 +291,14 @@ export default function TournamentHolesScreen() {
 
   const onSubmit = async () => {
     if (scrambleBlocked) {
-      showAppAlert('Cannot submit', scrambleBlocked);
+      showAppAlert(t('league.holes.cannotSubmit'), scrambleBlocked);
       return;
     }
     if (!isScorecardComplete(holes, format, holeCount)) {
-      showAppAlert('Incomplete scorecard', `Enter all ${holeCount} holes before submitting.`);
+      showAppAlert(
+        t('league.holes.incompleteTitle'),
+        t('league.holes.incompleteBody', { count: holeCount })
+      );
       return;
     }
 
@@ -303,7 +308,7 @@ export default function TournamentHolesScreen() {
     const up = await upsertTournamentHoleScores(leagueRoundId, holes, token);
     if (up.error) {
       setBusy(false);
-      showAppAlert('Could not save', up.error);
+      showAppAlert(t('league.holes.couldNotSave'), up.error);
       return;
     }
 
@@ -312,14 +317,17 @@ export default function TournamentHolesScreen() {
       const teamRes = await invokeCalculateTeamHoleScores(leagueRoundId, token);
       if (teamRes.error) {
         setBusy(false);
-        showAppAlert('Team scores', teamRes.error);
+        showAppAlert(t('league.holes.teamScores'), teamRes.error);
         return;
       }
       if (format === 'best_ball' && teamRes.data?.is_partial) {
-        teamPartialNote = formatBestBallPartialNote(
-          teamRes.data.teammates_submitted ?? 0,
-          teamRes.data.teammates_expected ?? 0
-        );
+        const submitted = teamRes.data.teammates_submitted ?? 0;
+        const expected = teamRes.data.teammates_expected ?? 0;
+        const waiting = Math.max(0, expected - submitted);
+        teamPartialNote =
+          waiting <= 0
+            ? t('league.holes.teamScorecardComplete')
+            : t('league.holes.partialTeamScore', { count: waiting });
       }
     }
 
@@ -327,23 +335,25 @@ export default function TournamentHolesScreen() {
       const mpRes = await invokeCalculateMatchPlayResult(leagueRoundId, token);
       if (mpRes.error) {
         setBusy(false);
-        showAppAlert('Match play', mpRes.error);
+        showAppAlert(t('league.holes.matchPlay'), mpRes.error);
         return;
       }
       if (mpRes.data?.pairing_error) {
         setBusy(false);
-        showAppAlert('Match not updated', mpRes.data.pairing_error);
+        showAppAlert(t('league.holes.matchNotUpdated'), mpRes.data.pairing_error);
         return;
       }
     }
 
     setBusy(false);
-    let banner = `Hole scores saved for ${leagueName}. Your round now counts toward tournament standings.`;
+    let banner = t('league.holes.savedBanner', { leagueName });
     if (teamPartialNote) {
       banner = `${banner} ${teamPartialNote}`;
     }
     goNext(banner);
   };
+
+  const formatLabel = t(`league.create.formats.${format}.title`);
 
   if (loading) {
     return (
@@ -357,10 +367,10 @@ export default function TournamentHolesScreen() {
     return (
       <ContentWidth bg={colors.bg}>
         <View style={{ padding: gutter }}>
-          <Text style={styles.title}>Tournament scorecard</Text>
+          <Text style={styles.title}>{t('tabs.tournamentHoles.title')}</Text>
           <Text style={styles.blocked}>{scrambleBlocked}</Text>
           <Pressable style={styles.secondaryBtn} onPress={() => router.back()}>
-            <Text style={styles.secondaryBtnTxt}>Go back</Text>
+            <Text style={styles.secondaryBtnTxt}>{t('match.create.goBack')}</Text>
           </Pressable>
         </View>
       </ContentWidth>
@@ -377,9 +387,13 @@ export default function TournamentHolesScreen() {
         }}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={styles.title}>Tournament scorecard</Text>
+        <Text style={styles.title}>{t('tabs.tournamentHoles.title')}</Text>
         <Text style={styles.sub}>
-          {leagueName} · {formatLeagueFormatLabel(format)} · Logged gross {grossScore}
+          {t('league.holes.subMeta', {
+            leagueName,
+            format: formatLabel,
+            grossScore,
+          })}
         </Text>
 
         <ScoreReconciliationBanner reconciliation={reconciliation} />
@@ -395,9 +409,9 @@ export default function TournamentHolesScreen() {
           opponentHoles={format === 'match_play' ? opponentHoles : undefined}
           teamScoreLabel={
             format === 'scramble'
-              ? 'Team score — one gross per hole for your crew'
+              ? t('league.holes.teamScoreScramble')
               : format === 'best_ball'
-                ? 'Your gross — best per hole counts for the team'
+                ? t('league.holes.teamScoreBestBall')
                 : undefined
           }
         />
@@ -411,12 +425,12 @@ export default function TournamentHolesScreen() {
           {busy ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <Text style={styles.submitTxt}>Submit round</Text>
+            <Text style={styles.submitTxt}>{t('league.holes.submitRound')}</Text>
           )}
         </Pressable>
 
         <Pressable style={styles.laterBtn} onPress={() => goNext()} disabled={busy}>
-          <Text style={styles.laterTxt}>Finish later</Text>
+          <Text style={styles.laterTxt}>{t('league.holes.finishLater')}</Text>
         </Pressable>
       </ScrollView>
     </ContentWidth>

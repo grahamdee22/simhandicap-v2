@@ -2,6 +2,7 @@ import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-na
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconChevronForward } from '../../src/components/SvgUiIcons';
+import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
 import { SIMCAP_INSTAGRAM_URL } from '../../src/lib/socialLinks';
 import { useResponsive } from '../../src/lib/responsive';
@@ -14,6 +15,7 @@ function mailtoUrl() {
 }
 
 export default function ContactScreen() {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
 
@@ -31,37 +33,34 @@ export default function ContactScreen() {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.intro}>
-          SimCap is in beta and we want to hear from you — whether it&apos;s a bug, a feature idea, or just feedback
-          on how the handicap math feels.
-        </Text>
+        <Text style={styles.intro}>{t('contact.intro')}</Text>
 
         <Pressable
           onPress={onEmail}
           style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
           accessibilityRole="button"
-          accessibilityLabel="Email SimCap"
+          accessibilityLabel={t('contact.emailA11y')}
         >
           <View style={styles.cardTop}>
-            <Text style={styles.cardK}>Email</Text>
+            <Text style={styles.cardK}>{t('contact.email')}</Text>
             <IconChevronForward size={18} color={colors.sage} />
           </View>
           <Text style={styles.cardVal}>{ADMIN_EMAIL}</Text>
-          <Text style={styles.cardHint}>Opens your email app</Text>
+          <Text style={styles.cardHint}>{t('contact.emailHint')}</Text>
         </Pressable>
 
         <Pressable
           onPress={onInstagram}
           style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
           accessibilityRole="button"
-          accessibilityLabel="Open SimCap Instagram"
+          accessibilityLabel={t('contact.instagramA11y')}
         >
           <View style={styles.cardTop}>
-            <Text style={styles.cardK}>Instagram</Text>
+            <Text style={styles.cardK}>{t('contact.instagram')}</Text>
             <IconChevronForward size={18} color={colors.sage} />
           </View>
           <Text style={styles.cardVal}>{INSTAGRAM_HANDLE}</Text>
-          <Text style={styles.cardHint}>Opens Instagram</Text>
+          <Text style={styles.cardHint}>{t('contact.instagramHint')}</Text>
         </Pressable>
       </ScrollView>
     </ContentWidth>

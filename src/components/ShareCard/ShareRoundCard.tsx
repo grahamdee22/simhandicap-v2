@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Svg, { Circle, Line, Path, Rect } from 'react-native-svg';
+import { useTranslation } from '../../i18n';
 import { SimCapWordmark } from '../SimCapWordmark';
 import {
   formatShareDifferential,
@@ -14,8 +15,9 @@ type Props = {
 };
 
 function ShareBrandLockup() {
+  const { t } = useTranslation();
   return (
-    <View style={styles.brandRow} accessibilityRole="image" accessibilityLabel="SimCap">
+    <View style={styles.brandRow} accessibilityRole="image" accessibilityLabel={t('shareRound.brandA11y')}>
       <View style={styles.robotWrap}>
         <Svg width="100%" height="100%" viewBox="14 18 64 100" preserveAspectRatio="xMidYMid meet">
           <Rect x="22" y="64" width="48" height="36" rx="6" fill="#2d6a4f" />
@@ -42,7 +44,7 @@ function ShareBrandLockup() {
       </View>
       <View style={styles.wordBlock}>
         <SimCapWordmark accessible={false} fontSize={78} />
-        <Text style={styles.brandTagline}>THE SIM GOLF HANDICAP APP</Text>
+        <Text style={styles.brandTagline}>{t('shareRound.brandTagline')}</Text>
       </View>
     </View>
   );
@@ -159,10 +161,17 @@ function ConditionCell({ label, value, icon }: ConditionCellProps) {
  * Fixed 1080×1920 share card. Designed for capture via react-native-view-shot.
  */
 export function ShareRoundCard({ data }: Props) {
+  const { t } = useTranslation();
   const scoreToParTxt = formatShareScoreToPar(data.scoreToPar);
-  const scoreToParLabel = data.scoreToParLabel ?? (data.scoreToPar === 0 ? 'EVEN PAR' : data.scoreToPar > 0 ? 'OVER PAR' : 'UNDER PAR');
+  const scoreToParLabel =
+    data.scoreToPar === 0
+      ? t('shareRound.evenPar')
+      : data.scoreToPar > 0
+        ? t('shareRound.overPar')
+        : t('shareRound.underPar');
   const pillTone =
     data.scoreToPar < 0 ? styles.pillUnder : data.scoreToPar === 0 ? styles.pillEven : styles.pillOver;
+  const emDash = t('match.history.emDash');
 
   return (
     <View style={styles.card} collapsable={false}>
@@ -175,7 +184,9 @@ export function ShareRoundCard({ data }: Props) {
       </View>
 
       <Text style={styles.roundComplete}>
-        {data.holesLabel ? `${data.holesLabel.toUpperCase()} COMPLETE` : 'ROUND COMPLETE'}
+        {data.holesLabel
+          ? t('shareRound.holesComplete', { holes: data.holesLabel.toUpperCase() })
+          : t('shareRound.roundComplete')}
       </Text>
       <Text
         style={[
@@ -224,7 +235,7 @@ export function ShareRoundCard({ data }: Props) {
 
       <View style={styles.statsRow}>
         <View style={styles.statCol}>
-          <Text style={styles.statLbl}>DIFFERENTIAL</Text>
+          <Text style={styles.statLbl}>{t('shareRound.differential')}</Text>
           <Text style={styles.statVal}>{formatShareDifferential(data.differential)}</Text>
           {data.differentialSubtext ? (
             <Text style={styles.statSub}>{data.differentialSubtext}</Text>
@@ -232,29 +243,33 @@ export function ShareRoundCard({ data }: Props) {
         </View>
         <View style={styles.statDivider} />
         <View style={styles.statCol}>
-          <Text style={styles.statLbl}>INDEX AFTER</Text>
+          <Text style={styles.statLbl}>{t('shareRound.indexAfter')}</Text>
           <Text style={styles.statVal}>{formatShareIndex(data.indexAfter)}</Text>
           {data.indexAfterSubtext ? <Text style={styles.statSub}>{data.indexAfterSubtext}</Text> : null}
         </View>
       </View>
 
       <View style={styles.conditionsCard}>
-        <Text style={styles.conditionsHead}>CONDITIONS PLAYED</Text>
+        <Text style={styles.conditionsHead}>{t('shareRound.conditionsPlayed')}</Text>
         <View style={styles.conditionsGrid}>
           <ConditionCell
-            label="PUTTING MODE"
-            value={data.puttingMode ?? '—'}
+            label={t('shareRound.puttingMode')}
+            value={data.puttingMode ?? emDash}
             icon={<CondIconPutting />}
           />
           <ConditionCell
-            label="PIN PLACEMENT"
-            value={data.pinPlacement ?? '—'}
+            label={t('shareRound.pinPlacement')}
+            value={data.pinPlacement ?? emDash}
             icon={<CondIconFlag />}
           />
-          <ConditionCell label="WIND" value={data.wind ?? '—'} icon={<CondIconWind />} />
           <ConditionCell
-            label="MULLIGANS"
-            value={data.mulligans ?? '—'}
+            label={t('shareRound.wind')}
+            value={data.wind ?? emDash}
+            icon={<CondIconWind />}
+          />
+          <ConditionCell
+            label={t('shareRound.mulligans')}
+            value={data.mulligans ?? emDash}
             icon={<CondIconPerson />}
           />
         </View>
@@ -263,8 +278,8 @@ export function ShareRoundCard({ data }: Props) {
       <View style={styles.footerChip}>
         <CondIconCheck />
         <View style={styles.footerTextCol}>
-          <Text style={styles.footerTitle}>Logged in SimCap</Text>
-          <Text style={styles.footerSub}>Every round. Every sim.</Text>
+          <Text style={styles.footerTitle}>{t('shareRound.loggedInSimCap')}</Text>
+          <Text style={styles.footerSub}>{t('shareRound.everyRoundEverySim')}</Text>
         </View>
       </View>
     </View>

@@ -13,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import { formatRelativeTime } from '../lib/formatRelativeTime';
 import {
@@ -69,6 +70,7 @@ export function GroupChatView({
   currentUserId,
   canModerate,
 }: Props) {
+  const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(true);
@@ -210,20 +212,20 @@ export function GroupChatView({
     const isMine = m.user_id === currentUserId;
     const canDelete = isMine || canModerate;
     const buttons: { text: string; style?: 'cancel' | 'destructive'; onPress?: () => void }[] = [
-      { text: 'Cancel', style: 'cancel' },
+      { text: t('common.cancel'), style: 'cancel' },
     ];
     if (canDelete) {
       buttons.push({
-        text: 'Delete',
+        text: t('groupChat.delete'),
         style: 'destructive',
         onPress: () => {
           Alert.alert(
-            'Delete message?',
-            'This cannot be undone. The message will show as deleted for everyone.',
+            t('groupChat.deleteTitle'),
+            t('groupChat.deleteBody'),
             [
-              { text: 'Cancel', style: 'cancel' },
+              { text: t('common.cancel'), style: 'cancel' },
               {
-                text: 'Delete',
+                text: t('groupChat.delete'),
                 style: 'destructive',
                 onPress: () => void onDeleteMessage(m.id),
               },
@@ -233,11 +235,11 @@ export function GroupChatView({
       });
     }
     buttons.push({
-      text: 'Report',
+      text: t('groupChat.report'),
       style: 'destructive',
       onPress: () => void onReportMessage(m.id),
     });
-    Alert.alert('Message options', undefined, buttons);
+    Alert.alert(t('matchChat.messageOptions'), undefined, buttons);
   };
 
   const onDeleteMessage = async (messageId: string) => {
@@ -247,7 +249,7 @@ export function GroupChatView({
     }
     const token = googleOAuthAccessToken ?? undefined;
     const res = await softDeleteGroupMessage(messageId, token);
-    if (res.error) showAppAlert('Delete failed', res.error);
+    if (res.error) showAppAlert(t('groupChat.deleteFailed'), res.error);
   };
 
   const onReportMessage = async (messageId: string) => {
@@ -255,16 +257,16 @@ export function GroupChatView({
     const token = googleOAuthAccessToken ?? undefined;
     const res = await reportGroupMessage(messageId, token);
     if (res.error) {
-      showAppAlert('Report failed', res.error);
+      showAppAlert(t('groupChat.reportFailed'), res.error);
       return;
     }
-    showAppAlert('Report received', 'Thanks — your report has been logged.');
+    showAppAlert(t('groupChat.reportReceivedTitle'), t('groupChat.reportReceivedBody'));
   };
 
   const displayRows = useMemo(() => {
     return messages.map((m) => {
       const mem = memberByUserId.get(m.user_id);
-      const name = mem?.displayName.replace(/\s*\(you\)\s*$/i, '').trim() || 'Member';
+      const name = mem?.displayName.replace(/\s*\(you\)\s*$/i, '').trim() || t('groupChat.memberFallback');
       const initials = mem?.initials ?? '?';
       const isMine = m.user_id === currentUserId;
       const deleted = m.deleted_at != null;
@@ -277,7 +279,7 @@ export function GroupChatView({
         timeLabel: formatRelativeTime(m.created_at),
       };
     });
-  }, [messages, memberByUserId, currentUserId]);
+  }, [messages, memberByUserId, currentUserId, t]);
 
   return (
     <KeyboardAvoidingView
@@ -290,9 +292,9 @@ export function GroupChatView({
           {groupName}
         </Text>
         <Text style={styles.headerSub}>
-          {memberCount} member{memberCount === 1 ? '' : 's'}
+          {t('groupChat.memberCount', { count: memberCount })}
         </Text>
-        {reconnecting ? <Text style={styles.reconnecting}>Reconnecting…</Text> : null}
+        {reconnecting ? <Text style={styles.reconnecting}>{t('groupChat.reconnecting')}</Text> : null}
       </View>
 
       {loading ? (
@@ -308,10 +310,7 @@ export function GroupChatView({
           onContentSizeChange={() => scrollToBottom(false)}
         >
           {displayRows.length === 0 ? (
-            <Text style={styles.empty}>
-              No messages yet. Start the conversation — organize a tournament, set up a match, or
-              just talk golf.
-            </Text>
+            <Text style={styles.empty}>{t('groupChat.empty')}</Text>
           ) : (
             displayRows.map((m) => (
               <View key={m.clientKey ?? m.id}>
@@ -327,7 +326,7 @@ export function GroupChatView({
                   ) : null}
                   <View style={[styles.msgCol, m.isMine && styles.msgColMine]}>
                     <Text style={[styles.senderName, m.isMine && styles.senderNameMine]}>
-                      {m.isMine ? 'You' : m.name}
+                      {m.isMine ? t('groupChat.you') : m.name}
                     </Text>
                     <View
                       style={[
@@ -342,18 +341,18 @@ export function GroupChatView({
                           m.deleted && styles.msgTxtDeleted,
                         ]}
                       >
-                        {m.deleted ? 'Message deleted' : m.content}
+                        {m.deleted ? t('groupChat.messageDeleted') : m.content}
                       </Text>
                     </View>
                     <Text style={styles.timeTxt}>{m.timeLabel}</Text>
                     {m.optimisticStatus === 'failed' ? (
                       <View style={styles.failedRow}>
-                        <Text style={styles.failedTxt}>Could not send</Text>
+                        <Text style={styles.failedTxt}>{t('groupChat.couldNotSend')}</Text>
                         <Pressable
                           onPress={() => void handleSend(m.content, m.clientKey)}
                           hitSlop={8}
                         >
-                          <Text style={styles.retryTxt}>Retry</Text>
+                          <Text style={styles.retryTxt}>{t('groupChat.retry')}</Text>
                         </Pressable>
                       </View>
                     ) : null}
@@ -369,8 +368,8 @@ export function GroupChatView({
         <TextInput
           style={styles.input}
           value={input}
-          onChangeText={(t) => setInput(t.slice(0, 500))}
-          placeholder="Message your crew…"
+          onChangeText={(txt) => setInput(txt.slice(0, 500))}
+          placeholder={t('groupChat.placeholder')}
           placeholderTextColor={colors.subtle}
           editable={!sending && supabaseOn}
           multiline
@@ -388,7 +387,7 @@ export function GroupChatView({
           {sending ? (
             <ActivityIndicator color="#fff" size="small" />
           ) : (
-            <Text style={styles.sendBtnTxt}>Send</Text>
+            <Text style={styles.sendBtnTxt}>{t('matchChat.send')}</Text>
           )}
         </Pressable>
       </View>

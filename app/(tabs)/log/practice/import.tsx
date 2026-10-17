@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../../src/components/ContentWidth';
+import i18n, { useTranslation } from '../../../../src/i18n';
 import { colors } from '../../../../src/lib/constants';
 import { PRACTICE_ANALYZER_ENABLED } from '../../../../src/lib/featureFlags';
 import { googleOAuthAccessToken } from '../../../../src/lib/googleOAuthAccessToken';
@@ -32,14 +33,18 @@ function formatCode(code: string): string {
 
 function remainingLabel(expiresAt: string, nowMs: number): string {
   const ms = new Date(expiresAt).getTime() - nowMs;
-  if (ms <= 0) return 'Expired';
+  if (ms <= 0) return i18n.t('log.practice.import.expired');
   const totalSec = Math.ceil(ms / 1000);
   const min = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
-  return `${min}:${String(sec).padStart(2, '0')} left`;
+  return i18n.t('log.practice.import.timeLeft', {
+    min,
+    sec: String(sec).padStart(2, '0'),
+  });
 }
 
 export default function PracticeImportScreen() {
+  const { t } = useTranslation();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
@@ -79,8 +84,8 @@ export default function PracticeImportScreen() {
   }, [generate]);
 
   useEffect(() => {
-    const t = setInterval(() => setNowMs(Date.now()), 1000);
-    return () => clearInterval(t);
+    const timer = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(timer);
   }, []);
 
   useEffect(() => {
@@ -103,7 +108,9 @@ export default function PracticeImportScreen() {
     const analysisId = res.data.analysis_id;
     const analysis = await fetchPracticeAnalysis(analysisId, token);
     if (analysis.data?.status === 'failed') {
-      setError(analysis.data.error_message ?? 'Analysis failed. Generate a new code and try again.');
+      setError(
+        analysis.data.error_message ?? t('log.practice.import.analysisFailed')
+      );
       setPhase('error');
       return;
     }
@@ -111,7 +118,7 @@ export default function PracticeImportScreen() {
       navigatingRef.current = true;
       router.replace(`/(tabs)/log/practice/${analysisId}` as never);
     }
-  }, [codeId, token, router]);
+  }, [codeId, token, router, t]);
 
   useEffect(() => {
     if ((phase !== 'waiting' && phase !== 'received') || !codeId || !user?.id) return;
@@ -151,27 +158,29 @@ export default function PracticeImportScreen() {
         {phase === 'generating' ? (
           <View style={styles.card}>
             <ActivityIndicator color={colors.header} />
-            <Text style={styles.loadingTxt}>Generating your import code…</Text>
+            <Text style={styles.loadingTxt}>{t('log.practice.import.generating')}</Text>
           </View>
         ) : null}
 
         {phase === 'waiting' || phase === 'received' ? (
           <View style={styles.card}>
-            <Text style={styles.eyebrow}>Your import code</Text>
-            <Text style={styles.code} accessibilityLabel={`Import code ${code ?? ''}`}>
-              {code ? formatCode(code) : '------'}
+            <Text style={styles.eyebrow}>{t('log.practice.import.eyebrow')}</Text>
+            <Text
+              style={styles.code}
+              accessibilityLabel={t('log.practice.import.codeA11y', { code: code ?? '' })}
+            >
+              {code ? formatCode(code) : t('log.practice.import.codePlaceholder')}
             </Text>
             {expiresAt && phase === 'waiting' ? (
               <Text style={styles.timer}>{remainingLabel(expiresAt, nowMs)}</Text>
             ) : null}
-            <Text style={styles.instructions}>
-              On the sim computer, export your practice session as a CSV, go to import.sim-cap.com (or
-              sim-cap.com/import), enter this code, and upload the file.
-            </Text>
+            <Text style={styles.instructions}>{t('log.practice.import.instructions')}</Text>
             <View style={styles.waitRow}>
               <ActivityIndicator color={colors.header} />
               <Text style={styles.waitTxt}>
-                {phase === 'received' ? 'File received — analyzing…' : 'Waiting for upload…'}
+                {phase === 'received'
+                  ? t('log.practice.import.analyzing')
+                  : t('log.practice.import.waiting')}
               </Text>
             </View>
           </View>
@@ -179,34 +188,34 @@ export default function PracticeImportScreen() {
 
         {phase === 'expired' ? (
           <View style={styles.card}>
-            <Text style={styles.eyebrow}>Code expired</Text>
-            <Text style={[styles.code, styles.codeExpired]}>{code ? formatCode(code) : '------'}</Text>
-            <Text style={styles.instructions}>
-              That code timed out before a file arrived. Generate a fresh one — it stays valid for 10 minutes.
+            <Text style={styles.eyebrow}>{t('log.practice.import.codeExpired')}</Text>
+            <Text style={[styles.code, styles.codeExpired]}>
+              {code ? formatCode(code) : t('log.practice.import.codePlaceholder')}
             </Text>
+            <Text style={styles.instructions}>{t('log.practice.import.expiredBody')}</Text>
             <Pressable
               style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
               onPress={() => void generate()}
             >
-              <Text style={styles.primaryBtnTxt}>Generate a new code</Text>
+              <Text style={styles.primaryBtnTxt}>{t('log.practice.import.generateNew')}</Text>
             </Pressable>
           </View>
         ) : null}
 
         {phase === 'error' ? (
           <View style={styles.card}>
-            <Text style={styles.errTitle}>Could not start import</Text>
-            <Text style={styles.instructions}>{error ?? 'Something went wrong.'}</Text>
+            <Text style={styles.errTitle}>{t('log.practice.import.errorTitle')}</Text>
+            <Text style={styles.instructions}>{error ?? t('common.somethingWentWrong')}</Text>
             <Pressable
               style={({ pressed }) => [styles.primaryBtn, pressed && styles.pressed]}
               onPress={() => void generate()}
             >
-              <Text style={styles.primaryBtnTxt}>Try again</Text>
+              <Text style={styles.primaryBtnTxt}>{t('log.practice.import.tryAgain')}</Text>
             </Pressable>
           </View>
         ) : null}
 
-        {!supabaseOn ? <Text style={styles.muted}>Supabase is not configured.</Text> : null}
+        {!supabaseOn ? <Text style={styles.muted}>{t('matchChat.notConfigured')}</Text> : null}
       </ScrollView>
     </ContentWidth>
   );

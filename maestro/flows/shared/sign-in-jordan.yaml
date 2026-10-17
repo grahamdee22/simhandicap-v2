@@ -1,0 +1,47 @@
+appId: com.simcap.app
+---
+# Sign in as Jordan Ellis (is_test demo account). Paced for on-camera use.
+- launchApp:
+    clearState: true
+- waitForAnimationToEnd:
+    timeout: 15000
+
+- extendedWaitUntil:
+    visible: "Skip introduction"
+    timeout: 60000
+- waitForAnimationToEnd
+- tapOn: "Skip introduction"
+- waitForAnimationToEnd
+
+- extendedWaitUntil:
+    visible: "Sign in to your account"
+    timeout: 30000
+- waitForAnimationToEnd
+
+- tapOn:
+    text: "OK"
+    optional: true
+- waitForAnimationToEnd
+
+- tapOn: "you@example.com"
+- waitForAnimationToEnd
+- inputText: "jordan.ellis@demo.simcap.test"
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+
+- tapOn:
+    below:
+      text: "PASSWORD"
+- waitForAnimationToEnd
+- inputText: "Demo-Recording-JEllis!"
+- waitForAnimationToEnd
+- hideKeyboard
+- waitForAnimationToEnd
+
+- tapOn: "Sign in"
+# iOS tab a11y labels look like "Log a round, tab, 2 of 22"
+- extendedWaitUntil:
+    visible: "Log a round, tab.*"
+    timeout: 60000
+- waitForAnimationToEnd

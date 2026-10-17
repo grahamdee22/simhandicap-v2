@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import { ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useTranslation } from '../../i18n';
 import { scoreToParStyle } from '../../lib/handicap';
 import { colors } from '../../lib/constants';
 import type { LeagueFormat } from '../../lib/leagues';
@@ -72,6 +73,8 @@ function HoleRow({
   /** Display-only. Stored hole numbers stay 1..n. */
   holeNumberOffset?: number;
 }) {
+  const { t } = useTranslation();
+  const emDash = t('match.history.emDash');
   const indices = Array.from({ length: count }, (_, i) => startHole + i);
   const totalGross = indices.reduce((s, idx) => {
     const g = holes[idx]?.gross_score;
@@ -84,7 +87,7 @@ function HoleRow({
       <View style={styles.rowHead}>
         <Text style={styles.rowTitle}>{label}</Text>
         <Text style={styles.rowTotal}>
-          {totalLabel}: {anyGross ? totalGross : '—'}
+          {totalLabel}: {anyGross ? totalGross : emDash}
         </Text>
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.scroll}>
@@ -97,7 +100,7 @@ function HoleRow({
           return (
             <View key={holeNum} style={styles.cell}>
               <Text style={styles.holeNum}>{holeNum + holeNumberOffset}</Text>
-              <Text style={styles.par}>Par {par}</Text>
+              <Text style={styles.par}>{t('tournament.holeScorecard.par', { par })}</Text>
               <TextInput
                 style={[
                   styles.input,
@@ -113,14 +116,14 @@ function HoleRow({
                 keyboardType="number-pad"
                 maxLength={2}
                 value={hole?.gross_score != null ? String(hole.gross_score) : ''}
-                onChangeText={(t) => {
-                  const n = parseInt(t.replace(/\D/g, ''), 10);
+                onChangeText={(txt) => {
+                  const n = parseInt(txt.replace(/\D/g, ''), 10);
                   onChangeHole(holeNum, {
-                    gross_score: t.trim() === '' ? null : Number.isFinite(n) ? n : null,
+                    gross_score: txt.trim() === '' ? null : Number.isFinite(n) ? n : null,
                     is_team_score: format === 'scramble',
                   });
                 }}
-                placeholder="—"
+                placeholder={emDash}
                 placeholderTextColor={colors.subtle}
               />
             </View>
@@ -145,8 +148,10 @@ export function TournamentHoleScorecard({
   nine = null,
   handicap = null,
 }: Props) {
+  const { t } = useTranslation();
   const grandTotal = sumGrossFromHoles(holes);
-  const nineLabel = nine === 'back' ? 'Back 9' : 'Front 9';
+  const nineLabel = nine === 'back' ? t('match.create.back9') : t('match.create.front9');
+  const emDash = t('match.history.emDash');
 
   const matchComparison = useMemo(() => {
     if (format !== 'match_play' || !opponentHoles?.length) return null;
@@ -178,10 +183,10 @@ export function TournamentHoleScorecard({
     }
     const filled = holes.filter((h) => h.gross_score != null).length;
     if (filled > 0 && !opponentHoles?.length) {
-      return 'Submit your scorecard — match status updates when your opponent submits.';
+      return t('tournament.holeScorecard.waitingOpponent');
     }
     return null;
-  }, [format, matchSummary, throughHoles, holes, opponentHoles, holeCount]);
+  }, [format, matchSummary, throughHoles, holes, opponentHoles, holeCount, t]);
 
   return (
     <View style={styles.card}>
@@ -194,7 +199,7 @@ export function TournamentHoleScorecard({
           label={nineLabel}
           startHole={0}
           count={9}
-          totalLabel="Total"
+          totalLabel={t('match.score.total')}
           format={format}
           pars={pars}
           holes={holes}
@@ -205,10 +210,10 @@ export function TournamentHoleScorecard({
       ) : (
         <>
           <HoleRow
-            label="Front 9"
+            label={t('match.create.front9')}
             startHole={0}
             count={9}
-            totalLabel="Out"
+            totalLabel={t('round.detail.scorecardOut')}
             format={format}
             pars={pars}
             holes={holes}
@@ -216,10 +221,10 @@ export function TournamentHoleScorecard({
             teamScoreLabel={teamScoreLabel}
           />
           <HoleRow
-            label="Back 9"
+            label={t('match.create.back9')}
             startHole={9}
             count={9}
-            totalLabel="In"
+            totalLabel={t('round.detail.scorecardIn')}
             format={format}
             pars={pars}
             holes={holes}
@@ -229,8 +234,8 @@ export function TournamentHoleScorecard({
       )}
       {holeCount === 9 ? null : (
         <View style={styles.grandTotal}>
-          <Text style={styles.grandLbl}>Total</Text>
-          <Text style={styles.grandVal}>{grandTotal ?? '—'}</Text>
+          <Text style={styles.grandLbl}>{t('match.score.total')}</Text>
+          <Text style={styles.grandVal}>{grandTotal ?? emDash}</Text>
         </View>
       )}
     </View>
