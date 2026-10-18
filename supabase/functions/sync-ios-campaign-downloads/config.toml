@@ -1,0 +1,3 @@
+[functions.sync-ios-campaign-downloads]
+# After ASC ONGOING reports are requested (once by Admin), Sales and Reports can download daily.
+schedule = "30 10 * * *"

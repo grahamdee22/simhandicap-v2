@@ -16,6 +16,7 @@ import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
 import { BrandedSplashGate } from '@/src/components/BrandedSplashGate';
 import { colors } from '@/src/lib/constants';
+import { captureAndroidInstallReferrerOnce } from '@/src/lib/captureAndroidInstallReferrer';
 import { captureReferralCodeFromUrl } from '@/src/lib/pendingReferralCode';
 /** Side-effect: initialize i18next before any screen calls useTranslation. */
 import '@/src/i18n';
@@ -72,6 +73,12 @@ export default function RootLayout() {
       alive = false;
       sub.remove();
     };
+  }, []);
+
+  // Android: one-shot Play Install Referrer → pendingReferralCode + events table.
+  useEffect(() => {
+    if (Platform.OS !== 'android') return;
+    void captureAndroidInstallReferrerOnce();
   }, []);
 
   if (!loaded) {
