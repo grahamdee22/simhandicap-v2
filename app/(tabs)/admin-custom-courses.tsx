@@ -16,15 +16,15 @@ import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
 import { useResponsive } from '../../src/lib/responsive';
 import {
+  adminDeleteCustomCourse,
   adminUpdateCustomCourseTee,
   fetchCustomCourseBackfillCandidates,
   fetchCustomCoursesForAdmin,
   type BackfillCandidate,
   type CustomCourseRow,
 } from '../../src/lib/customCourses';
-import { showAppAlert } from '../../src/lib/alertCompat';
-
-const ADMIN_EMAIL = 'simcapadmin@gmail.com';
+import { fetchIsSimCapAdmin, isSimCapAdminFromUser } from '../../src/lib/simcapAdmin';
+import { confirmDestructive, showAppAlert } from '../../src/lib/alertCompat';
 
 export default function AdminCustomCoursesScreen() {
   const { t } = useTranslation();
@@ -32,16 +32,15 @@ export default function AdminCustomCoursesScreen() {
   const { gutter } = useResponsive();
   const { user } = useAuth();
   const router = useRouter();
-  const email = (user?.email ?? '').trim().toLowerCase();
-  const isAdmin = email === ADMIN_EMAIL;
 
+  const [adminReady, setAdminReady] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(() => isSimCapAdminFromUser(user));
   const [courses, setCourses] = useState<CustomCourseRow[]>([]);
   const [backfill, setBackfill] = useState<BackfillCandidate[]>([]);
   const [busy, setBusy] = useState(false);
   const [edits, setEdits] = useState<Record<string, { rating: string; slope: string }>>({});
 
   const load = useCallback(async () => {
-    if (!isAdmin) return;
     setBusy(true);
     try {
       const [c, b] = await Promise.all([
@@ -53,19 +52,41 @@ export default function AdminCustomCoursesScreen() {
     } finally {
       setBusy(false);
     }
-  }, [isAdmin]);
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      void load();
-    }, [load])
+      let cancelled = false;
+      setAdminReady(false);
+      void (async () => {
+        const ok = await fetchIsSimCapAdmin(user);
+        if (cancelled) return;
+        setIsAdmin(ok);
+        setAdminReady(true);
+        if (ok) await load();
+      })();
+      return () => {
+        cancelled = true;
+      };
+    }, [user, load])
   );
+
+  if (!adminReady) {
+    return (
+      <ContentWidth bg={colors.bg}>
+        <View style={[styles.denied, { padding: gutter }]}>
+          <ActivityIndicator color={colors.accent} />
+        </View>
+      </ContentWidth>
+    );
+  }
 
   if (!isAdmin) {
     return (
       <ContentWidth bg={colors.bg}>
         <View style={[styles.denied, { padding: gutter }]}>
           <Text style={styles.deniedTxt}>{t('adminCustom.denied')}</Text>
+          <Text style={styles.deniedHint}>{t('adminCustom.deniedHint')}</Text>
           <Pressable onPress={() => router.back()}>
             <Text style={styles.link}>{t('common.cancel')}</Text>
           </Pressable>
@@ -105,7 +126,30 @@ export default function AdminCustomCoursesScreen() {
         <Text style={[styles.section, { marginTop: 24 }]}>{t('adminCustom.editPromote')}</Text>
         {courses.map((course) => (
           <View key={course.id} style={styles.card}>
-            <Text style={styles.cardTitle}>{course.name}</Text>
+            <View style={styles.cardTitleRow}>
+              <Text style={[styles.cardTitle, { flex: 1 }]}>{course.name}</Text>
+              <Pressable
+                style={styles.deleteBtn}
+                onPress={() => {
+                  void (async () => {
+                    const ok = await confirmDestructive(
+                      t('adminCustom.deleteConfirmTitle'),
+                      t('adminCustom.deleteConfirmBody', { name: course.name }),
+                      t('adminCustom.delete')
+                    );
+                    if (!ok) return;
+                    const result = await adminDeleteCustomCourse(course.id);
+                    if ('error' in result) {
+                      showAppAlert(t('adminCustom.deleteFailed'), result.error);
+                      return;
+                    }
+                    void load();
+                  })();
+                }}
+              >
+                <Text style={styles.deleteTxt}>{t('adminCustom.delete')}</Text>
+              </Pressable>
+            </View>
             {course.course_tees.map((tee) => {
               const edit = edits[tee.id] ?? {
                 rating: String(tee.rating),
@@ -181,6 +225,7 @@ export default function AdminCustomCoursesScreen() {
 const styles = StyleSheet.create({
   denied: { flex: 1, justifyContent: 'center', gap: 12 },
   deniedTxt: { fontSize: 15, color: colors.muted },
+  deniedHint: { fontSize: 13, color: colors.subtle, lineHeight: 18 },
   link: { fontSize: 15, fontWeight: '700', color: colors.accent },
   title: { fontSize: 22, fontWeight: '700', color: colors.ink },
   sub: { fontSize: 13, color: colors.muted, marginTop: 6, marginBottom: 16, lineHeight: 18 },
@@ -200,9 +245,15 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 10,
   },
+  cardTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   cardTitle: { fontSize: 15, fontWeight: '700', color: colors.ink },
   cardMeta: { fontSize: 12, color: colors.muted, marginTop: 4 },
-  teeRow: { marginTop: 12, paddingTop: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  teeRow: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+  },
   teeName: { fontSize: 13, fontWeight: '600', color: colors.ink, marginBottom: 8 },
   inputs: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, alignItems: 'center' },
   input: {
@@ -222,4 +273,12 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
   },
   promoteTxt: { color: '#fff', fontSize: 13, fontWeight: '700' },
+  deleteBtn: {
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: colors.danger,
+  },
+  deleteTxt: { color: colors.danger, fontSize: 12, fontWeight: '700' },
 });

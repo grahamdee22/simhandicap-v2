@@ -1,5 +1,6 @@
+import { useCallback, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useRouter, type Href } from 'expo-router';
+import { useFocusEffect, useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconChevronForward } from '../../src/components/SvgUiIcons';
@@ -8,12 +9,16 @@ import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
 import { SIMCAP_INSTAGRAM_URL } from '../../src/lib/socialLinks';
 import { useResponsive } from '../../src/lib/responsive';
+import {
+  fetchIsSimCapAdmin,
+  isSimCapAdminFromUser,
+  SIMCAP_SUPPORT_EMAIL,
+} from '../../src/lib/simcapAdmin';
 
-const ADMIN_EMAIL = 'simcapadmin@gmail.com';
 const INSTAGRAM_HANDLE = '@s1mcap';
 
 function mailtoUrl() {
-  return `mailto:${ADMIN_EMAIL}`;
+  return `mailto:${SIMCAP_SUPPORT_EMAIL}`;
 }
 
 export default function ContactScreen() {
@@ -22,7 +27,20 @@ export default function ContactScreen() {
   const { gutter } = useResponsive();
   const router = useRouter();
   const { user } = useAuth();
-  const isAdmin = (user?.email ?? '').trim().toLowerCase() === ADMIN_EMAIL;
+  const [isAdmin, setIsAdmin] = useState(() => isSimCapAdminFromUser(user));
+
+  useFocusEffect(
+    useCallback(() => {
+      let cancelled = false;
+      setIsAdmin(isSimCapAdminFromUser(user));
+      void fetchIsSimCapAdmin(user).then((ok) => {
+        if (!cancelled) setIsAdmin(ok);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [user])
+  );
 
   const onEmail = () => void Linking.openURL(mailtoUrl());
   const onInstagram = () => void Linking.openURL(SIMCAP_INSTAGRAM_URL);
@@ -50,7 +68,7 @@ export default function ContactScreen() {
             <Text style={styles.cardK}>{t('contact.email')}</Text>
             <IconChevronForward size={18} color={colors.sage} />
           </View>
-          <Text style={styles.cardVal}>{ADMIN_EMAIL}</Text>
+          <Text style={styles.cardVal}>{SIMCAP_SUPPORT_EMAIL}</Text>
           <Text style={styles.cardHint}>{t('contact.emailHint')}</Text>
         </Pressable>
 

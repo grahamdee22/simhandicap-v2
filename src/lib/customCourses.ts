@@ -382,6 +382,18 @@ export async function adminUpdateCustomCourseTee(opts: {
   return { ok: true, rating_source: row?.rating_source ?? 'curated' };
 }
 
+export async function adminDeleteCustomCourse(
+  courseId: string
+): Promise<{ ok: true; name?: string } | { error: string }> {
+  if (!supabase) return { error: 'Not signed in.' };
+  const { data, error } = await supabase.rpc('admin_delete_custom_course', {
+    p_course_id: courseId,
+  });
+  if (error) return { error: error.message };
+  const row = data as { ok?: boolean; name?: string } | null;
+  return { ok: true, name: row?.name };
+}
+
 export async function fetchCustomCoursesForAdmin(): Promise<CustomCourseRow[]> {
   return fetchCustomCoursesForPicker();
 }

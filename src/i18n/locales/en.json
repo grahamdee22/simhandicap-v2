@@ -188,7 +188,12 @@
     "promoteFailed": "Promote failed",
     "promoted": "Updated",
     "promotedBody": "Rating/slope saved and marked curated. Future rounds use the new numbers.",
+    "delete": "Delete",
+    "deleteConfirmTitle": "Delete custom course?",
+    "deleteConfirmBody": "Permanently delete “{{name}}” and its tees. Blocked if any rounds reference it.",
+    "deleteFailed": "Delete failed",
     "denied": "Admin only.",
+    "deniedHint": "Your login email must be on the admin allowlist, or profiles.is_app_admin must be true for your account.",
     "open": "Manage custom courses",
     "openHint": "Backfill candidates and promote tees to curated."
   },
