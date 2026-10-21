@@ -7,7 +7,7 @@ import * as AppleAuthentication from 'expo-apple-authentication';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import { applyProfileRowToStore, fetchMyProfile } from '@/src/lib/profiles';
-import { applyPendingReferralCodeIfNeeded } from '@/src/lib/pendingReferralCode';
+import { applyPendingSignupAttributionIfNeeded } from '@/src/lib/pendingReferralCode';
 import { fetchMyRoundsForUser } from '@/src/lib/rounds';
 import { listMyMatches, listOpenFeedMatches } from '@/src/lib/matchPlay';
 import { fetchInboundGroupInvitesIntoStore, fetchMySocialGroupsIntoStore } from '@/src/lib/socialGroups';
@@ -208,8 +208,8 @@ async function persistNativeOAuthSessionAndNavigate(
     syncGhinFromProfileIfChanged,
   });
 
-  // OAuth cannot pass referral into handle_new_user(); apply pending local code if still null.
-  await applyPendingReferralCodeIfNeeded(effectiveUser.id, bearerToken);
+  // OAuth cannot pass referral/platform into handle_new_user(); apply pending locals if still null.
+  await applyPendingSignupAttributionIfNeeded(effectiveUser.id, bearerToken);
 
   const currentDisplayName = useAppStore.getState().displayName;
   if (!currentDisplayName || currentDisplayName === 'Golfer' || currentDisplayName.includes('@')) {

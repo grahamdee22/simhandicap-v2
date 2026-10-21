@@ -9,7 +9,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
-import { setPendingReferralCode } from './pendingReferralCode';
+import { setPendingReferralCode, setPendingReferralSource } from './pendingReferralCode';
 import {
   isCampaignPlayChannel,
   parseChannelFromPlayInstallReferrer,
@@ -109,6 +109,7 @@ export async function captureAndroidInstallReferrerOnce(): Promise<{
 
   if (isCampaignPlayChannel(parsedChannel)) {
     await setPendingReferralCode(parsedChannel);
+    await setPendingReferralSource('link');
     return { ran: true, channel: parsedChannel };
   }
 

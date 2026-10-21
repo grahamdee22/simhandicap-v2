@@ -8,7 +8,7 @@ import {
   parseOAuthCallbackUrl,
   parseOAuthImplicitSessionFromUrl,
 } from '@/src/lib/oauthSignIn';
-import { applyPendingReferralCodeIfNeeded } from '@/src/lib/pendingReferralCode';
+import { applyPendingSignupAttributionIfNeeded } from '@/src/lib/pendingReferralCode';
 import { fetchMyProfile } from '@/src/lib/profiles';
 import { isSupabaseConfigured, supabase } from '@/src/lib/supabase';
 
@@ -89,7 +89,7 @@ export default function AuthOAuthCallbackScreen() {
         finished.current = true;
         const sess = sessionData.session;
         if (sess?.user?.id && sess.access_token) {
-          await applyPendingReferralCodeIfNeeded(sess.user.id, sess.access_token);
+          await applyPendingSignupAttributionIfNeeded(sess.user.id, sess.access_token);
         }
         const profile = await fetchMyProfile();
         if (profile) {
@@ -120,7 +120,7 @@ export default function AuthOAuthCallbackScreen() {
       finished.current = true;
       const sess = exchangeData.session;
       if (sess?.user?.id && sess.access_token) {
-        await applyPendingReferralCodeIfNeeded(sess.user.id, sess.access_token);
+        await applyPendingSignupAttributionIfNeeded(sess.user.id, sess.access_token);
       }
       const profile = await fetchMyProfile();
       if (profile) {

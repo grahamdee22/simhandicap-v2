@@ -1,0 +1,4 @@
+[functions.email-daily-acquisition-report]
+# Live schedule is pg_cron job `email-daily-acquisition-report-daily` (11:00 UTC),
+# after sync-ios-campaign-downloads-daily at 10:30 so ASC rows are fresher.
+schedule = "0 11 * * *"

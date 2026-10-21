@@ -1,14 +1,14 @@
 import Constants from 'expo-constants';
 import type { PlatformId } from './constants';
+import { getCourseById, getCourseTees, type CourseSeed, type CourseTee } from './courses';
+import type { CustomCourseRow } from './customCourses';
 import {
-  COURSE_SEEDS,
-  courseMatchesSearch,
-  getCourseById,
-  getCourseTees,
-  normalizeCourseName,
-  type CourseSeed,
-  type CourseTee,
-} from './courses';
+  curatedPickerCourses,
+  dbCourseMatchesSearch,
+  mergePickerCourses,
+  type PickerCourseItem,
+} from './coursePickerSearch';
+import { isRatingSource, type RatingSource } from './ratingSource';
 import { supabase } from './supabase';
 import { communityCourseAttributionLabel } from './communityEnrichment';
 import { isCommunityCourseId } from './communityCourseId';
@@ -18,7 +18,8 @@ import {
 } from './fetchCommunityCourseEnrichment';
 
 export { communityCourseAttributionLabel, isCommunityCourseId };
-export type { CourseEnrichment };
+export { curatedPickerCourses, mergePickerCourses };
+export type { CourseEnrichment, PickerCourseItem };
 
 export type HandicapSource = 'verified' | 'unverified';
 
@@ -34,28 +35,21 @@ export type CommunityCourseRow = {
   enrichment_tier: number | null;
   enrichment_source: string | null;
   course_tees: {
+    id?: string;
     name: string;
     rating: number;
     slope: number;
     yards: number | null;
+    par?: number | null;
+    rating_source?: RatingSource | null;
   }[];
-};
-
-export type PickerCourseItem = {
-  id: string;
-  name: string;
-  location?: string;
-  source: 'curated' | 'community';
-  confident: boolean;
-  enrichmentTier?: number | null;
-  enrichmentSource?: string | null;
 };
 
 export type ResolvedLogCourse = {
   id: string;
   name: string;
   location?: string;
-  source: 'curated' | 'community';
+  source: 'curated' | 'community' | 'custom';
   confident: boolean;
   handicapSource: HandicapSource;
   enrichmentTier?: number | null;
@@ -65,43 +59,12 @@ export type ResolvedLogCourse = {
   tees: CourseTee[];
 };
 
-export function curatedPickerCourses(query: string): PickerCourseItem[] {
-  return COURSE_SEEDS.filter((c) => courseMatchesSearch(c, query))
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      location: c.location,
-      source: 'curated' as const,
-      confident: c.confident !== false,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-}
-
 export function communityMatchesSearch(course: CommunityCourseRow, rawQuery: string): boolean {
-  const q = normalizeCourseName(rawQuery);
-  if (!q) return true;
-  if (normalizeCourseName(course.name).includes(q)) return true;
-  if (course.location && normalizeCourseName(course.location).includes(q)) return true;
-  return false;
+  return dbCourseMatchesSearch(course, rawQuery);
 }
 
-export function mergePickerCourses(
-  curated: PickerCourseItem[],
-  community: CommunityCourseRow[],
-  query: string
-): PickerCourseItem[] {
-  const communityItems = community
-    .filter((c) => communityMatchesSearch(c, query))
-    .map((c) => ({
-      id: c.id,
-      name: c.name,
-      location: c.location ?? undefined,
-      source: 'community' as const,
-      confident: false,
-      enrichmentTier: c.enrichment_tier,
-      enrichmentSource: c.enrichment_source,
-    }));
-  return [...curated, ...communityItems].sort((a, b) => a.name.localeCompare(b.name));
+export function customMatchesSearch(course: CustomCourseRow, rawQuery: string): boolean {
+  return dbCourseMatchesSearch(course, rawQuery);
 }
 
 function communityTeesFromRow(row: CommunityCourseRow): CourseTee[] {
@@ -110,13 +73,29 @@ function communityTeesFromRow(row: CommunityCourseRow): CourseTee[] {
     rating: Number(t.rating),
     slope: Math.round(Number(t.slope)),
     ...(t.yards != null && Number.isFinite(Number(t.yards)) ? { yards: Number(t.yards) } : {}),
+    ...(t.par != null && Number.isFinite(Number(t.par)) ? { par: Number(t.par) } : {}),
+    ...(t.id ? { teeId: t.id } : {}),
+    ratingSource: isRatingSource(t.rating_source) ? t.rating_source : 'community',
+  }));
+}
+
+function customTeesFromRow(row: CustomCourseRow): CourseTee[] {
+  return (row.course_tees ?? []).map((t) => ({
+    name: t.name,
+    rating: Number(t.rating),
+    slope: Math.round(Number(t.slope)),
+    ...(t.yards != null && Number.isFinite(Number(t.yards)) ? { yards: Number(t.yards) } : {}),
+    ...(t.par != null && Number.isFinite(Number(t.par)) ? { par: Number(t.par) } : {}),
+    ...(t.id ? { teeId: t.id } : {}),
+    ratingSource: isRatingSource(t.rating_source) ? t.rating_source : 'default_unrated',
   }));
 }
 
 export function resolveLogCourse(
   courseId: string,
   platform: PlatformId,
-  communityCourses: CommunityCourseRow[]
+  communityCourses: CommunityCourseRow[],
+  customCourses: CustomCourseRow[] = []
 ): ResolvedLogCourse | null {
   const seed = getCourseById(courseId);
   if (seed) {
@@ -129,7 +108,22 @@ export function resolveLogCourse(
       confident,
       handicapSource: confident ? 'verified' : 'unverified',
       seed,
-      tees: getCourseTees(seed, platform),
+      tees: getCourseTees(seed, platform).map((t) => ({
+        ...t,
+        ratingSource: 'curated' as const,
+      })),
+    };
+  }
+  const custom = customCourses.find((c) => c.id === courseId);
+  if (custom) {
+    return {
+      id: custom.id,
+      name: custom.name,
+      location: custom.location ?? undefined,
+      source: 'custom',
+      confident: false,
+      handicapSource: 'unverified',
+      tees: customTeesFromRow(custom),
     };
   }
   const row = communityCourses.find((c) => c.id === courseId);
@@ -163,7 +157,7 @@ function getSupabaseRestConfig(): { supabaseUrl: string; supabaseAnonKey: string
 }
 
 const COMMUNITY_SELECT =
-  'id,name,name_normalized,location,designer,source,confident,gspro_difficulty,enrichment_tier,enrichment_source,course_tees(name,rating,slope,yards)';
+  'id,name,name_normalized,location,designer,source,confident,gspro_difficulty,enrichment_tier,enrichment_source,course_tees(id,name,rating,slope,yards,par,rating_source)';
 
 /** Load enriched community courses for the log picker (requires auth). */
 export async function fetchCommunityCoursesForPicker(

@@ -1,6 +1,7 @@
 import type { PlatformId } from './constants';
 import { PLATFORMS } from './constants';
-import { normalizeCourseName } from './courseNameNormalize';
+import { courseNameFuzzyMatch, normalizeCourseName } from './courseNameNormalize';
+import type { RatingSource } from './ratingSource';
 
 export { normalizeCourseName };
 
@@ -11,6 +12,12 @@ export type CourseTee = {
   slope: number;
   /** Total yardage from the published scorecard when verified; omit if unknown. */
   yards?: number;
+  /** Total par when known (custom courses; used for Par/113 default disclosure). */
+  par?: number;
+  /** DB tee id when sourced from community/custom course_tees. */
+  teeId?: string;
+  /** Where rating/slope came from; curated seeds omit (treated as curated). */
+  ratingSource?: RatingSource;
   /**
    * Optional real Front/Back 9 rating & slope when sourced later.
    * Until then `getNineHoleRatingSlope` derives from the 18-hole values.
@@ -1839,11 +1846,9 @@ export function ratingForCourse(course: CourseSeed, platform: PlatformId) {
   return { rating: last.rating, slope: last.slope };
 }
 
-/** Case-insensitive substring match on display name (course picker search). */
+/** Case-insensitive / fuzzy match on display name (course picker search). */
 export function courseMatchesSearch(course: CourseSeed, rawQuery: string): boolean {
-  const q = normalizeCourseName(rawQuery);
-  if (!q) return true;
-  if (normalizeCourseName(course.name).includes(q)) return true;
-  if (course.location && normalizeCourseName(course.location).includes(q)) return true;
+  if (courseNameFuzzyMatch(course.name, rawQuery)) return true;
+  if (course.location && courseNameFuzzyMatch(course.location, rawQuery)) return true;
   return false;
 }

@@ -2,8 +2,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useTranslation } from '../i18n';
 import { colors } from '../lib/constants';
 import { formatDifferentialDisplay } from '../lib/handicap';
+import { isUnratedTee } from '../lib/ratingSource';
 import { formatRoundMeta, type SimRound } from '../store/useAppStore';
 import { IconGolf, IconShareOutline } from './SvgUiIcons';
+import { UnratedCourseBadge } from './UnratedCourseBadge';
 
 type Props = {
   round: SimRound;
@@ -52,6 +54,7 @@ export function RoundListRow({
           <Text style={[styles.meta, isWide && styles.metaLg]} numberOfLines={2}>
             {formatRoundMeta(round)}
           </Text>
+          {isUnratedTee(round.teeRatingSource) ? <UnratedCourseBadge /> : null}
         </View>
         <View style={styles.right}>
           <Text style={[styles.score, isWide && styles.scoreLg]}>{round.grossScore}</Text>

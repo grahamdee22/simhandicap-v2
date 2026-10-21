@@ -51,7 +51,15 @@ import {
   type CommunityCourseRow,
   type ResolvedLogCourse,
 } from '../../../src/lib/communityCourses';
+import {
+  addTeeToCustomCourse,
+  fetchCustomCoursesForPicker,
+  type CustomCourseRow,
+} from '../../../src/lib/customCourses';
+import { DEFAULT_UNRATED_SLOPE, isUnratedTee } from '../../../src/lib/ratingSource';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
+import { UnratedCourseBadge } from '../../../src/components/UnratedCourseBadge';
+import { CustomCourseCreateModal } from '../../../src/components/CustomCourseCreateModal';
 import { yardageForCourseTee } from '../../../src/lib/courseTeeYardages';
 import { uploadLogScorecardForParse } from '../../../src/lib/logScorecardStorage';
 import { invokeParseScorecard } from '../../../src/lib/parseScorecard';
@@ -233,6 +241,17 @@ export default function LogRoundScreen() {
   const [activeTournaments, setActiveTournaments] = useState<ActiveTournamentOption[]>([]);
   const [tournamentApply, setTournamentApply] = useState<Record<string, boolean>>({});
   const [communityCourses, setCommunityCourses] = useState<CommunityCourseRow[]>([]);
+  const [customCourses, setCustomCourses] = useState<CustomCourseRow[]>([]);
+  const [customCreateOpen, setCustomCreateOpen] = useState(false);
+  const [dismissCourseSuggestions, setDismissCourseSuggestions] = useState(false);
+  const [addTeeOpen, setAddTeeOpen] = useState(false);
+  const [addTeeName, setAddTeeName] = useState('');
+  const [addTeePar, setAddTeePar] = useState('72');
+  const [addTeeYards, setAddTeeYards] = useState('');
+  const [addTeeKnowOfficial, setAddTeeKnowOfficial] = useState(false);
+  const [addTeeRating, setAddTeeRating] = useState('');
+  const [addTeeSlope, setAddTeeSlope] = useState('');
+  const [addTeeBusy, setAddTeeBusy] = useState(false);
   const [yardsPlayed, setYardsPlayed] = useState('');
   /** False until the latest active-tournament fetch finishes — prevents stale prompt flash. */
   const [tournamentsReady, setTournamentsReady] = useState(false);
@@ -376,14 +395,34 @@ export default function LogRoundScreen() {
     }
   }, [supabaseOn, hasExpandedCourseList, courseId]);
 
+  const loadCustomCourses = useCallback(async () => {
+    if (!supabaseOn) {
+      setCustomCourses([]);
+      return;
+    }
+    try {
+      const accessToken =
+        googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const rows = await fetchCustomCoursesForPicker(accessToken);
+      setCustomCourses(rows);
+    } catch {
+      setCustomCourses([]);
+    }
+  }, [supabaseOn]);
+
   useEffect(() => {
     void loadCommunityCourses();
   }, [loadCommunityCourses]);
 
+  useEffect(() => {
+    void loadCustomCourses();
+  }, [loadCustomCourses]);
+
   useFocusEffect(
     useCallback(() => {
       void loadCommunityCourses();
-    }, [loadCommunityCourses])
+      void loadCustomCourses();
+    }, [loadCommunityCourses, loadCustomCourses])
   );
 
   useEffect(() => {
@@ -457,7 +496,7 @@ export default function LogRoundScreen() {
   /** New round only: keep tee aligned with the selected course / platform. (Edit mode sets tee from the saved round.) */
   useEffect(() => {
     if (editId) return;
-    const resolved = resolveLogCourse(courseId, platform, communityCourses);
+    const resolved = resolveLogCourse(courseId, platform, communityCourses, customCourses);
     if (!resolved) return;
 
     const pendingTee = pendingScanTeeRef.current;
@@ -480,6 +519,14 @@ export default function LogRoundScreen() {
       }
       return;
     }
+    if (resolved.source === 'custom') {
+      if (resolved.tees.length > 0) {
+        setTeePickKey(resolved.tees[0].name);
+      }
+      setCustomRating('');
+      setCustomSlope('');
+      return;
+    }
     const c = resolved.seed;
     if (!c) return;
     const tees = getCourseTees(c, platform);
@@ -491,7 +538,7 @@ export default function LogRoundScreen() {
     }
     setCustomRating('');
     setCustomSlope('');
-  }, [courseId, platform, editId, communityCourses]);
+  }, [courseId, platform, editId, communityCourses, customCourses]);
 
   const pinOpts = useMemo(() => pinOptionsForPlatform(platform), [platform]);
 
@@ -503,8 +550,8 @@ export default function LogRoundScreen() {
   }, [platform, pinOpts, pin]);
 
   const resolvedCourse = useMemo(
-    () => resolveLogCourse(courseId, platform, communityCourses),
-    [courseId, platform, communityCourses]
+    () => resolveLogCourse(courseId, platform, communityCourses, customCourses),
+    [courseId, platform, communityCourses, customCourses]
   );
   const courseTees = useMemo(() => resolvedCourse?.tees ?? [], [resolvedCourse]);
   const parseCourseTees = useMemo(
@@ -650,6 +697,11 @@ export default function LogRoundScreen() {
         if (first) return { rating: first.rating, slope: first.slope, teeLabel: first.name };
         return { rating: 72, slope: 113, teeLabel: 'Default' };
       }
+      if (resolvedCourse.source === 'custom') {
+        const row = resolvedCourse.tees.find((t) => t.name === teePickKey) ?? resolvedCourse.tees[0];
+        if (row) return { rating: row.rating, slope: row.slope, teeLabel: row.name };
+        return { rating: 72, slope: DEFAULT_UNRATED_SLOPE, teeLabel: 'Default' };
+      }
       const course = resolvedCourse.seed;
       if (!course) return { rating: 72, slope: 130, teeLabel: '' as string };
       if (course.confident === false) {
@@ -699,17 +751,26 @@ export default function LogRoundScreen() {
   }, [resolvedTeeRating, holesPlayed]);
 
   const showTeeSelector =
-    resolvedCourse?.source === 'curated' && resolvedCourse.confident !== false;
+    (resolvedCourse?.source === 'curated' && resolvedCourse.confident !== false) ||
+    resolvedCourse?.source === 'custom';
   const showYardageInput = resolvedCourse?.source === 'community';
+  const selectedCustomTee =
+    resolvedCourse?.source === 'custom'
+      ? resolvedCourse.tees.find((t) => t.name === teePickKey) ?? resolvedCourse.tees[0]
+      : null;
 
   // Course list is independent of tournament state — apply-to-tournament matching is per-round via leagueAcceptsLoggedHoles.
   const showCommunityInPicker = hasExpandedCourseList;
 
   const coursesForPicker = useMemo(() => {
     const curated = curatedPickerCourses(courseSearchQuery);
-    if (!showCommunityInPicker) return curated;
-    return mergePickerCourses(curated, communityCourses, courseSearchQuery);
-  }, [courseSearchQuery, showCommunityInPicker, communityCourses]);
+    const community = showCommunityInPicker ? communityCourses : [];
+    return mergePickerCourses(curated, community, courseSearchQuery, customCourses);
+  }, [courseSearchQuery, showCommunityInPicker, communityCourses, customCourses]);
+
+  const showAddNewCourseCta =
+    dismissCourseSuggestions ||
+    (courseSearchQuery.trim().length > 0 && coursesForPicker.length === 0);
 
   const { rating, slope } = resolvedCourse
     ? { rating: effectiveTeeForDiff.rating, slope: effectiveTeeForDiff.slope }
@@ -821,6 +882,13 @@ export default function LogRoundScreen() {
       let slopeSave: number;
       let nineHoleSourceSave: 'derived' | 'real' | undefined;
 
+      let teeRatingSourceSave:
+        | 'curated'
+        | 'community'
+        | 'user_reported'
+        | 'default_unrated'
+        | undefined;
+
       if (snap.course.source === 'community') {
         const yards = parseInt(snap.yardsPlayed.replace(/,/g, '').trim(), 10);
         const yardsMin = isNineHolePlayed(snap.holesPlayed) ? 800 : 1000;
@@ -844,6 +912,20 @@ export default function LogRoundScreen() {
         slopeSave = rs.slope;
         nineHoleSourceSave = rs.nineHoleSource ?? undefined;
         teeNameSave = tee.name;
+        teeRatingSourceSave = tee.ratingSource ?? 'community';
+      } else if (snap.course.source === 'custom') {
+        const row =
+          snap.course.tees.find((t) => t.name === snap.teePickKey) ?? snap.course.tees[0];
+        if (!row) {
+          showAppAlert(t('log.round.alerts.teeTitle'), t('log.round.alerts.teePickList'));
+          return;
+        }
+        const rs = ratingSlopeForHolesPlayed(row, snap.holesPlayed);
+        courseRatingSave = rs.rating;
+        slopeSave = rs.slope;
+        nineHoleSourceSave = rs.nineHoleSource ?? undefined;
+        teeNameSave = row.name;
+        teeRatingSourceSave = row.ratingSource ?? 'default_unrated';
       } else if (snap.course.confident === false && snap.course.seed) {
         const mid = middleCourseTee(snap.course.seed, snap.platform);
         if (!mid) {
@@ -855,6 +937,7 @@ export default function LogRoundScreen() {
         slopeSave = rs.slope;
         nineHoleSourceSave = rs.nineHoleSource ?? undefined;
         teeNameSave = mid.name;
+        teeRatingSourceSave = 'curated';
       } else if (snap.teePickKey === CUSTOM_TEE_ID) {
         const r = parseFloat(snap.customRating.replace(/,/g, '.').trim());
         const s = parseFloat(snap.customSlope.replace(/,/g, '.').trim());
@@ -874,6 +957,7 @@ export default function LogRoundScreen() {
         slopeSave = Math.round(s);
         teeNameSave = 'Custom';
         nineHoleSourceSave = nine ? 'real' : undefined;
+        teeRatingSourceSave = 'user_reported';
       } else if (snap.course.seed) {
         const tees = getCourseTees(snap.course.seed, snap.platform);
         const row = tees.find((t) => t.name === snap.teePickKey);
@@ -886,6 +970,7 @@ export default function LogRoundScreen() {
         slopeSave = rs.slope;
         nineHoleSourceSave = rs.nineHoleSource ?? undefined;
         teeNameSave = row.name;
+        teeRatingSourceSave = 'curated';
       } else {
         showAppAlert(t('log.round.alerts.teeTitle'), t('log.round.alerts.teePick'));
         return;
@@ -917,6 +1002,7 @@ export default function LogRoundScreen() {
         holesPlayed: snap.holesPlayed,
         nineHoleSource: nineHoleSourceSave,
         handicapSource: snap.course.handicapSource,
+        teeRatingSource: teeRatingSourceSave,
         ...(snap.existing?.h2hGroupId &&
         snap.existing.h2hOpponentMemberId &&
         snap.existing.h2hOpponentDisplayName
@@ -1073,10 +1159,18 @@ export default function LogRoundScreen() {
             </View>
             <View style={isWide ? styles.pickCol : undefined}>
               <Text style={styles.sectionLabel}>{t('log.round.course')}</Text>
-              <Pressable style={[styles.pill, courseOpen && styles.pillActive]} onPress={() => setCourseOpen(true)}>
+              <Pressable
+                style={[styles.pill, courseOpen && styles.pillActive]}
+                onPress={() => {
+                  setDismissCourseSuggestions(false);
+                  setCourseOpen(true);
+                }}
+              >
                 <View style={styles.pillValRow}>
                   <Text style={styles.pillVal}>{resolvedCourse?.name ?? t('log.round.select')}</Text>
-                  {resolvedCourse?.handicapSource === 'unverified' ? (
+                  {resolvedCourse?.source === 'custom' ? (
+                    <UnratedCourseBadge compact />
+                  ) : resolvedCourse?.handicapSource === 'unverified' ? (
                     <UnverifiedCourseBadge
                       compact
                       source={resolvedCourse.source}
@@ -1239,6 +1333,7 @@ export default function LogRoundScreen() {
                   </Pressable>
                   );
                 })}
+                {resolvedCourse.source === 'curated' ? (
                 <Pressable
                   style={[styles.teeChip, teePickKey === CUSTOM_TEE_ID && styles.teeChipOn]}
                   onPress={() => setTeePickKey(CUSTOM_TEE_ID)}
@@ -1257,8 +1352,41 @@ export default function LogRoundScreen() {
                       : t('log.round.customTeeSub')}
                   </Text>
                 </Pressable>
+                ) : null}
               </View>
-              {teePickKey === CUSTOM_TEE_ID ? (
+              {resolvedCourse.source === 'custom' && selectedCustomTee ? (
+                <View style={styles.unratedBox}>
+                  {isUnratedTee(selectedCustomTee.ratingSource) ? (
+                    <Text style={styles.unratedBoxTxt}>
+                      {selectedCustomTee.ratingSource === 'user_reported'
+                        ? t('log.round.unratedDisclosureReported', {
+                            rating: selectedCustomTee.rating,
+                            slope: selectedCustomTee.slope,
+                          })
+                        : t('log.round.unratedDisclosure', {
+                            par: selectedCustomTee.par ?? selectedCustomTee.rating,
+                            slope: selectedCustomTee.slope || DEFAULT_UNRATED_SLOPE,
+                          })}
+                    </Text>
+                  ) : null}
+                  <UnratedCourseBadge />
+                  <Pressable
+                    style={styles.addTeeLink}
+                    onPress={() => {
+                      setAddTeeName('');
+                      setAddTeePar('72');
+                      setAddTeeYards('');
+                      setAddTeeKnowOfficial(false);
+                      setAddTeeRating('');
+                      setAddTeeSlope('');
+                      setAddTeeOpen(true);
+                    }}
+                  >
+                    <Text style={styles.addTeeLinkTxt}>{t('log.round.addTeeToCourse')}</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+              {teePickKey === CUSTOM_TEE_ID && resolvedCourse.source === 'curated' ? (
                 <View style={styles.teeCustomRow}>
                   <View style={styles.teeCustomField}>
                     <Text style={styles.teeCustomLbl}>
@@ -1609,7 +1737,10 @@ export default function LogRoundScreen() {
             <TextInput
               style={styles.courseSearchInput}
               value={courseSearchQuery}
-              onChangeText={setCourseSearchQuery}
+              onChangeText={(q) => {
+                setCourseSearchQuery(q);
+                setDismissCourseSuggestions(false);
+              }}
               placeholder={t('log.round.searchCourse')}
               placeholderTextColor={colors.subtle}
               autoCapitalize="none"
@@ -1619,7 +1750,7 @@ export default function LogRoundScreen() {
               blurOnSubmit={false}
             />
             <FlatList
-              data={coursesForPicker}
+              data={dismissCourseSuggestions ? [] : coursesForPicker}
               keyExtractor={(c) => c.id}
               keyboardShouldPersistTaps="handled"
               keyboardDismissMode="on-drag"
@@ -1630,14 +1761,49 @@ export default function LogRoundScreen() {
               ListEmptyComponent={
                 <Text style={styles.courseSearchEmpty}>{t('log.round.noCoursesMatch')}</Text>
               }
+              ListFooterComponent={
+                <View style={styles.coursePickerFooter}>
+                  {!dismissCourseSuggestions && coursesForPicker.length > 0 && courseSearchQuery.trim() ? (
+                    <Pressable
+                      style={styles.coursePickerFooterBtn}
+                      onPress={() => setDismissCourseSuggestions(true)}
+                    >
+                      <Text style={styles.coursePickerFooterTxt}>
+                        {t('log.round.dismissSuggestions')}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                  {showAddNewCourseCta || dismissCourseSuggestions ? (
+                    <Pressable
+                      style={styles.coursePickerFooterBtnPrimary}
+                      onPress={() => {
+                        Keyboard.dismiss();
+                        setCourseOpen(false);
+                        setCustomCreateOpen(true);
+                      }}
+                    >
+                      <Text style={styles.coursePickerFooterTxtPrimary}>
+                        {t('log.round.addNewCourse')}
+                      </Text>
+                    </Pressable>
+                  ) : null}
+                </View>
+              }
               renderItem={({ item: c }) => (
                 <Pressable
                   style={styles.modalRow}
                   onPress={() => {
                     Keyboard.dismiss();
                     setCourseId(c.id);
+                    setDismissCourseSuggestions(false);
                     if (c.source === 'community') {
                       setYardsPlayed('');
+                      setCourseOpen(false);
+                      return;
+                    }
+                    if (c.source === 'custom') {
+                      const row = customCourses.find((x) => x.id === c.id);
+                      if (row?.course_tees?.[0]) setTeePickKey(row.course_tees[0].name);
                       setCourseOpen(false);
                       return;
                     }
@@ -1664,6 +1830,13 @@ export default function LogRoundScreen() {
                 >
                   <View style={styles.modalRowCourse}>
                     <Text style={styles.modalRowTxt}>{c.name}</Text>
+                    <Text style={styles.courseSourceLbl}>
+                      {c.source === 'curated'
+                        ? t('course.badge.sourceCurated')
+                        : c.source === 'community'
+                          ? t('course.badge.sourceCommunity')
+                          : t('course.badge.sourceCustom')}
+                    </Text>
                     {c.source === 'community' || (c.source === 'curated' && !c.confident) ? (
                       <UnverifiedCourseBadge
                         compact
@@ -1672,12 +1845,153 @@ export default function LogRoundScreen() {
                         enrichmentTier={c.enrichmentTier}
                         enrichmentSource={c.enrichmentSource}
                       />
+                    ) : c.source === 'custom' ? (
+                      <UnratedCourseBadge compact />
                     ) : null}
                   </View>
                   {courseId === c.id ? <IconCheckmark size={18} color={colors.accent} /> : null}
                 </Pressable>
               )}
             />
+          </View>
+        </View>
+      </Modal>
+
+      {user?.id ? (
+        <CustomCourseCreateModal
+          visible={customCreateOpen}
+          userId={user.id}
+          initialName={courseSearchQuery.trim()}
+          onClose={() => setCustomCreateOpen(false)}
+          onCreated={(course) => {
+            setCustomCourses((prev) => {
+              if (prev.some((c) => c.id === course.id)) {
+                return prev.map((c) => (c.id === course.id ? course : c));
+              }
+              return [...prev, course].sort((a, b) => a.name.localeCompare(b.name));
+            });
+            setCourseId(course.id);
+            if (course.course_tees[0]) setTeePickKey(course.course_tees[0].name);
+            setCustomCreateOpen(false);
+            setDismissCourseSuggestions(false);
+          }}
+        />
+      ) : null}
+
+      <Modal
+        visible={addTeeOpen}
+        animationType={Platform.OS === 'web' ? 'none' : 'fade'}
+        transparent
+        onRequestClose={() => setAddTeeOpen(false)}
+      >
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdropPress} onPress={() => setAddTeeOpen(false)} />
+          <View style={[styles.modalSheet, { paddingBottom: insets.bottom + 16 }]}>
+            <Text style={styles.modalTitle}>{t('log.round.addTeeToCourse')}</Text>
+            <Text style={styles.teeTip}>{t('log.round.customCourse.teeName')}</Text>
+            <TextInput
+              style={styles.courseSearchInput}
+              value={addTeeName}
+              onChangeText={setAddTeeName}
+              placeholder={t('log.round.customCourse.teeNamePlaceholder')}
+              placeholderTextColor={colors.subtle}
+            />
+            <View style={styles.teeCustomRow}>
+              <View style={styles.teeCustomField}>
+                <Text style={styles.teeCustomLbl}>{t('log.round.customCourse.par')}</Text>
+                <TextInput
+                  style={styles.teeNumInput}
+                  value={addTeePar}
+                  onChangeText={setAddTeePar}
+                  keyboardType="number-pad"
+                  placeholder="72"
+                  placeholderTextColor={colors.subtle}
+                />
+              </View>
+              <View style={styles.teeCustomField}>
+                <Text style={styles.teeCustomLbl}>{t('log.round.customCourse.yards')}</Text>
+                <TextInput
+                  style={styles.teeNumInput}
+                  value={addTeeYards}
+                  onChangeText={setAddTeeYards}
+                  keyboardType="number-pad"
+                  placeholder={t('log.round.customCourse.yardsOptional')}
+                  placeholderTextColor={colors.subtle}
+                />
+              </View>
+            </View>
+            <Pressable
+              style={styles.addTeeCheckRow}
+              onPress={() => setAddTeeKnowOfficial((v) => !v)}
+            >
+              <Text style={styles.teeTip}>{t('log.round.customCourse.knowOfficial')}</Text>
+            </Pressable>
+            {addTeeKnowOfficial ? (
+              <View style={styles.teeCustomRow}>
+                <View style={styles.teeCustomField}>
+                  <Text style={styles.teeCustomLbl}>{t('log.round.courseRating')}</Text>
+                  <TextInput
+                    style={styles.teeNumInput}
+                    value={addTeeRating}
+                    onChangeText={setAddTeeRating}
+                    keyboardType="decimal-pad"
+                    placeholderTextColor={colors.subtle}
+                  />
+                </View>
+                <View style={styles.teeCustomField}>
+                  <Text style={styles.teeCustomLbl}>{t('log.round.slope')}</Text>
+                  <TextInput
+                    style={styles.teeNumInput}
+                    value={addTeeSlope}
+                    onChangeText={setAddTeeSlope}
+                    keyboardType="number-pad"
+                    placeholderTextColor={colors.subtle}
+                  />
+                </View>
+              </View>
+            ) : null}
+            <Pressable
+              style={[styles.saveBtnInline, addTeeBusy && { opacity: 0.6 }]}
+              disabled={addTeeBusy}
+              onPress={() => {
+                void (async () => {
+                  if (!resolvedCourse || resolvedCourse.source !== 'custom' || addTeeBusy) return;
+                  setAddTeeBusy(true);
+                  try {
+                    const par = parseInt(addTeePar.replace(/,/g, '').trim(), 10);
+                    const yardsRaw = addTeeYards.replace(/,/g, '').trim();
+                    const yards = yardsRaw ? parseInt(yardsRaw, 10) : null;
+                    const result = await addTeeToCustomCourse({
+                      courseId: resolvedCourse.id,
+                      tee: {
+                        name: addTeeName.trim() || 'White',
+                        par,
+                        yards: yards != null && Number.isFinite(yards) ? yards : null,
+                        ratingRaw: addTeeKnowOfficial ? addTeeRating : '',
+                        slopeRaw: addTeeKnowOfficial ? addTeeSlope : '',
+                      },
+                    });
+                    if ('error' in result) {
+                      showAppAlert(t('log.round.customCourse.alerts.createTitle'), result.error);
+                      return;
+                    }
+                    setCustomCourses((prev) =>
+                      prev.map((c) => (c.id === result.course.id ? result.course : c))
+                    );
+                    setTeePickKey(addTeeName.trim() || 'White');
+                    setAddTeeOpen(false);
+                  } finally {
+                    setAddTeeBusy(false);
+                  }
+                })();
+              }}
+            >
+              {addTeeBusy ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.saveBtnInlineTxt}>{t('log.round.customCourse.save')}</Text>
+              )}
+            </Pressable>
           </View>
         </View>
       </Modal>
@@ -1997,6 +2311,48 @@ const styles = StyleSheet.create({
   },
   courseSearchList: { flexGrow: 0 },
   courseSearchEmpty: { fontSize: 14, color: colors.muted, paddingVertical: 16, textAlign: 'center' },
+  courseSourceLbl: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: colors.subtle,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginLeft: 6,
+  },
+  coursePickerFooter: { paddingTop: 8, paddingBottom: 4, gap: 8 },
+  coursePickerFooterBtn: {
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  coursePickerFooterTxt: { fontSize: 14, fontWeight: '600', color: colors.muted },
+  coursePickerFooterBtnPrimary: {
+    paddingVertical: 14,
+    borderRadius: 10,
+    backgroundColor: colors.header,
+    alignItems: 'center',
+  },
+  coursePickerFooterTxtPrimary: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  unratedBox: {
+    marginTop: 10,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: '#fff7ed',
+    borderWidth: 1,
+    borderColor: '#fdba74',
+    gap: 8,
+  },
+  unratedBoxTxt: { fontSize: 13, lineHeight: 18, color: colors.ink, fontWeight: '500' },
+  addTeeLink: { alignSelf: 'flex-start', marginTop: 2 },
+  addTeeLinkTxt: { fontSize: 13, fontWeight: '700', color: colors.accent },
+  addTeeCheckRow: { marginTop: 8, marginBottom: 4 },
+  saveBtnInline: {
+    marginTop: 14,
+    backgroundColor: colors.header,
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  saveBtnInlineTxt: { color: '#fff', fontSize: 14, fontWeight: '700' },
   keyboardAccessory: {
     flexDirection: 'row',
     justifyContent: 'flex-end',

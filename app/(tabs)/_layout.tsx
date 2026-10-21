@@ -246,6 +246,14 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="admin-custom-courses"
+        options={{
+          href: null,
+          title: t('adminCustom.title'),
+          headerRight: renderHeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
         name="season/[id]"
         options={{
           href: null,

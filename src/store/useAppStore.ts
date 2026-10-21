@@ -64,6 +64,11 @@ export type SimRound = {
   excludesFromSimcapIndex?: boolean;
   /** Snapshot at save: verified (curated/confident) vs unverified (community estimate). */
   handicapSource?: HandicapSource;
+  /**
+   * Snapshot of tee rating_source at save.
+   * user_reported / default_unrated → Unrated course badge (still counts in index).
+   */
+  teeRatingSource?: 'curated' | 'community' | 'user_reported' | 'default_unrated';
 };
 
 export type HandicapSource = 'verified' | 'unverified';

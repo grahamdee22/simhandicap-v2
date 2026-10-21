@@ -5,7 +5,12 @@ import { useTranslation } from '@/src/i18n';
 import { showAppAlert } from '@/src/lib/alertCompat';
 import { colors } from '@/src/lib/constants';
 import { signInWithApple, signInWithOAuthProvider } from '@/src/lib/oauthSignIn';
-import { setPendingReferralCode } from '@/src/lib/pendingReferralCode';
+import {
+  setPendingReferralCode,
+  setPendingReferralSource,
+  setPendingSignupPlatform,
+  type ReferralSource,
+} from '@/src/lib/pendingReferralCode';
 
 type Props = {
   /** Shown in the divider between OAuth and email/password (e.g. "or use email"). */
@@ -16,22 +21,32 @@ type Props = {
    * signup metadata into handle_new_user the way email signUp does).
    */
   referralCode?: string;
+  /** link = deep link / install referrer prefill; typed = user typed the field. */
+  referralSource?: ReferralSource | null;
 };
 
-export function OAuthSignInButtons({ dividerLabel, referralCode }: Props) {
+export function OAuthSignInButtons({ dividerLabel, referralCode, referralSource }: Props) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState<'apple' | 'google' | null>(null);
 
-  const stashReferralThen = async (run: () => Promise<{ error?: string }>) => {
+  const stashAttributionThen = async (run: () => Promise<{ error?: string }>) => {
+    // Platform always; referral + source when present. Applied null-only after OAuth persist.
+    await setPendingSignupPlatform(Platform.OS);
     if (referralCode?.trim()) {
       await setPendingReferralCode(referralCode);
+      if (referralSource === 'link' || referralSource === 'typed') {
+        await setPendingReferralSource(referralSource);
+      } else {
+        // Default: form value without known prefill → typed.
+        await setPendingReferralSource('typed');
+      }
     }
     return run();
   };
 
   const runApple = async () => {
     setBusy('apple');
-    const { error } = await stashReferralThen(() => signInWithApple());
+    const { error } = await stashAttributionThen(() => signInWithApple());
     setBusy(null);
     if (error) {
       showAppAlert(t('auth.oauth.alertTitle'), error);
@@ -40,7 +55,7 @@ export function OAuthSignInButtons({ dividerLabel, referralCode }: Props) {
 
   const runGoogle = async () => {
     setBusy('google');
-    const { error } = await stashReferralThen(() => signInWithOAuthProvider('google'));
+    const { error } = await stashAttributionThen(() => signInWithOAuthProvider('google'));
     setBusy(null);
     if (error) {
       showAppAlert(t('auth.oauth.alertTitle'), error);

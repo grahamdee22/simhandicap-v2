@@ -1,5 +1,5 @@
 import { Link, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -23,7 +23,10 @@ import {
   getPendingReferralCode,
   normalizeReferralCode,
   setPendingReferralCode,
+  setPendingReferralSource,
+  type ReferralSource,
 } from '@/src/lib/pendingReferralCode';
+import { resolveReferralAttribution } from '@/src/lib/resolveReferralAttribution';
 
 function firstParam(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
@@ -39,7 +42,33 @@ export default function SignUpScreen() {
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [referralCode, setReferralCode] = useState('');
+  /** Link-prefilled code (deep link / install referrer). Same value after normalize → still 'link'. */
+  const [linkPrefillCode, setLinkPrefillCode] = useState<string | null>(null);
+  const [referralSource, setReferralSource] = useState<ReferralSource | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const resolvedReferral = useMemo(
+    () =>
+      resolveReferralAttribution({
+        fieldValue: referralCode,
+        linkCode: linkPrefillCode,
+      }),
+    [referralCode, linkPrefillCode]
+  );
+
+  const onReferralCodeChange = (text: string) => {
+    setReferralCode(text);
+    const normalized = normalizeReferralCode(text);
+    if (!normalized) {
+      setReferralSource(null);
+      return;
+    }
+    if (linkPrefillCode && normalized === linkPrefillCode) {
+      setReferralSource('link');
+    } else {
+      setReferralSource('typed');
+    }
+  };
 
   // Prefill from deep-link ?ref= / pending stash so OAuth (and the visible field) see the code.
   useEffect(() => {
@@ -50,11 +79,22 @@ export default function SignUpScreen() {
       );
       if (fromParams) {
         await setPendingReferralCode(fromParams);
-        if (!cancelled) setReferralCode(fromParams);
+        await setPendingReferralSource('link');
+        if (!cancelled) {
+          setReferralCode(fromParams);
+          setLinkPrefillCode(fromParams);
+          setReferralSource('link');
+        }
         return;
       }
       const pending = await getPendingReferralCode();
-      if (!cancelled && pending) setReferralCode(pending);
+      if (!cancelled && pending) {
+        // Pending from Play Install Referrer or an earlier deep link → still link, not typed.
+        setReferralCode(pending);
+        setLinkPrefillCode(pending);
+        setReferralSource('link');
+        await setPendingReferralSource('link');
+      }
     })();
     return () => {
       cancelled = true;
@@ -71,7 +111,13 @@ export default function SignUpScreen() {
       return;
     }
     setBusy(true);
-    const { error, sessionCreated } = await signUp(email, password, displayName, referralCode);
+    const { error, sessionCreated } = await signUp(
+      email,
+      password,
+      displayName,
+      resolvedReferral?.code,
+      resolvedReferral?.source
+    );
     setBusy(false);
     if (error) {
       showAppAlert(t('auth.signUp.alertTitle'), error);
@@ -111,7 +157,7 @@ export default function SignUpScreen() {
             <TextInput
               style={styles.input}
               value={referralCode}
-              onChangeText={setReferralCode}
+              onChangeText={onReferralCodeChange}
               placeholder={t('auth.signUp.referralPlaceholder')}
               placeholderTextColor={colors.subtle}
               autoCapitalize="none"
@@ -122,7 +168,8 @@ export default function SignUpScreen() {
 
         <OAuthSignInButtons
           dividerLabel={t('auth.signUp.orCreateWithEmail')}
-          referralCode={referralCode}
+          referralCode={resolvedReferral?.code}
+          referralSource={resolvedReferral?.source ?? null}
         />
 
         <Text style={styles.lbl}>{t('auth.signUp.displayName')}</Text>

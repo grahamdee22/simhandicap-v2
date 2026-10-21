@@ -14,6 +14,7 @@ import { restSelect } from './tournamentApi';
 import { invokeCalculateTeamHoleScores } from './tournamentTeamScores';
 import { getCourseById } from './courses';
 import { courseParForLoggedHoles, strokeIndexForCourse } from './netHandicap';
+import { isRatingSource, type RatingSource } from './ratingSource';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -87,6 +88,7 @@ export type DbRoundRow = {
   h2h_opponent_display_name: string | null;
   simcap_index_at_time: number | null;
   handicap_source?: string | null;
+  tee_rating_source?: string | null;
   excludes_from_simcap_index?: boolean | null;
   holes_played?: string | null;
   nine_hole_source?: string | null;
@@ -142,6 +144,9 @@ export function dbRowToSimRound(row: DbRoundRow): SimRound {
       row.handicap_source === 'unverified' || row.handicap_source === 'verified'
         ? row.handicap_source
         : 'verified',
+    teeRatingSource: isRatingSource(row.tee_rating_source)
+      ? (row.tee_rating_source as RatingSource)
+      : undefined,
     excludesFromSimcapIndex: row.excludes_from_simcap_index === true ? true : undefined,
   };
   if (row.h2h_group_id) {
@@ -204,6 +209,7 @@ function roundToDbInsert(userId: string, r: RoundDbFields) {
     h2h_opponent_display_name: r.h2hOpponentDisplayName ?? null,
     simcap_index_at_time: r.simcapIndexAtTime ?? null,
     handicap_source: r.handicapSource ?? 'verified',
+    tee_rating_source: r.teeRatingSource ?? null,
     excludes_from_simcap_index: !!r.excludesFromSimcapIndex,
     holes_played: r.holesPlayed ?? '18',
     nine_hole_source: r.nineHoleSource ?? null,
@@ -338,6 +344,7 @@ export async function updateRoundInSupabase(
     h2h_opponent_display_name: round.h2hOpponentDisplayName ?? null,
     simcap_index_at_time: round.simcapIndexAtTime ?? null,
     handicap_source: round.handicapSource ?? 'verified',
+    tee_rating_source: round.teeRatingSource ?? null,
     excludes_from_simcap_index: !!round.excludesFromSimcapIndex,
     holes_played: round.holesPlayed ?? '18',
     nine_hole_source: round.nineHoleSource ?? null,

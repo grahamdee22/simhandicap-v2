@@ -3,9 +3,19 @@ import { communityCourseAttributionLabel } from './communityEnrichment';
 import type { CourseEnrichment } from './fetchCommunityCourseEnrichment';
 
 export function shouldFetchCommunityCourseEnrichmentForRound(
-  round: { handicapSource?: string; courseId: string } | null | undefined
+  round: {
+    handicapSource?: string;
+    courseId: string;
+    teeRatingSource?: string;
+  } | null | undefined
 ): boolean {
   if (!round) return false;
+  if (
+    round.teeRatingSource === 'user_reported' ||
+    round.teeRatingSource === 'default_unrated'
+  ) {
+    return false;
+  }
   return round.handicapSource === 'unverified' && isCommunityCourseId(round.courseId);
 }
 

@@ -171,8 +171,26 @@
     "badge": {
       "estimatedRating": "Estimated rating",
       "slopeByGspro": "Slope by GSPro",
-      "estimated": "Estimated"
+      "estimated": "Estimated",
+      "unrated": "Unrated course",
+      "sourceCurated": "Curated",
+      "sourceCommunity": "Community",
+      "sourceCustom": "Custom"
     }
+  },
+  "adminCustom": {
+    "title": "Custom courses",
+    "sub": "Backfill signal and promote tees to curated rating/slope once you source real numbers. Past rounds keep their snapshotted differentials.",
+    "backfill": "Repeated custom names",
+    "backfillMeta": "{{creators}} creators · {{courses}} courses · {{unrated}} default-unrated tees · {{reported}} user-reported",
+    "editPromote": "Edit & promote tees",
+    "promote": "Promote",
+    "promoteFailed": "Promote failed",
+    "promoted": "Updated",
+    "promotedBody": "Rating/slope saved and marked curated. Future rounds use the new numbers.",
+    "denied": "Admin only.",
+    "open": "Manage custom courses",
+    "openHint": "Backfill candidates and promote tees to curated."
   },
   "handicap": {
     "sourceSimcap": "SimCap",
@@ -379,6 +397,31 @@
       "platformModal": "Platform",
       "searchCourse": "Search by course name",
       "noCoursesMatch": "No courses match that search.",
+      "addNewCourse": "Add a new course",
+      "dismissSuggestions": "None of these — add a new course",
+      "unratedDisclosure": "This course isn’t in our verified library. Your round will use Par {{par}} as Course Rating and a Slope of {{slope}} (WHS unrated default).",
+      "unratedDisclosureReported": "This course isn’t in our verified library. Your round will use the user-reported Course Rating ({{rating}}) and Slope ({{slope}}) for this tee.",
+      "addTeeToCourse": "Add another tee",
+      "customCourse": {
+        "title": "Add a new course",
+        "hint": "Search first whenever you can. Only create a course when it isn’t already in curated, community, or custom lists.",
+        "name": "Course name",
+        "namePlaceholder": "e.g. Muni AI — Coastal Dunes",
+        "teeN": "Tee {{n}}",
+        "teeName": "Tee name",
+        "teeNamePlaceholder": "White / Blue / Championship",
+        "par": "Par (total)",
+        "yards": "Yardage",
+        "yardsOptional": "Optional",
+        "knowOfficial": "Know this course’s official Course Rating / Slope?",
+        "defaultNote": "Will use Par {{par}} as Course Rating and Slope {{slope}} (WHS unrated default).",
+        "addTee": "Add another tee",
+        "removeTee": "Remove tee",
+        "save": "Save course",
+        "alerts": {
+          "createTitle": "Couldn’t create course"
+        }
+      },
       "leagueBannerTeam": "This round counts toward Team {{teamName}}'s score! You're currently in {{place}} place.",
       "leagueBanner": "This round counts toward {{leagueName}}! You're currently in {{place}} place.",
       "putting": {

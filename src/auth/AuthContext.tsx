@@ -3,7 +3,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { usePathname, useRootNavigationState, useRouter, useSegments, type Href } from 'expo-router';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Platform } from 'react-native';
-import { applyPendingReferralCodeIfNeeded } from '../lib/pendingReferralCode';
+import { applyPendingSignupAttributionIfNeeded } from '../lib/pendingReferralCode';
 import { applyProfileRowToStore, fetchMyProfile } from '../lib/profiles';
 import { fetchMyRoundsForUser } from '../lib/rounds';
 import {
@@ -43,7 +43,8 @@ type AuthContextValue = {
     email: string,
     password: string,
     displayName: string,
-    referralCode?: string
+    referralCode?: string,
+    referralSource?: string | null
   ) => Promise<{ error?: string; sessionCreated?: boolean }>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -79,9 +80,9 @@ async function hydrateSignedInUserData(
   }
   await syncProfileIntoStore(userId, token);
   if (isCancelled?.()) return;
-  // Web OAuth (and any path that skips native persist) — null-only write of pending referral.
+  // Web OAuth (and any path that skips native persist) — null-only write of pending referral + platform.
   if (token) {
-    await applyPendingReferralCodeIfNeeded(userId, token);
+    await applyPendingSignupAttributionIfNeeded(userId, token);
     if (isCancelled?.()) return;
   }
   // Prefer the session JWT; only fall back to getSession outside the auth-lock callback.
@@ -349,12 +350,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signUp = useCallback(
-    async (email: string, password: string, displayName: string, referralCode?: string) => {
+    async (
+      email: string,
+      password: string,
+      displayName: string,
+      referralCode?: string,
+      referralSource?: string | null
+    ) => {
       if (!supabase) return { error: 'Supabase is not configured' };
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
         password,
-        options: { data: buildSignUpUserMetadata(displayName, referralCode) },
+        options: {
+          data: buildSignUpUserMetadata(displayName, referralCode, Platform.OS, referralSource),
+        },
       });
       if (error) return { error: error.message };
       return { sessionCreated: !!data.session };

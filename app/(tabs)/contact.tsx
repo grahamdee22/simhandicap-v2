@@ -1,7 +1,9 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useRouter, type Href } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ContentWidth } from '../../src/components/ContentWidth';
 import { IconChevronForward } from '../../src/components/SvgUiIcons';
+import { useAuth } from '../../src/auth/AuthContext';
 import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
 import { SIMCAP_INSTAGRAM_URL } from '../../src/lib/socialLinks';
@@ -18,6 +20,9 @@ export default function ContactScreen() {
   const { t } = useTranslation();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
+  const router = useRouter();
+  const { user } = useAuth();
+  const isAdmin = (user?.email ?? '').trim().toLowerCase() === ADMIN_EMAIL;
 
   const onEmail = () => void Linking.openURL(mailtoUrl());
   const onInstagram = () => void Linking.openURL(SIMCAP_INSTAGRAM_URL);
@@ -62,6 +67,21 @@ export default function ContactScreen() {
           <Text style={styles.cardVal}>{INSTAGRAM_HANDLE}</Text>
           <Text style={styles.cardHint}>{t('contact.instagramHint')}</Text>
         </Pressable>
+
+        {isAdmin ? (
+          <Pressable
+            onPress={() => router.push('/admin-custom-courses' as Href)}
+            style={({ pressed }) => [styles.card, pressed && styles.cardPressed]}
+            accessibilityRole="button"
+            accessibilityLabel={t('adminCustom.open')}
+          >
+            <View style={styles.cardTop}>
+              <Text style={styles.cardK}>{t('adminCustom.open')}</Text>
+              <IconChevronForward size={18} color={colors.sage} />
+            </View>
+            <Text style={styles.cardHint}>{t('adminCustom.openHint')}</Text>
+          </Pressable>
+        ) : null}
       </ScrollView>
     </ContentWidth>
   );

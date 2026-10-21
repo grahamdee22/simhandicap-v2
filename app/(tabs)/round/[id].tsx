@@ -37,6 +37,8 @@ import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken'
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import { isSupabaseConfigured } from '../../../src/lib/supabase';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
+import { UnratedCourseBadge } from '../../../src/components/UnratedCourseBadge';
+import { isUnratedTee } from '../../../src/lib/ratingSource';
 import { isGsProPlatform } from '../../../src/lib/pinPlacement';
 import { useAppStore, type SimRound } from '../../../src/store/useAppStore';
 import type { TFunction } from 'i18next';
@@ -253,7 +255,9 @@ export default function RoundDetailScreen() {
             ]}
           >
             <Text style={[styles.course, isWide && styles.courseLg]}>{r.courseName}</Text>
-            {roundDetailAttributionLabel(r.handicapSource, courseEnrichment) ? (
+            {isUnratedTee(r.teeRatingSource) ? (
+              <UnratedCourseBadge />
+            ) : roundDetailAttributionLabel(r.handicapSource, courseEnrichment) ? (
               <UnverifiedCourseBadge
                 enrichmentTier={courseEnrichment?.enrichmentTier}
                 enrichmentSource={courseEnrichment?.enrichmentSource}

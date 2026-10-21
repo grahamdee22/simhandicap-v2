@@ -39,6 +39,10 @@ export const PLATFORMS = [
   'E6',
   'GSPro',
   'Garmin',
+  'Muni Golf',
+  'Shot Forge',
+  'Pure Play',
+  'Foresight Premier+',
 ] as const;
 
 export type PlatformId = (typeof PLATFORMS)[number];
