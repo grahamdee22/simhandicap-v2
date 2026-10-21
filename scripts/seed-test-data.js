@@ -67,6 +67,18 @@ const PROFILE_SPECS = [
   { name: 'Tony Soprano', handicap: 21.1, platform: 'Trackman', simcapId: '751364' },
 ];
 
+/**
+ * Distinct from PROFILE_SPECS (not added to seed crews).
+ * Used by Playwright admin-gate smoke tests — profiles.is_app_admin = true.
+ * Login: simcap-admin-seed@seed.simcap.test / Seed-999001!
+ */
+const ADMIN_PROFILE_SPEC = {
+  name: 'SimCap Admin Seed',
+  handicap: 10.0,
+  platform: 'GSPro',
+  simcapId: '999001',
+};
+
 const GROUP_NAMES = ['The Scratch Pad', 'Basement Boys', 'Pacific Simmers'];
 
 const TOURNAMENT_NAMES = [
@@ -341,6 +353,92 @@ async function createProfiles() {
   }
 
   return created;
+}
+
+/**
+ * Ensure the Playwright admin seed account exists with is_app_admin = true.
+ * Safe to call on every seed run (FULL_SEED or tournaments-only).
+ * Requires migration 088 (profiles.is_app_admin).
+ */
+async function ensureAdminSeedProfile() {
+  const spec = ADMIN_PROFILE_SPEC;
+  const email = `${slugify(spec.name)}@seed.simcap.test`;
+  const password = `Seed-${spec.simcapId}!`;
+
+  const { data: bySimcap } = await supabase
+    .from('profiles')
+    .select('id, display_name, is_app_admin')
+    .eq('simcap_id', spec.simcapId)
+    .maybeSingle();
+
+  let userId = bySimcap?.id ?? null;
+
+  if (!userId) {
+    const { data: authData, error: authErr } = await supabase.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true,
+      user_metadata: { display_name: spec.name },
+    });
+
+    if (authErr) {
+      // Already exists under this email — look up by listing (small test pool).
+      if (/already|registered|exists/i.test(authErr.message)) {
+        const { data: listed, error: listErr } = await supabase.auth.admin.listUsers({
+          page: 1,
+          perPage: 1000,
+        });
+        if (listErr) {
+          throw new Error(`admin listUsers: ${listErr.message}`);
+        }
+        const hit = (listed?.users ?? []).find(
+          (u) => (u.email ?? '').toLowerCase() === email.toLowerCase()
+        );
+        if (!hit) {
+          throw new Error(
+            `auth.createUser ${spec.name}: ${authErr.message} (and email not found in listUsers)`
+          );
+        }
+        userId = hit.id;
+      } else {
+        throw new Error(`auth.createUser ${spec.name}: ${authErr.message}`);
+      }
+    } else {
+      userId = authData.user.id;
+    }
+  }
+
+  const { error: profileErr } = await supabase
+    .from('profiles')
+    .update({
+      display_name: spec.name,
+      preferred_platform: spec.platform,
+      ghin_index: spec.handicap,
+      simcap_id: spec.simcapId,
+      is_test: true,
+      is_app_admin: true,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', userId);
+
+  if (profileErr) {
+    throw new Error(
+      `profiles.update admin seed (${spec.name}): ${profileErr.message}. ` +
+        'Apply migration 088_simcap_app_admin.sql if is_app_admin is missing.'
+    );
+  }
+
+  console.log(
+    `Admin seed ready: ${email}  password: ${password}  is_app_admin=true`
+  );
+
+  return {
+    ...spec,
+    id: userId,
+    email,
+    password,
+    isAppAdmin: true,
+  };
 }
 
 async function insertRounds(profiles) {
@@ -1359,6 +1457,9 @@ async function main() {
     console.log(`Loaded ${profiles.length} test profiles and ${groups.length} groups.\n`);
   }
 
+  // Always ensure Playwright admin seed (distinct from crew profiles).
+  await ensureAdminSeedProfile();
+
   const wiped = await cleanupTestTournaments();
   if (wiped > 0) console.log(`Removed ${wiped} prior test tournament(s).\n`);
 
@@ -1393,6 +1494,9 @@ async function main() {
   if (fullSeed) {
     console.log('Test login emails: <slug>@seed.simcap.test  password: Seed-<simcapId>!');
   }
+  console.log(
+    'Admin Playwright login: simcap-admin-seed@seed.simcap.test  password: Seed-999001!'
+  );
 }
 
 main().catch((err) => {
