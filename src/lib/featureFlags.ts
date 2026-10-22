@@ -12,7 +12,27 @@ export const REFERRAL_CODE_FIELD_ENABLED = true;
 export const PAYWALL_ENABLED = false;
 
 /**
- * Non-English locales (es/ko) in the language picker + device-locale auto-detect.
- * Off = English only until translations have native-speaker review. Locale files stay in the repo.
+ * Non-English locales enabled for the language picker + device-locale auto-detect.
+ * English is always on. Locale JSON for disabled codes stays in the repo but is inert.
+ *
+ * Default ship set: Spanish only (Korean waits on native-speaker / Golfzon-term review).
+ *
+ * Override at build time without a code change:
+ *   EXPO_PUBLIC_ENABLED_TRANSLATED_LANGUAGES=es
+ *   EXPO_PUBLIC_ENABLED_TRANSLATED_LANGUAGES=es,ko
+ *   EXPO_PUBLIC_ENABLED_TRANSLATED_LANGUAGES=   (empty = English only)
  */
-export const TRANSLATED_LANGUAGES_ENABLED = false;
+const DEFAULT_ENABLED_TRANSLATED_LANGUAGES = ['es'] as const;
+
+function parseEnabledTranslatedLanguages(): readonly string[] {
+  const raw = process.env.EXPO_PUBLIC_ENABLED_TRANSLATED_LANGUAGES;
+  if (raw !== undefined) {
+    return raw
+      .split(',')
+      .map((s) => s.trim().toLowerCase())
+      .filter((s) => s.length > 0 && s !== 'en');
+  }
+  return DEFAULT_ENABLED_TRANSLATED_LANGUAGES;
+}
+
+export const ENABLED_TRANSLATED_LANGUAGES: readonly string[] = parseEnabledTranslatedLanguages();

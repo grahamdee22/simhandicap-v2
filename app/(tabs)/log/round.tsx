@@ -12,6 +12,7 @@ import { PendingTournamentHolesBanner } from '../../../src/components/PendingTou
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { DatePlayedField } from '../../../src/components/DatePlayedField';
 import i18n, { useTranslation } from '../../../src/i18n';
+import { formatOrdinalPlace } from '../../../src/lib/formatOrdinal';
 import { PLATFORMS, colors, type PlatformId } from '../../../src/lib/constants';
 import { useResponsive } from '../../../src/lib/responsive';
 import {
@@ -157,18 +158,8 @@ function scanBannerText(
 /** Set true to log gross resolution in dev tools when saving a round. */
 const DEBUG_LOG_GROSS_SAVE = false;
 
-function ordinalPlace(n: number): string {
-  const mod100 = n % 100;
-  if (mod100 >= 11 && mod100 <= 13) return `${n}th`;
-  const mod10 = n % 10;
-  if (mod10 === 1) return `${n}st`;
-  if (mod10 === 2) return `${n}nd`;
-  if (mod10 === 3) return `${n}rd`;
-  return `${n}th`;
-}
-
 export default function LogRoundScreen() {
-  const { t } = useTranslation();
+  const { t, i18n: i18nInst } = useTranslation();
   const { gutter, isWide } = useResponsive();
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -1074,7 +1065,7 @@ export default function LogRoundScreen() {
 
             if (completedLeagueResults.length > 0) {
               const hit = completedLeagueResults[0];
-              const place = ordinalPlace(hit.position);
+              const place = formatOrdinalPlace(hit.position, i18nInst.language);
               const isTeamFmt = isTeamLeagueFormat(hit.format);
               leagueBanner =
                 isTeamFmt && hit.teamName

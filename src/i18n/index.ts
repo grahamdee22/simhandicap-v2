@@ -3,7 +3,7 @@ import * as Localization from 'expo-localization';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 
-import { TRANSLATED_LANGUAGES_ENABLED } from '@/src/lib/featureFlags';
+import { ENABLED_TRANSLATED_LANGUAGES } from '@/src/lib/featureFlags';
 import en from './locales/en.json';
 import es from './locales/es.json';
 import ko from './locales/ko.json';
@@ -17,14 +17,19 @@ const ALL_SUPPORTED_LANGUAGES = [
 
 export type AppLanguageCode = (typeof ALL_SUPPORTED_LANGUAGES)[number]['code'];
 
+const ENABLED_TRANSLATED = new Set(
+  ENABLED_TRANSLATED_LANGUAGES.map((c) => c.toLowerCase())
+);
+
 /**
  * Languages exposed to users (picker + device auto-detect).
- * When TRANSLATED_LANGUAGES_ENABLED is off, English only — es/ko stay in the catalog above but inert.
+ * English is always on; other locales come from ENABLED_TRANSLATED_LANGUAGES
+ * (or EXPO_PUBLIC_ENABLED_TRANSLATED_LANGUAGES). Disabled locale files stay inert.
  */
 export const SUPPORTED_LANGUAGES: ReadonlyArray<{ code: AppLanguageCode; label: string }> =
-  TRANSLATED_LANGUAGES_ENABLED
-    ? ALL_SUPPORTED_LANGUAGES
-    : ALL_SUPPORTED_LANGUAGES.filter((l) => l.code === 'en');
+  ALL_SUPPORTED_LANGUAGES.filter(
+    (l) => l.code === 'en' || ENABLED_TRANSLATED.has(l.code)
+  );
 
 export const LANGUAGE_OVERRIDE_KEY = '@simcap/language_override';
 

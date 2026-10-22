@@ -77,6 +77,7 @@
       "alertTitle": "Sign in"
     },
     "completeProfile": {
+      "navTitle": "Your name",
       "title": "Choose your display name",
       "sub": "This is how other players see you in matches and groups. You can change it later in settings.",
       "displayName": "Display name",
@@ -783,7 +784,9 @@
       "noChampion": "No champion decided",
       "noResult": "No result recorded",
       "champion": "🏆 {{name}}",
-      "opponent": "Opponent"
+      "opponent": "Opponent",
+      "teamStandingLine": "{{team}} · {{place}} · low net {{value}}",
+      "teamStandingLinePartial": "{{team}} · {{place}} · low net {{value}} · partial"
     }
   },
   "season": {

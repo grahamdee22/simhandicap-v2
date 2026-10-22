@@ -44,21 +44,7 @@ import {
 import { supabase } from '../lib/supabase';
 import { buildBracketViewModel } from '../lib/matchPlayBracket';
 import type { FriendGroup } from '../store/useAppStore';
-
-function ordinalSuffix(n: number): string {
-  const v = n % 100;
-  if (v >= 11 && v <= 13) return 'th';
-  switch (n % 10) {
-    case 1:
-      return 'st';
-    case 2:
-      return 'nd';
-    case 3:
-      return 'rd';
-    default:
-      return 'th';
-  }
-}
+import { formatOrdinalPlace } from '../lib/formatOrdinal';
 
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
 const ALLOW_DEV_CREATOR_VIEW = __DEV__;
@@ -243,7 +229,11 @@ export function GroupTournamentsSection({
             : null;
           const mine = team ? standings.find((s) => s.teamId === team.id) : null;
           if (team && mine) {
-            scrambleLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · low net ${mine.lowNet?.toFixed(1) ?? '—'}`;
+            scrambleLine = i18n.t('tournaments.section.teamStandingLine', {
+              team: team.name,
+              place: formatOrdinalPlace(mine.rank, i18n.language),
+              value: mine.lowNet?.toFixed(1) ?? '—',
+            });
           }
         }
         if (active.format === 'best_ball' && authUserId) {
@@ -253,8 +243,14 @@ export function GroupTournamentsSection({
             : null;
           const mine = team ? standings.find((s) => s.teamId === team.id) : null;
           if (team && mine) {
-            const partial = mine.hasPartialPending ? ' · partial' : '';
-            bestBallLine = `${team.name} · ${mine.rank}${ordinalSuffix(mine.rank)} · low net ${mine.lowNet?.toFixed(1) ?? '—'}${partial}`;
+            const key = mine.hasPartialPending
+              ? 'tournaments.section.teamStandingLinePartial'
+              : 'tournaments.section.teamStandingLine';
+            bestBallLine = i18n.t(key, {
+              team: team.name,
+              place: formatOrdinalPlace(mine.rank, i18n.language),
+              value: mine.lowNet?.toFixed(1) ?? '—',
+            });
           }
         }
         if (active.format === 'match_play' && authUserId) {

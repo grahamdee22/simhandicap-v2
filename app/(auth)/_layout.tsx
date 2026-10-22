@@ -1,7 +1,10 @@
 import { Stack } from 'expo-router';
 import { colors } from '@/src/lib/constants';
+import { useTranslation } from '@/src/i18n';
 
 export default function AuthLayout() {
+  const { t } = useTranslation();
+
   return (
     <Stack
       initialRouteName="index"
@@ -15,8 +18,11 @@ export default function AuthLayout() {
       <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false }} />
       <Stack.Screen name="sign-in" options={{ headerShown: false }} />
-      <Stack.Screen name="sign-up" options={{ title: 'Create account' }} />
-      <Stack.Screen name="complete-oauth-profile" options={{ title: 'Your name' }} />
+      <Stack.Screen name="sign-up" options={{ title: t('common.createAccount') }} />
+      <Stack.Screen
+        name="complete-oauth-profile"
+        options={{ title: t('auth.completeProfile.navTitle') }}
+      />
       <Stack.Screen name="forgot-password" options={{ headerShown: false }} />
       <Stack.Screen name="reset-password" options={{ headerShown: false }} />
     </Stack>
