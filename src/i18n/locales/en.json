@@ -831,6 +831,11 @@
   "league": {
     "create": {
       "groupNotFound": "Group not found.",
+      "cancelA11y": "Cancel tournament creation",
+      "discardTitle": "Discard tournament?",
+      "discardBody": "You'll lose the details you've entered so far.",
+      "discardConfirm": "Discard",
+      "keepEditing": "Keep editing",
       "basicInfo": "Basic info",
       "tournamentName": "Tournament name",
       "namePlaceholder": "Spring League",

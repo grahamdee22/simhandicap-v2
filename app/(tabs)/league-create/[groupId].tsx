@@ -1,8 +1,9 @@
-import { useFocusEffect } from '@react-navigation/native';
-import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  BackHandler,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -19,6 +20,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../../../src/auth/AuthContext';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { DatePlayedField } from '../../../src/components/DatePlayedField';
+import { HeaderBackButton } from '../../../src/components/HeaderBackButton';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { HandicapSourceBadge } from '../../../src/components/HandicapSourceBadge';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
@@ -27,6 +29,7 @@ import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
 import { dateFromYmdLocal, todayLocalYmd, ymdFromParts } from '../../../src/lib/dates';
 import { countMembersMissingHandicap } from '../../../src/lib/effectiveHandicap';
 import { colors } from '../../../src/lib/constants';
+import { navigateBackOrFallback } from '../../../src/lib/navigateBack';
 import {
   curatedPickerCourses,
   fetchCommunityCoursesForPicker,
@@ -152,6 +155,7 @@ export default function LeagueCreateScreen() {
   const { groupId: rawGroupId } = useLocalSearchParams<{ groupId: string | string[] }>();
   const groupId = typeof rawGroupId === 'string' ? rawGroupId : rawGroupId?.[0] ?? '';
   const router = useRouter();
+  const navigation = useNavigation();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
   const { user } = useAuth();
@@ -532,6 +536,7 @@ export default function LeagueCreateScreen() {
 
   const stepNumber = Math.max(1, stepSequence.indexOf(step) + 1);
   const totalSteps = stepSequence.length;
+  const stepIdx = stepSequence.indexOf(step);
 
   const goToStep = useCallback(
     (next: WizardStep) => {
@@ -539,6 +544,90 @@ export default function LeagueCreateScreen() {
     },
     [stepSequence]
   );
+
+  const goBackStep = useCallback(() => {
+    if (stepIdx <= 0) return;
+    const prev = stepSequence[stepIdx - 1];
+    if (prev) setStep(prev);
+  }, [stepIdx, stepSequence]);
+
+  const wizardDirty =
+    name.trim().length > 0 ||
+    format !== 'stroke' ||
+    holesPerRound !== '18' ||
+    tournamentCourseId != null ||
+    notes.trim().length > 0 ||
+    step !== 'basic';
+
+  const exitWizard = useCallback(() => {
+    navigateBackOrFallback(navigation, router, '/(tabs)/groups' as Href);
+  }, [navigation, router]);
+
+  const requestExitWizard = useCallback(() => {
+    if (!wizardDirty) {
+      exitWizard();
+      return;
+    }
+    void confirmAppChoice(
+      t('league.create.discardTitle'),
+      t('league.create.discardBody'),
+      {
+        cancelText: t('league.create.keepEditing'),
+        confirmText: t('league.create.discardConfirm'),
+      }
+    ).then((choice) => {
+      if (choice === 'confirm') exitWizard();
+    });
+  }, [wizardDirty, exitWizard, t]);
+
+  const onWizardHardwareBack = useCallback(() => {
+    if (coursePickerOpen) {
+      setCoursePickerOpen(false);
+      return true;
+    }
+    if (stepIdx > 0) {
+      goBackStep();
+      return true;
+    }
+    requestExitWizard();
+    return true;
+  }, [coursePickerOpen, stepIdx, goBackStep, requestExitWizard]);
+
+  useFocusEffect(
+    useCallback(() => {
+      const sub = BackHandler.addEventListener('hardwareBackPress', onWizardHardwareBack);
+      return () => sub.remove();
+    }, [onWizardHardwareBack])
+  );
+
+  useLayoutEffect(() => {
+    navigation.setOptions({
+      headerLeft: () => (
+        <HeaderBackButton
+          onPress={() => {
+            if (stepIdx > 0) goBackStep();
+            else requestExitWizard();
+          }}
+          accessibilityLabel={
+            stepIdx > 0 ? t('match.create.goBack') : t('league.create.cancelA11y')
+          }
+        />
+      ),
+      headerRight: () => (
+        <Pressable
+          onPress={requestExitWizard}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={{ paddingHorizontal: 12, justifyContent: 'center' }}
+          accessibilityRole="button"
+          accessibilityLabel={t('league.create.cancelA11y')}
+        >
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>
+            {t('match.create.cancel')}
+          </Text>
+        </Pressable>
+      ),
+    });
+  }, [navigation, stepIdx, goBackStep, requestExitWizard, t]);
 
   useEffect(() => {
     if (!stepSequence.includes(step)) {
@@ -862,6 +951,17 @@ export default function LeagueCreateScreen() {
         <Text style={styles.stepProg}>
           {t('match.create.stepOf', { current: stepNumber, total: totalSteps })}
         </Text>
+        {stepIdx > 0 ? (
+          <Pressable
+            onPress={goBackStep}
+            style={styles.wizardBackLink}
+            accessibilityRole="button"
+            accessibilityLabel={t('match.create.goBack')}
+            hitSlop={8}
+          >
+            <Text style={styles.wizardBackLinkTxt}>{t('match.create.back')}</Text>
+          </Pressable>
+        ) : null}
 
         {step === 'basic' ? (
           <>
@@ -1821,6 +1921,14 @@ export default function LeagueCreateScreen() {
                 <Text style={styles.primaryBtnTxt}>{t('league.create.launchTournament')}</Text>
               )}
             </Pressable>
+            <Pressable
+              style={styles.secondaryBtn}
+              onPress={goBackStep}
+              accessibilityRole="button"
+              accessibilityLabel={t('match.create.goBack')}
+            >
+              <Text style={styles.secondaryBtnTxt}>{t('match.create.back')}</Text>
+            </Pressable>
           </>
         ) : null}
         </ScrollView>
@@ -1857,6 +1965,19 @@ export default function LeagueCreateScreen() {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   stepProg: { fontSize: 12, color: colors.muted, marginBottom: 8 },
+  wizardBackLink: { alignSelf: 'flex-start', marginBottom: 10, paddingVertical: 4 },
+  wizardBackLinkTxt: { fontSize: 15, fontWeight: '600', color: colors.accent },
+  secondaryBtn: {
+    marginTop: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: colors.pillBorder,
+    backgroundColor: colors.bg,
+  },
+  secondaryBtnTxt: { fontSize: 16, fontWeight: '600', color: colors.ink },
   head: { fontSize: 22, fontWeight: '700', color: colors.ink, marginBottom: 12 },
   lbl: { fontSize: 12, fontWeight: '600', color: colors.muted, marginBottom: 6 },
   input: {

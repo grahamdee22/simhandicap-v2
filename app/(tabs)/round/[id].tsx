@@ -1,10 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
-import { Link, Stack, useLocalSearchParams, useRouter, type Href } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useNavigation } from '@react-navigation/native';
+import { Link, useLocalSearchParams, useRouter, type Href } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
   Alert,
-  BackHandler,
   Platform,
   Pressable,
   ScrollView,
@@ -18,6 +17,7 @@ import i18n, { useTranslation } from '../../../src/i18n';
 import { showAppAlert } from '../../../src/lib/alertCompat';
 import { colors } from '../../../src/lib/constants';
 import { mergeViewStyles } from '../../../src/lib/mergeStyles';
+import { navigateBackOrFallback } from '../../../src/lib/navigateBack';
 import { useResponsive } from '../../../src/lib/responsive';
 import {
   formatDifferentialDisplay,
@@ -106,6 +106,7 @@ export default function RoundDetailScreen() {
   const { gutter, isWide, isVeryWide, columnWidth } = useResponsive();
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const navigation = useNavigation();
   const rounds = useAppStore((s) => s.rounds);
   const deleteRound = useAppStore((s) => s.deleteRound);
   const r = rounds.find((x) => x.id === id);
@@ -114,6 +115,10 @@ export default function RoundDetailScreen() {
     enrichmentTier: number | null;
     enrichmentSource: string | null;
   } | null>(null);
+
+  const goBack = useCallback(() => {
+    navigateBackOrFallback(navigation, router, '/(tabs)' as Href);
+  }, [navigation, router]);
 
   useEffect(() => {
     if (!shouldFetchCommunityCourseEnrichmentForRound(r)) {
@@ -137,36 +142,36 @@ export default function RoundDetailScreen() {
     };
   }, [r, supabaseOn]);
 
-  useFocusEffect(
-    useCallback(() => {
-      const onHardwareBack = () => {
-        router.replace('/');
-        return true;
-      };
-      const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
-      return () => sub.remove();
-    }, [router])
-  );
+  useLayoutEffect(() => {
+    if (!r) {
+      navigation.setOptions({
+        title: t('tabs.round.title'),
+        headerRight: undefined,
+      });
+      return;
+    }
+    navigation.setOptions({
+      title: t('tabs.round.title'),
+      headerRight: () => (
+        <Link href={{ pathname: '/(tabs)/log/round', params: { editId: r.id } } as unknown as Href} asChild>
+          <Pressable style={{ paddingHorizontal: 12 }}>
+            <Text style={{ color: colors.accentMuted, fontSize: 13, fontWeight: '600' }}>
+              {t('round.detail.edit')}
+            </Text>
+          </Pressable>
+        </Link>
+      ),
+    });
+  }, [navigation, r, t]);
 
   if (!r) {
     return (
-      <>
-        <Stack.Screen
-          options={{
-            title: t('tabs.round.title'),
-            headerBackVisible: false,
-            headerLeft: () => null,
-          }}
-        />
-        <View style={[styles.miss, { paddingTop: insets.top }]}>
-          <Text style={styles.missTxt}>{t('round.detail.notFound')}</Text>
-          <Link href="/" asChild>
-            <Pressable>
-              <Text style={styles.link}>{t('round.detail.backHome')}</Text>
-            </Pressable>
-          </Link>
-        </View>
-      </>
+      <View style={[styles.miss, { paddingTop: insets.top }]}>
+        <Text style={styles.missTxt}>{t('round.detail.notFound')}</Text>
+        <Pressable onPress={goBack}>
+          <Text style={styles.link}>{t('round.detail.backHome')}</Text>
+        </Pressable>
+      </View>
     );
   }
 
@@ -212,7 +217,7 @@ export default function RoundDetailScreen() {
         void (async () => {
           try {
             await deleteRound(r.id);
-            router.replace('/');
+            goBack();
           } catch (e) {
             showAppAlert(t('round.detail.couldNotDelete'), String(e));
           }
@@ -222,24 +227,7 @@ export default function RoundDetailScreen() {
   };
 
   return (
-    <>
-      <Stack.Screen
-        options={{
-          title: t('tabs.round.title'),
-          headerBackVisible: false,
-          headerLeft: () => null,
-          headerRight: () => (
-            <Link href={{ pathname: '/(tabs)/log/round', params: { editId: r.id } } as unknown as Href} asChild>
-              <Pressable style={{ paddingHorizontal: 12 }}>
-                <Text style={{ color: colors.accentMuted, fontSize: 13, fontWeight: '600' }}>
-                  {t('round.detail.edit')}
-                </Text>
-              </Pressable>
-            </Link>
-          ),
-        }}
-      />
-      <View style={styles.screenRoot}>
+    <View style={styles.screenRoot}>
         <ScrollView
           style={styles.screen}
           contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}
@@ -428,8 +416,7 @@ export default function RoundDetailScreen() {
           </Pressable>
           </View>
         </ScrollView>
-      </View>
-    </>
+    </View>
   );
 }
 

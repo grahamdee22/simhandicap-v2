@@ -783,6 +783,11 @@
   "league": {
     "create": {
       "groupNotFound": "No se encontró el grupo.",
+      "cancelA11y": "Cancelar la creación del torneo",
+      "discardTitle": "¿Descartar torneo?",
+      "discardBody": "Perderás los datos que has introducido hasta ahora.",
+      "discardConfirm": "Descartar",
+      "keepEditing": "Seguir editando",
       "basicInfo": "Información básica",
       "tournamentName": "Nombre del torneo",
       "namePlaceholder": "Liga de primavera",

@@ -1,11 +1,16 @@
-import { Tabs } from 'expo-router';
+import { Tabs, type Href } from 'expo-router';
 import { Platform, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { HeaderInstagramAndSimCap } from '../../src/components/HeaderInstagramSimCap';
+import { TabScreenBackButton } from '../../src/components/TabScreenBackButton';
 import { TabBarSvgIcon, type TabBarSvgName } from '../../src/components/TabBarSvgIcon';
 import { useTranslation } from '../../src/i18n';
 import { colors } from '../../src/lib/constants';
+
+function renderTabBack(fallback?: Href) {
+  return () => <TabScreenBackButton fallback={fallback} />;
+}
 
 /** Mock: compact icons sitting in the upper half of the bar with labels beneath. */
 const TAB_ICON_SIZE = 22;
@@ -48,6 +53,7 @@ export default function TabLayout() {
 
   return (
     <Tabs
+      backBehavior="history"
       detachInactiveScreens
       screenOptions={{
         animation: 'none',
@@ -161,6 +167,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchCreate.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchCreate.label'),
         }}
@@ -170,6 +177,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchAccept.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchAccept.label'),
         }}
@@ -179,6 +187,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchOpenAccept.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchOpenAccept.label'),
         }}
@@ -188,6 +197,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchScore.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchScore.label'),
         }}
@@ -197,6 +207,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchResults.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchResults.label'),
         }}
@@ -206,6 +217,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.matchHistory.title'),
+          headerLeft: renderTabBack('/(tabs)/profile'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.matchHistory.label'),
         }}
@@ -224,6 +236,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.round.title'),
+          headerLeft: renderTabBack('/(tabs)'),
           tabBarLabel: t('tabs.round.label'),
         }}
       />
@@ -232,6 +245,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.netCalculator.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.netCalculator.label'),
         }}
@@ -241,6 +255,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.contact.title'),
+          headerLeft: renderTabBack('/(tabs)/profile'),
           headerRight: renderHeaderInstagramAndSimCap,
           tabBarLabel: t('tabs.contact.label'),
         }}
@@ -250,6 +265,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('adminCustom.title'),
+          headerLeft: renderTabBack('/(tabs)/contact'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
@@ -258,6 +274,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.season.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
@@ -266,6 +283,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.seasonCreate.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
@@ -274,6 +292,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.leagueCreate.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
@@ -282,6 +301,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.league.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
@@ -290,6 +310,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.leagueManage.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
@@ -298,6 +319,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.tournamentHoles.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
@@ -306,6 +328,7 @@ export default function TabLayout() {
         options={{
           href: null,
           title: t('tabs.leagueMatch.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
           headerRight: renderHeaderInstagramAndSimCap,
         }}
       />
