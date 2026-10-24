@@ -21,7 +21,6 @@ import { ContentWidth } from '../../../src/components/ContentWidth';
 import { DatePlayedField } from '../../../src/components/DatePlayedField';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { HandicapSourceBadge } from '../../../src/components/HandicapSourceBadge';
-import { UnratedCourseBadge } from '../../../src/components/UnratedCourseBadge';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
 import { useTranslation } from '../../../src/i18n';
 import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
@@ -35,10 +34,6 @@ import {
   type CommunityCourseRow,
 } from '../../../src/lib/communityCourses';
 import { fetchCourseAliases, type CourseAlias } from '../../../src/lib/courseAliases';
-import {
-  fetchCustomCoursesForPicker,
-  type CustomCourseRow,
-} from '../../../src/lib/customCourses';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, type DbLeagueRow, type LeagueFormat } from '../../../src/lib/leagues';
 import { dateRangesOverlap, formatLeagueDateRange, isLeagueActive } from '../../../src/lib/leagueStandings';
@@ -179,7 +174,6 @@ export default function LeagueCreateScreen() {
   const [courseSearch, setCourseSearch] = useState('');
   const [courseAliases, setCourseAliases] = useState<CourseAlias[]>([]);
   const [communityCourses, setCommunityCourses] = useState<CommunityCourseRow[]>([]);
-  const [customCourses, setCustomCourses] = useState<CustomCourseRow[]>([]);
   const [createGate, setCreateGate] = useState<'pending' | 'ready'>('pending');
   const [groupActiveLeagues, setGroupActiveLeagues] = useState<DbLeagueRow[]>([]);
   const groupActiveLeaguesRef = useRef<DbLeagueRow[]>([]);
@@ -333,18 +327,18 @@ export default function LeagueCreateScreen() {
     return null;
   }, [startDateYmd, endDateYmd, groupActiveLeagues, t]);
   const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId || !!dateRangeError;
-  // Same merge as log-round: curated + community + custom + bidirectional aliases.
-  // Tournament-lock pickers stay on curatedPickerCoursesWithAliases elsewhere.
+  // Tournament course-lock: curated + community + aliases. Custom/user-reported
+  // courses are excluded — self-reported ratings must not lock tournament scoring.
   const courseChoices = useMemo(
     () =>
       mergePickerCourses(
         curatedPickerCourses(courseSearch),
         communityCourses,
         courseSearch,
-        customCourses,
+        [],
         courseAliases
       ),
-    [courseSearch, communityCourses, customCourses, courseAliases]
+    [courseSearch, communityCourses, courseAliases]
   );
 
   useEffect(() => {
@@ -353,20 +347,17 @@ export default function LeagueCreateScreen() {
       try {
         const accessToken =
           googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
-        const [aliases, community, custom] = await Promise.all([
+        const [aliases, community] = await Promise.all([
           fetchCourseAliases(accessToken),
           fetchCommunityCoursesForPicker(accessToken),
-          fetchCustomCoursesForPicker(accessToken),
         ]);
         if (cancelled) return;
         setCourseAliases(aliases);
         setCommunityCourses(community);
-        setCustomCourses(custom);
       } catch {
         if (cancelled) return;
         setCourseAliases([]);
         setCommunityCourses([]);
-        setCustomCourses([]);
       }
     })();
     return () => {
@@ -1330,8 +1321,6 @@ export default function LeagueCreateScreen() {
                                 enrichmentTier={c.enrichmentTier}
                                 enrichmentSource={c.enrichmentSource}
                               />
-                            ) : c.source === 'custom' ? (
-                              <UnratedCourseBadge compact />
                             ) : null}
                           </View>
                           {on ? <Text style={styles.courseChange}>✓</Text> : null}

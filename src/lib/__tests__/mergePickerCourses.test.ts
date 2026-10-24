@@ -50,6 +50,25 @@ describe('mergePickerCourses', () => {
     assert.equal(merged[0].id, 'uuid-1');
   });
 
+  it('omits custom when callers pass an empty custom list (tournament-lock)', () => {
+    const curated: PickerCourseItem[] = [
+      { id: 'pebble', name: 'Pebble Beach Golf Links', source: 'curated', confident: true },
+    ];
+    const community: PickerDbCourse[] = [
+      { id: 'uuid-dpc', name: 'DPC Craggy Ranch', location: null },
+    ];
+    const custom: PickerDbCourse[] = [
+      { id: 'uuid-custom', name: 'TPC Craig Ranch', location: null },
+    ];
+    // Tournament-lock call site passes [] instead of custom.
+    const locked = mergePickerCourses(curated, community, 'TPC Craig Ranch', [], []);
+    assert.ok(!locked.some((c) => c.id === 'uuid-custom' || c.source === 'custom'));
+    const withCustom = mergePickerCourses(curated, community, 'TPC Craig Ranch', custom, []);
+    assert.ok(withCustom.some((c) => c.id === 'uuid-custom' && c.source === 'custom'));
+    const communityHit = mergePickerCourses(curated, community, 'Craggy', [], []);
+    assert.ok(communityHit.some((c) => c.id === 'uuid-dpc'));
+  });
+
   it('dedupes exact normalized name preferring curated', () => {
     const curated: PickerCourseItem[] = [
       { id: 'augusta', name: 'Augusta National', source: 'curated', confident: true },
