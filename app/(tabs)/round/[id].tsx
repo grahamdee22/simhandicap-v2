@@ -1,5 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useIsFocused, useNavigation } from '@react-navigation/native';
 import { Link, useLocalSearchParams, useRouter, type Href } from 'expo-router';
 import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import {
@@ -107,9 +107,11 @@ export default function RoundDetailScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const navigation = useNavigation();
+  const isFocused = useIsFocused();
   const rounds = useAppStore((s) => s.rounds);
   const deleteRound = useAppStore((s) => s.deleteRound);
-  const r = rounds.find((x) => x.id === id);
+  const roundId = typeof id === 'string' ? id : Array.isArray(id) ? id[0] : '';
+  const r = roundId ? rounds.find((x) => x.id === roundId) : undefined;
   const supabaseOn = isSupabaseConfigured();
   const [courseEnrichment, setCourseEnrichment] = useState<{
     enrichmentTier: number | null;
@@ -164,7 +166,10 @@ export default function RoundDetailScreen() {
     });
   }, [navigation, r, t]);
 
+  // With tab `backBehavior="history"`, this screen can stay mounted while another
+  // tab is visible. Don't leave "Round not found" text in the inactive DOM.
   if (!r) {
+    if (!isFocused) return null;
     return (
       <View style={[styles.miss, { paddingTop: insets.top }]}>
         <Text style={styles.missTxt}>{t('round.detail.notFound')}</Text>
