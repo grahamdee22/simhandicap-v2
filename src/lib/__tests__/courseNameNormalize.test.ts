@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   courseNameFuzzyMatch,
   courseNameMatchRank,
+  coursePickerCollapseKey,
   normalizeCourseName,
   stripGolfCourseSuffixes,
 } from '../courseNameNormalize';
@@ -24,5 +25,16 @@ describe('courseNameNormalize', () => {
         courseNameMatchRank('Pebble Beach Golf Club', 'beach')
     );
     assert.equal(normalizeCourseName('  Augusta  National  '), 'augusta national');
+  });
+
+  it('picker collapse key is stronger than normalizeCourseName for near-dupes', () => {
+    assert.notEqual(
+      normalizeCourseName('Torrey Pines North'),
+      normalizeCourseName('Torrey Pines – North Course')
+    );
+    assert.equal(
+      coursePickerCollapseKey('Torrey Pines North'),
+      coursePickerCollapseKey('Torrey Pines – North Course')
+    );
   });
 });

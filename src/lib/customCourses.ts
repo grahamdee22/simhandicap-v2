@@ -1,8 +1,12 @@
 import Constants from 'expo-constants';
 import { COURSE_SEEDS } from './courses';
 import { normalizeCourseName, stripGolfCourseSuffixes } from './courseNameNormalize';
+import { friendlyCourseWriteError } from './courseWriteErrors';
+import { googleOAuthAccessToken } from './googleOAuthAccessToken';
 import { isRatingSource, resolveTeeRatingFromInput, type RatingSource } from './ratingSource';
 import { supabase } from './supabase';
+
+export { friendlyCourseWriteError } from './courseWriteErrors';
 
 export type CustomCourseTeeRow = {
   id: string;
@@ -137,9 +141,119 @@ export async function fetchCustomCoursesForPicker(
     .filter((r): r is CustomCourseRow => r != null);
 }
 
+async function resolveCourseWriteAuth(): Promise<
+  { accessToken: string; userId: string } | { error: string }
+> {
+  if (!supabase) return { error: 'Not signed in.' };
+  const accessToken =
+    googleOAuthAccessToken ??
+    (await supabase.auth.getSession()).data.session?.access_token ??
+    null;
+  if (!accessToken) {
+    return { error: 'Sign in again to add a course.' };
+  }
+
+  let userId =
+    (await supabase.auth.getSession()).data.session?.user?.id?.trim() || null;
+  if (!userId) {
+    const { data } = await supabase.auth.getUser(accessToken);
+    userId = data.user?.id?.trim() || null;
+  }
+  if (!userId) {
+    return { error: 'Sign in again to add a course.' };
+  }
+  return { accessToken, userId };
+}
+
+async function restSelectSingle(
+  accessToken: string,
+  path: string
+): Promise<{ row: Record<string, unknown> | null; error: string | null }> {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { row: null, error: 'Supabase is not configured.' };
+  }
+  const res = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+      Accept: 'application/vnd.pgrst.object+json',
+    },
+  });
+  if (res.status === 406 || res.status === 404) return { row: null, error: null };
+  const text = await res.text().catch(() => '');
+  if (!res.ok) {
+    let msg = text || res.statusText;
+    try {
+      const j = JSON.parse(text) as { message?: string };
+      if (j?.message) msg = j.message;
+    } catch {
+      /* keep */
+    }
+    return { row: null, error: msg };
+  }
+  if (!text) return { row: null, error: null };
+  try {
+    return { row: JSON.parse(text) as Record<string, unknown>, error: null };
+  } catch {
+    return { row: null, error: 'Invalid response' };
+  }
+}
+
+async function restInsertRows(
+  accessToken: string,
+  table: string,
+  rows: Record<string, unknown>[],
+  select?: string
+): Promise<{ rows: Record<string, unknown>[]; error: string | null; code?: string }> {
+  const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return { rows: [], error: 'Supabase is not configured.' };
+  }
+  const qs = select ? `?select=${encodeURIComponent(select)}` : '';
+  const res = await fetch(`${supabaseUrl}/rest/v1/${table}${qs}`, {
+    method: 'POST',
+    headers: {
+      apikey: supabaseAnonKey,
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      Prefer: 'return=representation',
+    },
+    body: JSON.stringify(rows),
+  });
+  const text = await res.text().catch(() => '');
+  if (!res.ok) {
+    let msg = text || res.statusText;
+    let code: string | undefined;
+    try {
+      const j = JSON.parse(text) as { message?: string; code?: string };
+      if (j?.message) msg = j.message;
+      if (j?.code) code = j.code;
+    } catch {
+      /* keep */
+    }
+    return { rows: [], error: msg, code };
+  }
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    return { rows: Array.isArray(parsed) ? (parsed as Record<string, unknown>[]) : [], error: null };
+  } catch {
+    return { rows: [], error: 'Invalid response' };
+  }
+}
+
 async function fetchCustomCourseByNormalizedName(
-  nameNormalized: string
+  nameNormalized: string,
+  accessToken?: string
 ): Promise<CustomCourseRow | null> {
+  if (accessToken) {
+    const { row, error } = await restSelectSingle(
+      accessToken,
+      `courses?source=eq.custom&name_normalized=eq.${encodeURIComponent(nameNormalized)}&select=${encodeURIComponent(CUSTOM_SELECT)}`
+    );
+    if (error || !row) return null;
+    return asCustomCourseRow(row);
+  }
   if (!supabase) return null;
   const { data, error } = await supabase
     .from('courses')
@@ -152,8 +266,21 @@ async function fetchCustomCourseByNormalizedName(
 }
 
 async function fetchAnyDbCourseByNormalizedName(
-  nameNormalized: string
+  nameNormalized: string,
+  accessToken?: string
 ): Promise<{ id: string; source: string; name: string } | null> {
+  if (accessToken) {
+    const { row, error } = await restSelectSingle(
+      accessToken,
+      `courses?name_normalized=eq.${encodeURIComponent(nameNormalized)}&select=id,source,name`
+    );
+    if (error || !row) return null;
+    return {
+      id: String(row.id ?? ''),
+      source: String(row.source ?? ''),
+      name: String(row.name ?? ''),
+    };
+  }
   if (!supabase) return null;
   const { data, error } = await supabase
     .from('courses')
@@ -207,105 +334,138 @@ function buildTeeInsert(
 /**
  * Create a custom course + tees, or return the existing row when name_normalized already exists
  * (including when another user created it first).
+ *
+ * Auth: uses the live JWT (`googleOAuthAccessToken` or supabase session). `opts.userId` is only a
+ * fallback hint — `created_by` must match `auth.uid()` for RLS.
  */
 export async function createCustomCourse(opts: {
   name: string;
   tees: CustomTeeInput[];
   userId: string;
 }): Promise<{ course: CustomCourseRow } | { error: string }> {
-  if (!supabase) return { error: 'Not signed in.' };
+  const auth = await resolveCourseWriteAuth();
+  if ('error' in auth) return { error: auth.error };
+  const { accessToken, userId: createdBy } = auth;
+  void opts.userId; // UI still passes user.id; JWT subject is authoritative for RLS.
+
   const name = opts.name.trim();
   if (!name) return { error: 'Enter a course name.' };
   if (!opts.tees.length) return { error: 'Add at least one tee.' };
 
-  const nameNormalized = normalizeCourseName(name);
-  const nameStem = stripGolfCourseSuffixes(name);
-  const curatedHit = COURSE_SEEDS.find((c) => {
-    const cn = normalizeCourseName(c.name);
-    const cs = stripGolfCourseSuffixes(c.name);
-    return cn === nameNormalized || (nameStem.length > 0 && cs === nameStem);
-  });
-  if (curatedHit) {
-    return {
-      error: `“${curatedHit.name}” is already in the curated library. Search for it instead of creating a duplicate.`,
-    };
-  }
+  try {
+    const nameNormalized = normalizeCourseName(name);
+    const nameStem = stripGolfCourseSuffixes(name);
+    const curatedHit = COURSE_SEEDS.find((c) => {
+      const cn = normalizeCourseName(c.name);
+      const cs = stripGolfCourseSuffixes(c.name);
+      return cn === nameNormalized || (nameStem.length > 0 && cs === nameStem);
+    });
+    if (curatedHit) {
+      return {
+        error: `“${curatedHit.name}” is already in the curated library. Search for it instead of creating a duplicate.`,
+      };
+    }
 
-  const existingAny = await fetchAnyDbCourseByNormalizedName(nameNormalized);
-  if (existingAny) {
-    if (existingAny.source === 'custom') {
-      const full = await fetchCustomCourseByNormalizedName(nameNormalized);
-      if (full) {
-        // Add any new tees the creator is submitting that don't exist yet.
-        for (const tee of opts.tees) {
-          const hit = full.course_tees.find(
-            (t) => normalizeCourseName(t.name) === normalizeCourseName(tee.name)
-          );
-          if (!hit) {
-            const add = await addTeeToCustomCourse({ courseId: full.id, tee });
-            if ('course' in add) return add;
+    const existingAny = await fetchAnyDbCourseByNormalizedName(nameNormalized, accessToken);
+    if (existingAny) {
+      if (existingAny.source === 'custom') {
+        const full = await fetchCustomCourseByNormalizedName(nameNormalized, accessToken);
+        if (full) {
+          for (const tee of opts.tees) {
+            const hit = full.course_tees.find(
+              (t) => normalizeCourseName(t.name) === normalizeCourseName(tee.name)
+            );
+            if (!hit) {
+              const add = await addTeeToCustomCourse({ courseId: full.id, tee });
+              if ('course' in add) return add;
+              if ('error' in add) return { error: friendlyCourseWriteError(add.error) };
+            }
           }
+          const refreshed = await fetchCustomCourseByNormalizedName(nameNormalized, accessToken);
+          return refreshed ? { course: refreshed } : { course: full };
         }
-        const refreshed = await fetchCustomCourseByNormalizedName(nameNormalized);
-        return refreshed ? { course: refreshed } : { course: full };
       }
+      return {
+        error: `“${existingAny.name}” is already in the library. Search for it instead of creating a duplicate.`,
+      };
     }
-    return {
-      error: `“${existingAny.name}” is already in the library. Search for it instead of creating a duplicate.`,
-    };
-  }
 
-  const teeRows: ReturnType<typeof buildTeeInsert>[] = [];
-  for (const tee of opts.tees) {
-    const built = buildTeeInsert('pending', tee);
-    if ('error' in built) return { error: built.error };
-    teeRows.push(built);
-  }
-
-  const { data: courseData, error: courseError } = await supabase
-    .from('courses')
-    .insert({
-      name,
-      name_normalized: nameNormalized,
-      source: 'custom',
-      confident: false,
-      created_by: opts.userId,
-    })
-    .select('id,name,name_normalized,location,source,confident,created_by')
-    .single();
-
-  if (courseError || !courseData) {
-    // Race: another user inserted the same name — reuse theirs.
-    if (courseError?.code === '23505') {
-      const raced = await fetchCustomCourseByNormalizedName(nameNormalized);
-      if (raced) return { course: raced };
+    const teeRows: Exclude<ReturnType<typeof buildTeeInsert>, { error: string }>[] = [];
+    for (const tee of opts.tees) {
+      const built = buildTeeInsert('pending', tee);
+      if ('error' in built) return { error: built.error };
+      teeRows.push(built);
     }
-    return { error: courseError?.message ?? 'Could not create course.' };
-  }
 
-  const courseId = (courseData as { id: string }).id;
-  const inserts = teeRows.map((t) => {
-    if ('error' in t) throw new Error(t.error);
-    return { ...t, course_id: courseId };
-  });
+    const inserted = await restInsertRows(
+      accessToken,
+      'courses',
+      [
+        {
+          name,
+          name_normalized: nameNormalized,
+          source: 'custom',
+          confident: false,
+          created_by: createdBy,
+        },
+      ],
+      'id,name,name_normalized,location,source,confident,created_by'
+    );
 
-  const { error: teeError } = await supabase.from('course_tees').insert(inserts);
-  if (teeError) {
-    await supabase.from('courses').delete().eq('id', courseId);
-    return { error: teeError.message };
-  }
+    if (inserted.error || !inserted.rows[0]) {
+      if (inserted.code === '23505') {
+        const raced = await fetchCustomCourseByNormalizedName(nameNormalized, accessToken);
+        if (raced) return { course: raced };
+      }
+      return { error: friendlyCourseWriteError(inserted.error ?? 'Could not create course.') };
+    }
 
-  const full = await fetchCustomCourseByNormalizedName(nameNormalized);
-  if (!full) {
-    return {
-      course: {
-        ...(courseData as Omit<CustomCourseRow, 'course_tees' | 'source'>),
-        source: 'custom',
-        course_tees: [],
-      },
-    };
+    const courseData = inserted.rows[0];
+    const courseId = String(courseData.id ?? '');
+    if (!courseId) {
+      return { error: friendlyCourseWriteError('Could not create course.') };
+    }
+
+    const teeInsert = await restInsertRows(
+      accessToken,
+      'course_tees',
+      teeRows.map((t) => ({ ...t, course_id: courseId }))
+    );
+    if (teeInsert.error) {
+      // Best-effort cleanup; ignore delete failures (may lack DELETE RLS).
+      const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+      if (supabaseUrl && supabaseAnonKey) {
+        await fetch(`${supabaseUrl}/rest/v1/courses?id=eq.${encodeURIComponent(courseId)}`, {
+          method: 'DELETE',
+          headers: {
+            apikey: supabaseAnonKey,
+            Authorization: `Bearer ${accessToken}`,
+          },
+        }).catch(() => undefined);
+      }
+      return { error: friendlyCourseWriteError(teeInsert.error) };
+    }
+
+    const full = await fetchCustomCourseByNormalizedName(nameNormalized, accessToken);
+    if (!full) {
+      return {
+        course: {
+          id: courseId,
+          name: String(courseData.name ?? name),
+          name_normalized: String(courseData.name_normalized ?? nameNormalized),
+          location: typeof courseData.location === 'string' ? courseData.location : null,
+          source: 'custom',
+          confident: courseData.confident === true,
+          created_by: typeof courseData.created_by === 'string' ? courseData.created_by : createdBy,
+          course_tees: [],
+        },
+      };
+    }
+    return { course: full };
+  } catch (e) {
+    const raw = e instanceof Error ? e.message : String(e);
+    return { error: friendlyCourseWriteError(raw) };
   }
-  return { course: full };
 }
 
 /** Add a tee to an existing custom course (any authenticated user). */
@@ -313,27 +473,26 @@ export async function addTeeToCustomCourse(opts: {
   courseId: string;
   tee: CustomTeeInput;
 }): Promise<{ course: CustomCourseRow } | { error: string }> {
-  if (!supabase) return { error: 'Not signed in.' };
+  const auth = await resolveCourseWriteAuth();
+  if ('error' in auth) return { error: auth.error };
+  const { accessToken } = auth;
+
   const built = buildTeeInsert(opts.courseId, opts.tee);
   if ('error' in built) return { error: built.error };
 
-  const { error } = await supabase.from('course_tees').insert(built);
-  if (error) {
-    if (error.code === '23505') {
-      // Tee name already exists — treat as success and reload.
-    } else {
-      return { error: error.message };
-    }
+  const teeInsert = await restInsertRows(accessToken, 'course_tees', [built]);
+  if (teeInsert.error && teeInsert.code !== '23505') {
+    return { error: friendlyCourseWriteError(teeInsert.error) };
   }
 
-  const { data, error: fetchErr } = await supabase
-    .from('courses')
-    .select(CUSTOM_SELECT)
-    .eq('id', opts.courseId)
-    .eq('source', 'custom')
-    .maybeSingle();
-  if (fetchErr || !data) return { error: fetchErr?.message ?? 'Course not found.' };
-  const course = asCustomCourseRow(data as Record<string, unknown>);
+  const { row, error: fetchErr } = await restSelectSingle(
+    accessToken,
+    `courses?id=eq.${encodeURIComponent(opts.courseId)}&source=eq.custom&select=${encodeURIComponent(CUSTOM_SELECT)}`
+  );
+  if (fetchErr || !row) {
+    return { error: friendlyCourseWriteError(fetchErr ?? 'Course not found.') };
+  }
+  const course = asCustomCourseRow(row);
   if (!course) return { error: 'Course not found.' };
   return { course };
 }

@@ -46,12 +46,12 @@ import { nearestTeeByYards } from '../../../src/lib/communityEnrichment';
 import {
   curatedPickerCourses,
   fetchCommunityCoursesForPicker,
-  isCommunityCourseId,
   mergePickerCourses,
   resolveLogCourse,
   type CommunityCourseRow,
   type ResolvedLogCourse,
 } from '../../../src/lib/communityCourses';
+import { fetchCourseAliases, type CourseAlias } from '../../../src/lib/courseAliases';
 import {
   addTeeToCustomCourse,
   fetchCustomCoursesForPicker,
@@ -232,6 +232,7 @@ export default function LogRoundScreen() {
   const [activeTournaments, setActiveTournaments] = useState<ActiveTournamentOption[]>([]);
   const [tournamentApply, setTournamentApply] = useState<Record<string, boolean>>({});
   const [communityCourses, setCommunityCourses] = useState<CommunityCourseRow[]>([]);
+  const [courseAliases, setCourseAliases] = useState<CourseAlias[]>([]);
   const [customCourses, setCustomCourses] = useState<CustomCourseRow[]>([]);
   const [customCreateOpen, setCustomCreateOpen] = useState(false);
   const [dismissCourseSuggestions, setDismissCourseSuggestions] = useState(false);
@@ -362,18 +363,9 @@ export default function LogRoundScreen() {
     }, [loadActiveTournaments])
   );
 
-  const hasExpandedCourseList = useMemo(() => {
-    if (!user?.id) return false;
-    return groups.some(
-      (g) => g.expandedCourseListEnabled && g.members.some((m) => m.userId === user.id)
-    );
-  }, [groups, user?.id]);
-
   const loadCommunityCourses = useCallback(async () => {
-    const needsCommunity =
-      hasExpandedCourseList || (courseId.length > 0 && isCommunityCourseId(courseId));
-    if (!supabaseOn || !needsCommunity) {
-      if (!needsCommunity) setCommunityCourses([]);
+    if (!supabaseOn) {
+      setCommunityCourses([]);
       return;
     }
     try {
@@ -384,7 +376,22 @@ export default function LogRoundScreen() {
     } catch {
       setCommunityCourses([]);
     }
-  }, [supabaseOn, hasExpandedCourseList, courseId]);
+  }, [supabaseOn]);
+
+  const loadCourseAliases = useCallback(async () => {
+    if (!supabaseOn) {
+      setCourseAliases([]);
+      return;
+    }
+    try {
+      const accessToken =
+        googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const aliases = await fetchCourseAliases(accessToken);
+      setCourseAliases(aliases);
+    } catch {
+      setCourseAliases([]);
+    }
+  }, [supabaseOn]);
 
   const loadCustomCourses = useCallback(async () => {
     if (!supabaseOn) {
@@ -406,14 +413,19 @@ export default function LogRoundScreen() {
   }, [loadCommunityCourses]);
 
   useEffect(() => {
+    void loadCourseAliases();
+  }, [loadCourseAliases]);
+
+  useEffect(() => {
     void loadCustomCourses();
   }, [loadCustomCourses]);
 
   useFocusEffect(
     useCallback(() => {
       void loadCommunityCourses();
+      void loadCourseAliases();
       void loadCustomCourses();
-    }, [loadCommunityCourses, loadCustomCourses])
+    }, [loadCommunityCourses, loadCourseAliases, loadCustomCourses])
   );
 
   useEffect(() => {
@@ -751,13 +763,16 @@ export default function LogRoundScreen() {
       : null;
 
   // Course list is independent of tournament state — apply-to-tournament matching is per-round via leagueAcceptsLoggedHoles.
-  const showCommunityInPicker = hasExpandedCourseList;
-
+  // Community courses are always merged (expanded_course_list_enabled is no longer enforced).
   const coursesForPicker = useMemo(() => {
-    const curated = curatedPickerCourses(courseSearchQuery);
-    const community = showCommunityInPicker ? communityCourses : [];
-    return mergePickerCourses(curated, community, courseSearchQuery, customCourses);
-  }, [courseSearchQuery, showCommunityInPicker, communityCourses, customCourses]);
+    return mergePickerCourses(
+      curatedPickerCourses(courseSearchQuery),
+      communityCourses,
+      courseSearchQuery,
+      customCourses,
+      courseAliases
+    );
+  }, [courseSearchQuery, communityCourses, customCourses, courseAliases]);
 
   const showAddNewCourseCta =
     dismissCourseSuggestions ||
@@ -1821,13 +1836,17 @@ export default function LogRoundScreen() {
                 >
                   <View style={styles.modalRowCourse}>
                     <Text style={styles.modalRowTxt}>{c.name}</Text>
-                    <Text style={styles.courseSourceLbl}>
-                      {c.source === 'curated'
-                        ? t('course.badge.sourceCurated')
-                        : c.source === 'community'
-                          ? t('course.badge.sourceCommunity')
-                          : t('course.badge.sourceCustom')}
-                    </Text>
+                    {c.subtitle ? (
+                      <Text style={styles.courseAliasLbl}>{c.subtitle}</Text>
+                    ) : (
+                      <Text style={styles.courseSourceLbl}>
+                        {c.source === 'curated'
+                          ? t('course.badge.sourceCurated')
+                          : c.source === 'community'
+                            ? t('course.badge.sourceCommunity')
+                            : t('course.badge.sourceCustom')}
+                      </Text>
+                    )}
                     {c.source === 'community' || (c.source === 'curated' && !c.confident) ? (
                       <UnverifiedCourseBadge
                         compact
@@ -2309,6 +2328,12 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.3,
     marginLeft: 6,
+  },
+  courseAliasLbl: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: colors.muted,
+    marginTop: 2,
   },
   coursePickerFooter: { paddingTop: 8, paddingBottom: 4, gap: 8 },
   coursePickerFooterBtn: {

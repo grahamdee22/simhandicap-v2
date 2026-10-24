@@ -21,14 +21,24 @@ import { ContentWidth } from '../../../src/components/ContentWidth';
 import { DatePlayedField } from '../../../src/components/DatePlayedField';
 import { IconCheckmark } from '../../../src/components/SvgUiIcons';
 import { HandicapSourceBadge } from '../../../src/components/HandicapSourceBadge';
+import { UnratedCourseBadge } from '../../../src/components/UnratedCourseBadge';
 import { UnverifiedCourseBadge } from '../../../src/components/UnverifiedCourseBadge';
 import { useTranslation } from '../../../src/i18n';
 import { confirmAppChoice, showAppAlert } from '../../../src/lib/alertCompat';
 import { dateFromYmdLocal, todayLocalYmd, ymdFromParts } from '../../../src/lib/dates';
 import { countMembersMissingHandicap } from '../../../src/lib/effectiveHandicap';
 import { colors } from '../../../src/lib/constants';
-import { getCourseById } from '../../../src/lib/courses';
-import { curatedPickerCourses } from '../../../src/lib/communityCourses';
+import {
+  curatedPickerCourses,
+  fetchCommunityCoursesForPicker,
+  mergePickerCourses,
+  type CommunityCourseRow,
+} from '../../../src/lib/communityCourses';
+import { fetchCourseAliases, type CourseAlias } from '../../../src/lib/courseAliases';
+import {
+  fetchCustomCoursesForPicker,
+  type CustomCourseRow,
+} from '../../../src/lib/customCourses';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, type DbLeagueRow, type LeagueFormat } from '../../../src/lib/leagues';
 import { dateRangesOverlap, formatLeagueDateRange, isLeagueActive } from '../../../src/lib/leagueStandings';
@@ -164,8 +174,12 @@ export default function LeagueCreateScreen() {
   const [holesPerRound, setHolesPerRound] = useState<'18' | '9'>('18');
   const [matchPlayNine, setMatchPlayNine] = useState<'front' | 'back' | null>(null);
   const [tournamentCourseId, setTournamentCourseId] = useState<string | null>(null);
+  const [tournamentCourseName, setTournamentCourseName] = useState<string | null>(null);
   const [coursePickerOpen, setCoursePickerOpen] = useState(false);
   const [courseSearch, setCourseSearch] = useState('');
+  const [courseAliases, setCourseAliases] = useState<CourseAlias[]>([]);
+  const [communityCourses, setCommunityCourses] = useState<CommunityCourseRow[]>([]);
+  const [customCourses, setCustomCourses] = useState<CustomCourseRow[]>([]);
   const [createGate, setCreateGate] = useState<'pending' | 'ready'>('pending');
   const [groupActiveLeagues, setGroupActiveLeagues] = useState<DbLeagueRow[]>([]);
   const groupActiveLeaguesRef = useRef<DbLeagueRow[]>([]);
@@ -212,6 +226,7 @@ export default function LeagueCreateScreen() {
     setHolesPerRound('18');
     setMatchPlayNine(null);
     setTournamentCourseId(null);
+    setTournamentCourseName(null);
     setCoursePickerOpen(false);
     setCourseSearch('');
     setPlayerSearch('');
@@ -318,7 +333,46 @@ export default function LeagueCreateScreen() {
     return null;
   }, [startDateYmd, endDateYmd, groupActiveLeagues, t]);
   const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId || !!dateRangeError;
-  const courseChoices = useMemo(() => curatedPickerCourses(courseSearch), [courseSearch]);
+  // Same merge as log-round: curated + community + custom + bidirectional aliases.
+  // Tournament-lock pickers stay on curatedPickerCoursesWithAliases elsewhere.
+  const courseChoices = useMemo(
+    () =>
+      mergePickerCourses(
+        curatedPickerCourses(courseSearch),
+        communityCourses,
+        courseSearch,
+        customCourses,
+        courseAliases
+      ),
+    [courseSearch, communityCourses, customCourses, courseAliases]
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const accessToken =
+          googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+        const [aliases, community, custom] = await Promise.all([
+          fetchCourseAliases(accessToken),
+          fetchCommunityCoursesForPicker(accessToken),
+          fetchCustomCoursesForPicker(accessToken),
+        ]);
+        if (cancelled) return;
+        setCourseAliases(aliases);
+        setCommunityCourses(community);
+        setCustomCourses(custom);
+      } catch {
+        if (cancelled) return;
+        setCourseAliases([]);
+        setCommunityCourses([]);
+        setCustomCourses([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     setDateError(null);
@@ -1183,8 +1237,7 @@ export default function LeagueCreateScreen() {
             {tournamentCourseId ? (
               <View style={styles.courseSelectedRow}>
                 <Text style={styles.summaryLine}>
-                  📍{' '}
-                  {getCourseById(tournamentCourseId)?.name ?? t('league.create.selectedCourse')}
+                  📍 {tournamentCourseName ?? t('league.create.selectedCourse')}
                 </Text>
                 <Pressable
                   onPress={() => {
@@ -1256,18 +1309,29 @@ export default function LeagueCreateScreen() {
                           style={styles.modalRow}
                           onPress={() => {
                             setTournamentCourseId(c.id);
+                            setTournamentCourseName(c.name);
                             setCourseSearch('');
                             setCoursePickerOpen(false);
                           }}
                         >
                           <View style={{ flex: 1 }}>
                             <Text style={styles.memberName}>{c.name}</Text>
-                            {c.location ? <Text style={styles.helper}>{c.location}</Text> : null}
-                            {c.source === 'curated' && !c.confident ? (
+                            {c.subtitle ? (
+                              <Text style={styles.helper}>{c.subtitle}</Text>
+                            ) : c.location ? (
+                              <Text style={styles.helper}>{c.location}</Text>
+                            ) : null}
+                            {c.source === 'community' ||
+                            (c.source === 'curated' && !c.confident) ? (
                               <UnverifiedCourseBadge
+                                compact
                                 source={c.source}
                                 confident={c.confident}
+                                enrichmentTier={c.enrichmentTier}
+                                enrichmentSource={c.enrichmentSource}
                               />
+                            ) : c.source === 'custom' ? (
+                              <UnratedCourseBadge compact />
                             ) : null}
                           </View>
                           {on ? <Text style={styles.courseChange}>✓</Text> : null}
@@ -1655,7 +1719,7 @@ export default function LeagueCreateScreen() {
               <Text style={styles.summaryLine}>{name}</Text>
               {tournamentCourseId ? (
                 <Text style={styles.summaryMeta}>
-                  📍 {getCourseById(tournamentCourseId)?.name ?? t('log.round.course')}
+                  📍 {tournamentCourseName ?? t('log.round.course')}
                 </Text>
               ) : null}
               <Text style={styles.summaryMeta}>

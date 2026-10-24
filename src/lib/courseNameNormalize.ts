@@ -20,6 +20,25 @@ export function stripGolfCourseSuffixes(s: string): string {
 }
 
 /**
+ * Picker-only collapse key for near-duplicate curated/community listings.
+ * Stronger than `normalizeCourseName` (dashes, "No. 2"↔"2", trailing "course", golf suffixes).
+ * Do not use for DB uniqueness / custom-course inserts — those stay on exact `normalizeCourseName`.
+ */
+export function coursePickerCollapseKey(s: string): string {
+  let t = normalizeCourseName(s);
+  // Unify dashes / underscores before token work
+  t = t.replace(/[\u2013\u2014\u2212\-_\/]+/g, ' ');
+  // "No. 2" → "No 2" then → "2"
+  t = t.replace(/\./g, '');
+  t = t.replace(/\b(?:no|number|num|#)\s*(\d+)\b/g, '$1');
+  t = t.replace(GOLF_SUFFIX_RE, ' ');
+  // "Torrey Pines – North Course" → "torrey pines north"
+  t = t.replace(/\bcourse\b/g, ' ');
+  t = t.replace(/^the\s+/, '');
+  return t.replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Fuzzy course-name match: exact normalized, stripped-suffix exact, or substring either way.
  * Empty query matches everything.
  */

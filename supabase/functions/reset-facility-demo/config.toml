@@ -1,0 +1,4 @@
+[functions.reset-facility-demo]
+verify_jwt = false
+# Live schedule is pg_cron job `reset-facility-demo-nightly` (07:00 UTC).
+schedule = "0 7 * * *"

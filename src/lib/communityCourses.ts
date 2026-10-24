@@ -4,6 +4,7 @@ import { getCourseById, getCourseTees, type CourseSeed, type CourseTee } from '.
 import type { CustomCourseRow } from './customCourses';
 import {
   curatedPickerCourses,
+  curatedPickerCoursesWithAliases,
   dbCourseMatchesSearch,
   mergePickerCourses,
   type PickerCourseItem,
@@ -18,7 +19,7 @@ import {
 } from './fetchCommunityCourseEnrichment';
 
 export { communityCourseAttributionLabel, isCommunityCourseId };
-export { curatedPickerCourses, mergePickerCourses };
+export { curatedPickerCourses, curatedPickerCoursesWithAliases, mergePickerCourses };
 export type { CourseEnrichment, PickerCourseItem };
 
 export type HandicapSource = 'verified' | 'unverified';
@@ -191,6 +192,48 @@ export async function fetchCommunityCoursesForPicker(
 
   if (error) {
     console.warn('[communityCourses] fetch', error.message);
+    return [];
+  }
+  return (data ?? []) as CommunityCourseRow[];
+}
+
+/** Load a small set of community courses by id (alias findability when full list is gated). */
+export async function fetchCommunityCoursesByIds(
+  ids: string[],
+  accessToken?: string
+): Promise<CommunityCourseRow[]> {
+  const unique = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+  if (unique.length === 0) return [];
+
+  if (accessToken) {
+    const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return [];
+    const inList = `in.(${unique.map((id) => `"${id}"`).join(',')})`;
+    const path =
+      `courses?id=${inList}&source=eq.community&select=${encodeURIComponent(COMMUNITY_SELECT)}&order=name.asc`;
+    const res = await fetch(`${supabaseUrl}/rest/v1/${path}`, {
+      headers: {
+        apikey: supabaseAnonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+    if (!res.ok) {
+      console.warn('[communityCourses] fetchByIds', res.status, await res.text().catch(() => ''));
+      return [];
+    }
+    const rows = (await res.json()) as CommunityCourseRow[];
+    return Array.isArray(rows) ? rows : [];
+  }
+
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from('courses')
+    .select(COMMUNITY_SELECT)
+    .eq('source', 'community')
+    .in('id', unique)
+    .order('name', { ascending: true });
+  if (error) {
+    console.warn('[communityCourses] fetchByIds', error.message);
     return [];
   }
   return (data ?? []) as CommunityCourseRow[];

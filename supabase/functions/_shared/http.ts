@@ -1,6 +1,7 @@
 export const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Headers':
+    'authorization, x-client-info, apikey, content-type, x-facility-demo-reset-secret',
 };
 
 export function jsonResponse(body: Record<string, unknown>, status = 200): Response {

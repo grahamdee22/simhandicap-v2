@@ -20,6 +20,7 @@ import {
   type CustomCourseRow,
   type CustomTeeInput,
 } from '../lib/customCourses';
+import { friendlyCourseWriteError } from '../lib/courseWriteErrors';
 import { DEFAULT_UNRATED_SLOPE } from '../lib/ratingSource';
 import { showAppAlert } from '../lib/alertCompat';
 
@@ -107,11 +108,20 @@ export function CustomCourseCreateModal({
         userId,
       });
       if ('error' in result) {
-        showAppAlert(t('log.round.customCourse.alerts.createTitle'), result.error);
+        showAppAlert(
+          t('log.round.customCourse.alerts.createTitle'),
+          friendlyCourseWriteError(result.error)
+        );
         return;
       }
       onCreated(result.course);
       reset();
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      showAppAlert(
+        t('log.round.customCourse.alerts.createTitle'),
+        friendlyCourseWriteError(raw)
+      );
     } finally {
       setBusy(false);
     }
