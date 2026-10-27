@@ -25,3 +25,20 @@ That always calls `ensureAdminSeedProfile()` even without `FULL_SEED=1`.
 
 Platform dropdown coverage: `platform-dropdown-new-sims.spec.ts` asserts Muni Golf, Shot Forge,
 Pure Play, and Foresight Premier+ appear as selectable options on Log a Round.
+
+### Group Challenges
+
+Specs: `group-challenge-lifecycle.spec.ts`, `groups-tab-tournament-cache.spec.ts`.
+
+Seed the dual QA crews (and add Walter White as dual admin) before running:
+
+```bash
+npm run seed:group-challenge-qa
+```
+
+| Group | Notes |
+| --- | --- |
+| QA Group Challenge A / B | `is_test` crews with 5 companions each |
+| Dual admins | Graham (manual QA) + Walter White (Playwright) |
+
+**Documented gap:** Verified-mode screenshot upload + admin approval is not automated (file picker). The Verified wizard asserts mode copy / review summary only.

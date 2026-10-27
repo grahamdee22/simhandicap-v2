@@ -197,22 +197,55 @@ export function GroupTournamentsSection({
   const [challengeHistoryOpen, setChallengeHistoryOpen] = useState(false);
   const [pastSeasonsOpen, setPastSeasonsOpen] = useState(false);
   const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const loadGenRef = useRef(0);
+  const groupIdRef = useRef(group.id);
+  groupIdRef.current = group.id;
+
+  // Tab switch: drop previous group's UI immediately (cache for the new id if any).
+  useEffect(() => {
+    const cached = getTournamentSectionCache(group.id);
+    loadGenRef.current += 1;
+    setLeagues(cached?.leagues ?? []);
+    setPreviewTop3(cached?.previewTop3 ?? []);
+    setHasCache(!!cached);
+    setLoading(!cached);
+    setSeasons([]);
+    setChallenges([]);
+    setMatchPreviewLine(null);
+    setScrambleTeamLine(null);
+    setBestBallTeamLine(null);
+    setPastSummaries({});
+    setPastOpen(false);
+    setChallengeHistoryOpen(false);
+    setPastSeasonsOpen(false);
+  }, [group.id]);
 
   const load = useCallback(async () => {
-    const cached = getTournamentSectionCache(group.id);
+    const forGroupId = group.id;
+    const gen = ++loadGenRef.current;
+    const stillCurrent = () =>
+      gen === loadGenRef.current && groupIdRef.current === forGroupId;
+
+    const cached = getTournamentSectionCache(forGroupId);
     if (!cached) setLoading(true);
     const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
+    if (!stillCurrent()) return;
+
     const [res, seasonRes, challengeRes] = await Promise.all([
-      fetchLeaguesForGroup(group.id, accessToken),
-      fetchSeasonsForGroup(group.id, accessToken),
-      fetchGroupChallengesForGroup(group.id, accessToken).catch(() => ({
+      fetchLeaguesForGroup(forGroupId, accessToken),
+      fetchSeasonsForGroup(forGroupId, accessToken),
+      fetchGroupChallengesForGroup(forGroupId, accessToken).catch(() => ({
         data: null,
         error: 'failed',
       })),
     ]);
+    if (!stillCurrent()) return;
+
     setSeasons(seasonRes.data ?? []);
     setChallenges(challengeRes.data ?? []);
     const synced = await syncLeagueStatuses(res.data ?? [], accessToken);
+    if (!stillCurrent()) return;
+
     const active = synced.find((l) => l.status === 'active' && isLeagueActive(l));
     let top3: { name: string; rank: number }[] = [];
     let matchLine: string | null = null;
@@ -220,10 +253,12 @@ export function GroupTournamentsSection({
     let bestBallLine: string | null = null;
     if (active) {
       const bundle = await fetchLeagueBundle(active.id, accessToken);
+      if (!stillCurrent()) return;
       if (bundle.data) {
         let teamHoleScores = undefined;
         if (active.format === 'best_ball' || active.format === 'scramble') {
           const th = await fetchTeamHoleScoresForLeague(active.id, accessToken);
+          if (!stillCurrent()) return;
           teamHoleScores = th.data ?? undefined;
         }
         const standings = computeLeagueStandings({
@@ -273,6 +308,7 @@ export function GroupTournamentsSection({
           const myEntry = bundle.data.entries.find((e) => e.user_id === authUserId);
           if (myEntry) {
             const pr = await fetchLeagueMatchPairings(active.id, accessToken);
+            if (!stillCurrent()) return;
             const pairing = (pr.data ?? []).find(
               (p) => p.player_1_entry_id === myEntry.id || p.player_2_entry_id === myEntry.id
             );
@@ -292,12 +328,13 @@ export function GroupTournamentsSection({
         }
       }
     }
+    if (!stillCurrent()) return;
     setLeagues(synced);
     setPreviewTop3(top3);
     setMatchPreviewLine(matchLine);
     setScrambleTeamLine(scrambleLine);
     setBestBallTeamLine(bestBallLine);
-    setTournamentSectionCache(group.id, { leagues: synced, previewTop3: top3 });
+    setTournamentSectionCache(forGroupId, { leagues: synced, previewTop3: top3 });
     setHasCache(true);
     setLoading(false);
   }, [group.id, displayNames, authUserId]);

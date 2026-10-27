@@ -950,6 +950,7 @@ export default function GroupsScreen() {
 
             {g ? (
               <GroupTournamentsSection
+                key={g.id}
                 group={g}
                 authUserId={authUserId}
                 gutter={gutter}

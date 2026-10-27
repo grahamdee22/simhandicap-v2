@@ -28,6 +28,35 @@ export const seedGroupCandidates = [
   'Pacific Simmers',
 ] as const;
 
+/**
+ * Group Challenge QA crews (scripts/seed-group-challenge-qa.js).
+ * Walter White is dual admin of both for Playwright; companions fill 5v5 rosters.
+ */
+export const qaChallengeGroupA = 'QA Group Challenge A';
+export const qaChallengeGroupB = 'QA Group Challenge B';
+
+/** Challenging-side companions (eligible for A's roster with Walter). */
+export const qaChallengeCompanionsA = [
+  'QA GCA Alpha',
+  'QA GCA Bravo',
+  'QA GCA Charlie',
+  'QA GCA Delta',
+  'QA GCA Eagle',
+] as const;
+
+/** Challenged-side companions (B roster — exclude Walter to satisfy one-side-only). */
+export const qaChallengeCompanionsB = [
+  'QA GCB Echo',
+  'QA GCB Foxtrot',
+  'QA GCB Golf',
+  'QA GCB Hotel',
+  'QA GCB India',
+] as const;
+
+export function uniqueChallengeName(): string {
+  return `E2E Challenge ${Date.now()}`;
+}
+
 export function uniqueTournamentName(formatLabel: string): string {
   return `E2E ${formatLabel} ${Date.now()}`;
 }

@@ -1,16 +1,21 @@
 #!/usr/bin/env node
 /**
- * Seed two is_test Group Challenge QA crews (does not modify existing test groups).
+ * Seed / ensure two is_test Group Challenge QA crews.
  *
- * Creates:
+ * Creates (or top-ups):
  *   - QA Group Challenge A / B (is_test=true)
  *   - 5 companion profiles per group (is_test=true) + 6 qualifying rounds each
- *   - Adds grahamdee818@yahoo.com as creator/admin/member of both
- *     (6 members/group so each side can field a full 5 without Graham on both
- *     rosters of the same challenge — unique user constraint)
+ *   - grahamdee818@yahoo.com as creator/admin of both (manual QA)
+ *   - walter-white@seed.simcap.test as admin of both (Playwright smoke)
+ *     (companions + dual admins → each side can field 5 without putting the
+ *     same dual-member account on both rosters — unique user constraint)
+ *
+ * Idempotent: safe to re-run. Existing groups are kept; missing members /
+ * qualifying rounds are added.
  *
  * Requires .env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY
  * Run: node scripts/seed-group-challenge-qa.js
+ *   or: npm run seed:group-challenge-qa
  */
 
 const fs = require('fs');
@@ -51,6 +56,7 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 });
 
 const GRAHAM_EMAIL = 'grahamdee818@yahoo.com';
+const WALTER_EMAIL = 'walter-white@seed.simcap.test';
 const GROUP_A = 'QA Group Challenge A';
 const GROUP_B = 'QA Group Challenge B';
 const ROUNDS_PER_PLAYER = 6;
@@ -281,72 +287,108 @@ async function ensureQualifyingRounds(profile) {
   return have + need;
 }
 
-async function createQaGroup(name, creatorId, members) {
+async function ensureMember(groupId, member) {
   const { data: existing } = await supabase
-    .from('social_groups')
-    .select('id, name, is_test')
-    .eq('name', name)
+    .from('group_members')
+    .select('user_id, is_admin')
+    .eq('group_id', groupId)
+    .eq('user_id', member.id)
     .maybeSingle();
   if (existing) {
-    throw new Error(
-      `Group "${name}" already exists (id=${existing.id}). Refusing to modify existing data.`
-    );
+    if (member.isAdmin && !existing.is_admin) {
+      const { error } = await supabase
+        .from('group_members')
+        .update({ is_admin: true })
+        .eq('group_id', groupId)
+        .eq('user_id', member.id);
+      if (error) throw new Error(`group_members.promote ${member.displayName}: ${error.message}`);
+      console.log(`  promoted admin: ${member.displayName} → group ${groupId}`);
+    }
+    return;
+  }
+  const { error } = await supabase.from('group_members').insert({
+    group_id: groupId,
+    user_id: member.id,
+    display_name_snapshot: member.displayName,
+    is_admin: member.isAdmin === true,
+  });
+  if (error) throw new Error(`group_members.insert ${member.displayName}: ${error.message}`);
+  console.log(`  added member: ${member.displayName} (admin=${!!member.isAdmin})`);
+}
+
+async function ensureQaGroup(name, creatorId, members) {
+  const { data: existing } = await supabase
+    .from('social_groups')
+    .select('id, name, is_test, created_by')
+    .eq('name', name)
+    .maybeSingle();
+
+  let group = existing;
+  if (!group) {
+    const { data: created, error: gErr } = await supabase
+      .from('social_groups')
+      .insert({
+        name,
+        created_by: creatorId,
+        is_active: true,
+        is_test: true,
+      })
+      .select('id, name, is_test, created_by')
+      .single();
+    if (gErr) throw new Error(`social_groups.insert ${name}: ${gErr.message}`);
+    group = created;
+    console.log(`  created group: ${name} (${group.id})`);
+  } else {
+    if (!group.is_test) {
+      throw new Error(`Group "${name}" exists but is_test=false — refusing to touch it.`);
+    }
+    console.log(`  group exists: ${name} (${group.id})`);
   }
 
-  const { data: group, error: gErr } = await supabase
-    .from('social_groups')
-    .insert({
-      name,
-      created_by: creatorId,
-      is_active: true,
-      is_test: true,
-    })
-    .select('id, name, is_test, created_by')
-    .single();
-  if (gErr) throw new Error(`social_groups.insert ${name}: ${gErr.message}`);
-
-  const memberRows = members.map((m) => ({
-    group_id: group.id,
-    user_id: m.id,
-    display_name_snapshot: m.displayName,
-    is_admin: m.isAdmin === true,
-  }));
-
-  const { error: mErr } = await supabase.from('group_members').insert(memberRows);
-  if (mErr) throw new Error(`group_members.insert ${name}: ${mErr.message}`);
-
+  for (const m of members) {
+    await ensureMember(group.id, m);
+  }
   return group;
+}
+
+async function loadSeedProfileByEmail(email, label) {
+  const auth = await findUserByEmail(email);
+  if (!auth) {
+    throw new Error(`Could not find auth user for ${email} (${label})`);
+  }
+  const { data: profile, error } = await supabase
+    .from('profiles')
+    .select('id, display_name, is_test, ghin_index')
+    .eq('id', auth.id)
+    .maybeSingle();
+  if (error || !profile) {
+    throw new Error(`Missing profile for ${email}`);
+  }
+  if (!profile.is_test) {
+    throw new Error(
+      `${email} profile is_test=false — refusing to use a non-test account for QA seed.`
+    );
+  }
+  console.log(`${label}: ${profile.display_name} (${email}) id=${profile.id}`);
+  return profile;
 }
 
 async function main() {
   console.log('Seeding Group Challenge QA groups…');
 
-  const grahamAuth = await findUserByEmail(GRAHAM_EMAIL);
-  if (!grahamAuth) {
-    throw new Error(`Could not find auth user for ${GRAHAM_EMAIL}`);
-  }
-  const { data: grahamProfile, error: gpErr } = await supabase
-    .from('profiles')
-    .select('id, display_name, is_test')
-    .eq('id', grahamAuth.id)
-    .maybeSingle();
-  if (gpErr || !grahamProfile) {
-    throw new Error(`Missing profile for ${GRAHAM_EMAIL}`);
-  }
-  if (!grahamProfile.is_test) {
-    throw new Error(
-      `${GRAHAM_EMAIL} profile is_test=false — refusing to use a non-test account for QA seed.`
-    );
-  }
-  console.log(
-    `Graham: ${grahamProfile.display_name} (${GRAHAM_EMAIL}) id=${grahamProfile.id}`
-  );
+  const grahamProfile = await loadSeedProfileByEmail(GRAHAM_EMAIL, 'Graham');
+  const walterProfile = await loadSeedProfileByEmail(WALTER_EMAIL, 'Walter');
 
-  // Ensure Graham himself has 5+ qualifying rounds (he already does; top up if needed).
   await ensureQualifyingRounds({
     id: grahamProfile.id,
     name: grahamProfile.display_name,
-    handicap: 12,
+    handicap: grahamProfile.ghin_index ?? 12,
+    platform: 'GSPro',
+  });
+  await ensureQualifyingRounds({
+    id: walterProfile.id,
+    name: walterProfile.display_name,
+    handicap: walterProfile.ghin_index ?? 8.4,
     platform: 'GSPro',
   });
 
@@ -366,12 +408,20 @@ async function main() {
     companionsB.push(p);
   }
 
-  const membersA = [
+  const dualAdmins = [
     {
       id: grahamProfile.id,
       displayName: grahamProfile.display_name,
       isAdmin: true,
     },
+    {
+      id: walterProfile.id,
+      displayName: walterProfile.display_name,
+      isAdmin: true,
+    },
+  ];
+  const membersA = [
+    ...dualAdmins,
     ...companionsA.map((p) => ({
       id: p.id,
       displayName: p.name,
@@ -379,11 +429,7 @@ async function main() {
     })),
   ];
   const membersB = [
-    {
-      id: grahamProfile.id,
-      displayName: grahamProfile.display_name,
-      isAdmin: true,
-    },
+    ...dualAdmins,
     ...companionsB.map((p) => ({
       id: p.id,
       displayName: p.name,
@@ -391,10 +437,9 @@ async function main() {
     })),
   ];
 
-  const groupA = await createQaGroup(GROUP_A, grahamProfile.id, membersA);
-  const groupB = await createQaGroup(GROUP_B, grahamProfile.id, membersB);
+  const groupA = await ensureQaGroup(GROUP_A, grahamProfile.id, membersA);
+  const groupB = await ensureQaGroup(GROUP_B, grahamProfile.id, membersB);
 
-  // Verify
   const { data: verifyA } = await supabase
     .from('group_members')
     .select('user_id, is_admin, display_name_snapshot')
@@ -412,9 +457,15 @@ async function main() {
           { id: groupA.id, name: groupA.name, is_test: groupA.is_test, members: verifyA?.length },
           { id: groupB.id, name: groupB.name, is_test: groupB.is_test, members: verifyB?.length },
         ],
-        grahamAdminOnBoth: {
-          A: verifyA?.some((m) => m.user_id === grahamProfile.id && m.is_admin),
-          B: verifyB?.some((m) => m.user_id === grahamProfile.id && m.is_admin),
+        dualAdmins: {
+          graham: {
+            A: verifyA?.some((m) => m.user_id === grahamProfile.id && m.is_admin),
+            B: verifyB?.some((m) => m.user_id === grahamProfile.id && m.is_admin),
+          },
+          walter: {
+            A: verifyA?.some((m) => m.user_id === walterProfile.id && m.is_admin),
+            B: verifyB?.some((m) => m.user_id === walterProfile.id && m.is_admin),
+          },
         },
         companionsA: companionsA.map((p) => ({ name: p.name, email: p.email, password: p.password })),
         companionsB: companionsB.map((p) => ({ name: p.name, email: p.email, password: p.password })),
