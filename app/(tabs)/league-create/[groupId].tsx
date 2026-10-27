@@ -1007,7 +1007,10 @@ export default function LeagueCreateScreen() {
           t('league.create.groupChallenge.sentBody', { name: opponentName }),
           {
             onOk: () => {
-              router.replace(`/(tabs)/group-challenge/${challengeId}` as never);
+              router.replace({
+                pathname: '/(tabs)/group-challenge/[id]',
+                params: { id: challengeId, fromGroupId: groupId },
+              } as never);
             },
           }
         );

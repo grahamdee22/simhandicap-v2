@@ -1,6 +1,6 @@
 import { useFocusEffect } from '@react-navigation/native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -28,14 +28,18 @@ import {
   cancelGroupChallenge,
   canSubmitChallengeRound,
   challengeResultLabel,
+  challengeRoundBadgeKey,
   disputeGroupChallengeRound,
   fetchGroupChallengeBundle,
   finalizeGroupChallenge,
   GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
   GROUP_CHALLENGE_ROSTER_SIZE,
+  markGroupChallengeBundleDirty,
   respondGroupChallenge,
   opposingRosterUserIds,
+  resolveChallengeViewGroupId,
   setChallengedGroupRoster,
+  takeGroupChallengeBundleDirty,
   teamTotalFromRounds,
   verifyGroupChallengeRound,
   type DbGroupChallengeRound,
@@ -43,6 +47,7 @@ import {
   type GroupChallengeBundle,
   type GroupChallengeEligibility,
 } from '../../../src/lib/groupChallenges';
+import { clearTournamentSectionCache } from '../../../src/lib/tournamentSectionCache';
 import {
   cachedGroupName,
   friendlyChallengeError,
@@ -77,8 +82,18 @@ function isCountingRound(
 
 export default function GroupChallengeDetailScreen() {
   const { t } = useTranslation();
-  const { id: rawId } = useLocalSearchParams<{ id: string | string[] }>();
-  const challengeId = typeof rawId === 'string' ? rawId : rawId?.[0] ?? '';
+  const params = useLocalSearchParams<{
+    id: string | string[];
+    fromGroupId?: string | string[];
+  }>();
+  const challengeId = typeof params.id === 'string' ? params.id : params.id?.[0] ?? '';
+  const fromGroupIdRaw = params.fromGroupId;
+  const fromGroupId =
+    typeof fromGroupIdRaw === 'string'
+      ? fromGroupIdRaw
+      : Array.isArray(fromGroupIdRaw)
+        ? fromGroupIdRaw[0]
+        : undefined;
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { gutter } = useResponsive();
@@ -95,6 +110,7 @@ export default function GroupChallengeDetailScreen() {
   const [editingRoster, setEditingRoster] = useState(false);
   const [disputeTarget, setDisputeTarget] = useState<DbGroupChallengeRound | null>(null);
   const [disputeReason, setDisputeReason] = useState('');
+  const loadGenRef = useRef(0);
 
   const getToken = useCallback(
     async () => googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined,
@@ -107,9 +123,12 @@ export default function GroupChallengeDetailScreen() {
         setLoading(false);
         return;
       }
+      const gen = ++loadGenRef.current;
       if (!silent) setLoading(true);
       const token = await getToken();
       const res = await fetchGroupChallengeBundle(challengeId, token);
+      // Ignore stale responses from an earlier in-flight fetch.
+      if (gen !== loadGenRef.current) return;
       setBundle(res.data);
       setLoading(false);
     },
@@ -122,8 +141,9 @@ export default function GroupChallengeDetailScreen() {
 
   useFocusEffect(
     useCallback(() => {
-      void load(true);
-    }, [load])
+      const dirty = takeGroupChallengeBundleDirty(challengeId);
+      void load(!dirty);
+    }, [challengeId, load])
   );
 
   const challenge = bundle?.challenge ?? null;
@@ -241,15 +261,14 @@ export default function GroupChallengeDetailScreen() {
 
   const myGroupId = useMemo(() => {
     if (!challenge) return '';
-    if (myRoster) return myRoster.group_id;
-    if (groups.some((g) => g.id === challenge.challenging_group_id)) {
-      return challenge.challenging_group_id;
-    }
-    if (groups.some((g) => g.id === challenge.challenged_group_id)) {
-      return challenge.challenged_group_id;
-    }
-    return '';
-  }, [challenge, myRoster, groups]);
+    return resolveChallengeViewGroupId({
+      challengingGroupId: challenge.challenging_group_id,
+      challengedGroupId: challenge.challenged_group_id,
+      fromGroupId,
+      rosterGroupId: myRoster?.group_id ?? null,
+      memberGroupIds: groups.map((g) => g.id),
+    });
+  }, [challenge, myRoster, groups, fromGroupId]);
 
   const roundsByRoster = useMemo(() => {
     const m = new Map<string, DbGroupChallengeRound>();
@@ -307,12 +326,16 @@ export default function GroupChallengeDetailScreen() {
           return;
         }
         onDone?.();
-        await load(true);
+        markGroupChallengeBundleDirty(challengeId);
+        if (challengingId) clearTournamentSectionCache(challengingId);
+        if (challengedId) clearTournamentSectionCache(challengedId);
+        // Force a non-silent refetch so activate / roster / verify never flash stale UI.
+        await load(false);
       } finally {
         setBusyKey(null);
       }
     },
-    [getToken, load, t]
+    [getToken, load, t, challengeId, challengingId, challengedId]
   );
 
   const onRespond = (accept: boolean) => {
@@ -549,6 +572,8 @@ export default function GroupChallengeDetailScreen() {
     managesEither &&
     !['completed', 'canceled', 'declined'].includes(challenge.status);
   const showRespond = challenge.status === 'pending' && managesChallenged;
+  const dualAdminPending =
+    challenge.status === 'pending' && managesChallenging && managesChallenged;
   const busy = busyKey != null;
 
   const resultFor = (gid: string) => bundle.results.find((r) => r.group_id === gid) ?? null;
@@ -757,12 +782,28 @@ export default function GroupChallengeDetailScreen() {
           </View>
         ) : null}
 
-        {/* Pending actions */}
+        {/* Pending: sender waiting (also shown for dual-member admins) */}
+        {challenge.status === 'pending' && managesChallenging ? (
+          <Text style={styles.infoNote}>
+            {t('groupChallenge.sentWaiting', {
+              sent: groupName(challengingId),
+              other: groupName(challengedId),
+            })}
+          </Text>
+        ) : null}
+
+        {/* Pending actions (challenged-side admin) */}
         {showRespond ? (
           <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t('groupChallenge.respondTitle')}</Text>
+            <Text style={styles.cardTitle}>
+              {dualAdminPending
+                ? t('groupChallenge.respondDualTitle', { name: groupName(challengedId) })
+                : t('groupChallenge.respondTitle')}
+            </Text>
             <Text style={styles.muted}>
-              {t('groupChallenge.respondBody', { name: groupName(challengingId) })}
+              {dualAdminPending
+                ? t('groupChallenge.respondDualBody', { name: groupName(challengedId) })
+                : t('groupChallenge.respondBody', { name: groupName(challengingId) })}
             </Text>
             <View style={styles.btnRow}>
               <Pressable
@@ -797,7 +838,7 @@ export default function GroupChallengeDetailScreen() {
           </View>
         ) : null}
 
-        {challenge.status === 'pending' && !managesChallenged ? (
+        {challenge.status === 'pending' && !managesChallenging && !managesChallenged ? (
           <Text style={styles.infoNote}>
             {t('groupChallenge.waitingForResponse', { name: groupName(challengedId) })}
           </Text>
@@ -1001,16 +1042,20 @@ export default function GroupChallengeDetailScreen() {
                   round.verification_status === 'verified' &&
                   isLive &&
                   managesGroup(opposingGid);
+                const badgeKey = challengeRoundBadgeKey(
+                  round.verification_status,
+                  challenge.verification_mode
+                );
                 const statusStyle =
-                  round.verification_status === 'verified'
+                  badgeKey === 'verified' || badgeKey === 'counted'
                     ? styles.pillVerified
-                    : round.verification_status === 'pending'
+                    : badgeKey === 'pending'
                       ? styles.pillWarn
                       : styles.pillDanger;
                 const statusTxtStyle =
-                  round.verification_status === 'verified'
+                  badgeKey === 'verified' || badgeKey === 'counted'
                     ? styles.pillVerifiedTxt
-                    : round.verification_status === 'pending'
+                    : badgeKey === 'pending'
                       ? styles.pillWarnTxt
                       : styles.pillDangerTxt;
                 return (
@@ -1026,7 +1071,7 @@ export default function GroupChallengeDetailScreen() {
                       </View>
                       <View style={statusStyle}>
                         <Text style={statusTxtStyle}>
-                          {t(`groupChallenge.verification.${round.verification_status}`)}
+                          {t(`groupChallenge.verification.${badgeKey}`)}
                         </Text>
                       </View>
                     </View>

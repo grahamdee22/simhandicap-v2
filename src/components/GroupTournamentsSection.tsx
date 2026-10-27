@@ -672,7 +672,12 @@ export function GroupTournamentsSection({
               return (
                 <Pressable
                   key={c.id}
-                  onPress={() => router.push(`/(tabs)/group-challenge/${c.id}` as never)}
+                  onPress={() =>
+                    router.push({
+                      pathname: '/(tabs)/group-challenge/[id]',
+                      params: { id: c.id, fromGroupId: group.id },
+                    } as never)
+                  }
                   style={({ pressed }) => [
                     c.status === 'active' ? styles.challengeCardActive : styles.comingUpRow,
                     pressed && styles.pressed,
@@ -812,7 +817,12 @@ export function GroupTournamentsSection({
                   return (
                     <Pressable
                       key={c.id}
-                      onPress={() => router.push(`/(tabs)/group-challenge/${c.id}` as never)}
+                      onPress={() =>
+                        router.push({
+                          pathname: '/(tabs)/group-challenge/[id]',
+                          params: { id: c.id, fromGroupId: group.id },
+                        } as never)
+                      }
                       style={styles.pastRow}
                       accessibilityRole="button"
                     >

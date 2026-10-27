@@ -34,10 +34,12 @@ import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken'
 import {
   canSubmitChallengeRound,
   fetchGroupChallengeBundle,
+  markGroupChallengeBundleDirty,
   netScoreForGroupChallengeRound,
   submitGroupChallengeRound,
   type GroupChallengeBundle,
 } from '../../../src/lib/groupChallenges';
+import { clearTournamentSectionCache } from '../../../src/lib/tournamentSectionCache';
 import { friendlyChallengeError } from '../../../src/lib/groupChallengeGroupNames';
 import { uploadGroupChallengeScorecardScreenshot } from '../../../src/lib/groupChallengeScorecardStorage';
 import {
@@ -82,6 +84,11 @@ export default function GroupChallengeLogScreen() {
   const submittedRef = useRef(false);
 
   const goToChallenge = useCallback(() => {
+    // Prefer back() so the detail screen refocuses and refetches; replace if no stack.
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
     router.replace(`/(tabs)/group-challenge/${challengeId}` as never);
   }, [router, challengeId]);
 
@@ -347,6 +354,9 @@ export default function GroupChallengeLogScreen() {
 
       submittedRef.current = true;
       savedRoundIdRef.current = null;
+      markGroupChallengeBundleDirty(challenge.id);
+      clearTournamentSectionCache(challenge.challenging_group_id);
+      clearTournamentSectionCache(challenge.challenged_group_id);
       showAppAlert(
         t('groupChallenge.log.successTitle'),
         isVerifiedMode

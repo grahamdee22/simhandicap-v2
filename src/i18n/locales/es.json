@@ -1932,11 +1932,14 @@
     "countingScores": "{{count}} of {{size}} scores counting",
     "respondTitle": "Challenge received",
     "respondBody": "{{name}} challenged your group. Accept to pick your roster, or decline.",
+    "respondDualTitle": "Respond for {{name}}",
+    "respondDualBody": "You're also a member of {{name}}. Accept or decline on their behalf.",
     "accept": "Accept",
     "decline": "Decline",
     "declineConfirmTitle": "Decline this challenge?",
     "declineConfirmBody": "The challenging group will be notified that you declined.",
     "waitingForResponse": "Waiting for {{name}} to accept or decline.",
+    "sentWaiting": "{{sent}} sent this challenge. Waiting for {{other}} to accept or decline.",
     "waitingForRoster": "Waiting for {{name}} to pick their roster.",
     "rosterPick": {
       "title": "Pick your roster",
@@ -1970,7 +1973,8 @@
       "pending": "Pending",
       "verified": "Verified",
       "rejected": "Rejected",
-      "disputed": "Disputed"
+      "disputed": "Disputed",
+      "counted": "Counted"
     },
     "approve": "Approve",
     "reject": "Reject",

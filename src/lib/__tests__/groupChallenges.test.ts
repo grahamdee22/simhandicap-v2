@@ -9,14 +9,18 @@ import {
   buildHandicapSnapshot,
   canSubmitChallengeRound,
   challengeResultLabel,
+  challengeRoundBadgeKey,
   friendlyChallengeError,
   GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
   isGroupChallengeRosterEligible,
+  markGroupChallengeBundleDirty,
   netScoreForGroupChallengeRound,
   opponentGroupId,
   opposingRosterUserIds,
   qualifyingRoundsCount,
+  resolveChallengeViewGroupId,
   rosterEligibilityForPlayer,
+  takeGroupChallengeBundleDirty,
   teamTotalFromRounds,
   type GroupChallengeLike,
 } from '../groupChallengeHelpers';
@@ -202,5 +206,55 @@ describe('groupChallenges flow guards', () => {
       'tie'
     );
     assert.equal(opponentGroupId(challenge(), 'g1'), 'g2');
+  });
+});
+
+describe('groupChallenges polish helpers', () => {
+  it('shows Counted badge for casual counting rounds, Verified only in verified mode', () => {
+    assert.equal(challengeRoundBadgeKey('verified', 'casual'), 'counted');
+    assert.equal(challengeRoundBadgeKey('pending', 'casual'), 'counted');
+    assert.equal(challengeRoundBadgeKey('rejected', 'casual'), 'rejected');
+    assert.equal(challengeRoundBadgeKey('verified', 'verified'), 'verified');
+    assert.equal(challengeRoundBadgeKey('pending', 'verified'), 'pending');
+  });
+
+  it('resolves view side from fromGroupId for dual members', () => {
+    assert.equal(
+      resolveChallengeViewGroupId({
+        challengingGroupId: 'gA',
+        challengedGroupId: 'gB',
+        fromGroupId: 'gB',
+        rosterGroupId: null,
+        memberGroupIds: ['gA', 'gB'],
+      }),
+      'gB'
+    );
+    assert.equal(
+      resolveChallengeViewGroupId({
+        challengingGroupId: 'gA',
+        challengedGroupId: 'gB',
+        fromGroupId: null,
+        rosterGroupId: null,
+        memberGroupIds: ['gA', 'gB'],
+      }),
+      'gA'
+    );
+    assert.equal(
+      resolveChallengeViewGroupId({
+        challengingGroupId: 'gA',
+        challengedGroupId: 'gB',
+        fromGroupId: 'gOther',
+        rosterGroupId: 'gB',
+        memberGroupIds: ['gA', 'gB'],
+      }),
+      'gB'
+    );
+  });
+
+  it('tracks dirty challenge ids for post-mutation refetch', () => {
+    markGroupChallengeBundleDirty('c1');
+    assert.equal(takeGroupChallengeBundleDirty('c1'), true);
+    assert.equal(takeGroupChallengeBundleDirty('c1'), false);
+    assert.equal(takeGroupChallengeBundleDirty('missing'), false);
   });
 });

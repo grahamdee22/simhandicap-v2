@@ -160,6 +160,67 @@ export function opponentGroupId(
     : challenge.challenging_group_id;
 }
 
+/**
+ * Which side of a challenge the viewer should act as.
+ * Prefers explicit navigation context (fromGroupId), then roster side, then
+ * challenging membership (sender) before challenged — dual members need a stable pick.
+ */
+export function resolveChallengeViewGroupId(params: {
+  challengingGroupId: string;
+  challengedGroupId: string;
+  fromGroupId?: string | null;
+  rosterGroupId?: string | null;
+  memberGroupIds: string[];
+}): string {
+  const {
+    challengingGroupId,
+    challengedGroupId,
+    fromGroupId,
+    rosterGroupId,
+    memberGroupIds,
+  } = params;
+  const members = new Set(memberGroupIds);
+  const inChallenge = (gid: string) =>
+    gid === challengingGroupId || gid === challengedGroupId;
+
+  if (fromGroupId && inChallenge(fromGroupId) && members.has(fromGroupId)) {
+    return fromGroupId;
+  }
+  if (rosterGroupId && inChallenge(rosterGroupId) && members.has(rosterGroupId)) {
+    return rosterGroupId;
+  }
+  if (members.has(challengingGroupId)) return challengingGroupId;
+  if (members.has(challengedGroupId)) return challengedGroupId;
+  return '';
+}
+
+/**
+ * Badge key for a challenge round. Casual rounds are stored as `verified` for
+ * standings but should display as "Counted", not "Verified".
+ */
+export function challengeRoundBadgeKey(
+  status: GroupChallengeRoundVerification,
+  mode: GroupChallengeVerificationMode
+): 'counted' | GroupChallengeRoundVerification {
+  if (mode === 'casual' && (status === 'verified' || status === 'pending')) {
+    return 'counted';
+  }
+  return status;
+}
+
+/** Dirty flags so detail screens refetch after mutations that navigate away. */
+const dirtyChallengeIds = new Set<string>();
+
+export function markGroupChallengeBundleDirty(challengeId: string): void {
+  if (challengeId) dirtyChallengeIds.add(challengeId);
+}
+
+export function takeGroupChallengeBundleDirty(challengeId: string): boolean {
+  if (!challengeId || !dirtyChallengeIds.has(challengeId)) return false;
+  dirtyChallengeIds.delete(challengeId);
+  return true;
+}
+
 /** Extract a readable message from a PostgREST / RPC error body. */
 export function friendlyChallengeError(raw: string | null | undefined): string {
   if (!raw) return '';
