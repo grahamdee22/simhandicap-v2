@@ -40,7 +40,15 @@ import { fetchCourseAliases, type CourseAlias } from '../../../src/lib/courseAli
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, type DbLeagueRow, type LeagueFormat } from '../../../src/lib/leagues';
 import { dateRangesOverlap, formatLeagueDateRange, isLeagueActive } from '../../../src/lib/leagueStandings';
+import {
+  createGroupChallenge,
+  GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
+  GROUP_CHALLENGE_ROSTER_SIZE,
+  lookupGroupsForChallenge,
+  type GroupChallengeVerificationMode,
+} from '../../../src/lib/groupChallenges';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
+import { getCourseById } from '../../../src/lib/courses';
 import { fetchActiveSeasonForGroup, type DbLeagueSeasonRow } from '../../../src/lib/seasons';
 import { generateMatchPlayBracket } from '../../../src/lib/matchPlayTournamentPairings';
 import {
@@ -118,7 +126,14 @@ function formatYmdDisplay(ymd: string): string {
   });
 }
 
-type WizardStep = 'basic' | 'players' | 'teamCount' | 'settings' | 'teams' | 'review';
+type WizardStep =
+  | 'basic'
+  | 'opponent'
+  | 'players'
+  | 'teamCount'
+  | 'settings'
+  | 'teams'
+  | 'review';
 
 function defaultEndDateYmd(): string {
   const d = new Date();
@@ -170,6 +185,14 @@ export default function LeagueCreateScreen() {
   const [step, setStep] = useState<WizardStep>('basic');
   const [name, setName] = useState('');
   const [format, setFormat] = useState<LeagueFormat>('stroke');
+  const [isGroupChallenge, setIsGroupChallenge] = useState(false);
+  const [opponentQuery, setOpponentQuery] = useState('');
+  const [opponentResults, setOpponentResults] = useState<{ id: string; name: string }[]>([]);
+  const [opponentSearching, setOpponentSearching] = useState(false);
+  const [opponentGroup, setOpponentGroup] = useState<{ id: string; name: string } | null>(null);
+  const [verificationMode, setVerificationMode] =
+    useState<GroupChallengeVerificationMode>('verified');
+  const [challengeTeeName, setChallengeTeeName] = useState<string | null>(null);
   const [holesPerRound, setHolesPerRound] = useState<'18' | '9'>('18');
   const [matchPlayNine, setMatchPlayNine] = useState<'front' | 'back' | null>(null);
   const [tournamentCourseId, setTournamentCourseId] = useState<string | null>(null);
@@ -221,6 +244,13 @@ export default function LeagueCreateScreen() {
     setStep('basic');
     setName('');
     setFormat('stroke');
+    setIsGroupChallenge(false);
+    setOpponentQuery('');
+    setOpponentResults([]);
+    setOpponentSearching(false);
+    setOpponentGroup(null);
+    setVerificationMode('verified');
+    setChallengeTeeName(null);
     setHolesPerRound('18');
     setMatchPlayNine(null);
     setTournamentCourseId(null);
@@ -320,6 +350,8 @@ export default function LeagueCreateScreen() {
     if (startDateYmd > endDateYmd) {
       return t('league.create.endDateAfterStart');
     }
+    // Group Challenges are a separate competition type — don't block on league date overlap.
+    if (isGroupChallenge) return null;
     for (const other of groupActiveLeagues) {
       if (dateRangesOverlap(startDateYmd, endDateYmd, other.start_date, other.end_date)) {
         return t('league.create.datesOverlap', {
@@ -329,7 +361,7 @@ export default function LeagueCreateScreen() {
       }
     }
     return null;
-  }, [startDateYmd, endDateYmd, groupActiveLeagues, t]);
+  }, [startDateYmd, endDateYmd, groupActiveLeagues, isGroupChallenge, t]);
   const settingsIncomplete = nineSelectionIncomplete || !tournamentCourseId || !!dateRangeError;
   // Tournament course-lock: curated + community + aliases. Custom/user-reported
   // courses are excluded — self-reported ratings must not lock tournament scoring.
@@ -373,7 +405,7 @@ export default function LeagueCreateScreen() {
     setDateError(null);
   }, [startDateYmd, endDateYmd]);
 
-  /** Keep selection keys aligned with the group roster (new joins default on). */
+  /** Keep selection keys aligned with the group roster (new joins default on, off for challenges). */
   useEffect(() => {
     setSelectedPlayerIds((prev) => {
       const next = { ...prev };
@@ -381,7 +413,7 @@ export default function LeagueCreateScreen() {
       const ids = new Set(groupMembers.map((m) => m.userId));
       for (const m of groupMembers) {
         if (!(m.userId in next)) {
-          next[m.userId] = true;
+          next[m.userId] = !isGroupChallenge;
           changed = true;
         }
       }
@@ -393,11 +425,16 @@ export default function LeagueCreateScreen() {
       }
       return changed ? next : prev;
     });
-  }, [groupMembers]);
+  }, [groupMembers, isGroupChallenge]);
 
   const playingMembers = useMemo(
-    () => groupMembers.filter((m) => selectedPlayerIds[m.userId] !== false),
-    [groupMembers, selectedPlayerIds]
+    () =>
+      groupMembers.filter((m) =>
+        isGroupChallenge
+          ? selectedPlayerIds[m.userId] === true
+          : selectedPlayerIds[m.userId] !== false
+      ),
+    [groupMembers, selectedPlayerIds, isGroupChallenge]
   );
   const playerCount = playingMembers.length;
 
@@ -453,7 +490,25 @@ export default function LeagueCreateScreen() {
     playersPerTeam,
   ]);
   const matchPlayDisabledMessage = getMatchPlayFormatDisabledMessage(playerCount);
-  const playersStepError = playersStepValidationMessage(format, playerCount, t);
+  const playersStepError = useMemo(() => {
+    if (isGroupChallenge) {
+      if (playerCount !== GROUP_CHALLENGE_ROSTER_SIZE) {
+        return t('league.create.groupChallenge.rosterExact', {
+          count: GROUP_CHALLENGE_ROSTER_SIZE,
+          selected: playerCount,
+        });
+      }
+      return null;
+    }
+    return playersStepValidationMessage(format, playerCount, t);
+  }, [isGroupChallenge, playerCount, format, t]);
+
+  const challengeIneligibleSelected = useMemo(() => {
+    if (!isGroupChallenge) return [];
+    return playingMembers.filter(
+      (m) => (m.roundsLogged ?? 0) < GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS
+    );
+  }, [isGroupChallenge, playingMembers]);
 
   const seededUserIds = useMemo(
     () =>
@@ -470,9 +525,71 @@ export default function LeagueCreateScreen() {
     [playingMembers, assignedMemberIds]
   );
   const stepSequence = useMemo((): WizardStep[] => {
+    if (isGroupChallenge) return ['basic', 'opponent', 'players', 'settings', 'review'];
     if (needsTeams) return ['basic', 'players', 'teamCount', 'settings', 'teams', 'review'];
     return ['basic', 'players', 'settings', 'review'];
-  }, [needsTeams]);
+  }, [isGroupChallenge, needsTeams]);
+
+  const enableGroupChallenge = useCallback(
+    (on: boolean) => {
+      setIsGroupChallenge(on);
+      if (!on) return;
+      setFormat('stroke');
+      setUseHandicap(true);
+      setJoinSeason(false);
+      setOpponentGroup(null);
+      setOpponentQuery('');
+      setOpponentResults([]);
+      const next: Record<string, boolean> = {};
+      for (const m of groupMembers) next[m.userId] = false;
+      setSelectedPlayerIds(next);
+    },
+    [groupMembers]
+  );
+
+  useEffect(() => {
+    if (!isGroupChallenge || step !== 'opponent') return;
+    const q = opponentQuery.trim();
+    if (q.length < 2) {
+      setOpponentResults([]);
+      return;
+    }
+    let alive = true;
+    setOpponentSearching(true);
+    const handle = setTimeout(() => {
+      void (async () => {
+        const token =
+          googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
+        const res = await lookupGroupsForChallenge(q, token);
+        if (!alive) return;
+        setOpponentSearching(false);
+        const rows = (res.data ?? []).filter((r) => r.id !== groupId);
+        setOpponentResults(rows);
+      })();
+    }, 280);
+    return () => {
+      alive = false;
+      clearTimeout(handle);
+    };
+  }, [isGroupChallenge, step, opponentQuery, groupId]);
+
+  const challengeCourseTees = useMemo(() => {
+    if (!tournamentCourseId) return [];
+    return getCourseById(tournamentCourseId)?.tees ?? [];
+  }, [tournamentCourseId]);
+
+  useEffect(() => {
+    if (!isGroupChallenge) return;
+    if (challengeCourseTees.length === 0) {
+      setChallengeTeeName(null);
+      return;
+    }
+    setChallengeTeeName((prev) =>
+      prev && challengeCourseTees.some((t) => t.name === prev)
+        ? prev
+        : challengeCourseTees[0]?.name ?? null
+    );
+  }, [isGroupChallenge, challengeCourseTees]);
 
   const applyPlayersPerTeam = useCallback(
     (pp: number, playerTotal: number) => {
@@ -803,6 +920,96 @@ export default function LeagueCreateScreen() {
       showAppAlert(t('league.create.couldNotCreate'), t('league.create.signInAgain'));
       return;
     }
+    if (isGroupChallenge) {
+      if (!opponentGroup) {
+        showAppAlert(
+          t('league.create.couldNotCreate'),
+          t('league.create.groupChallenge.pickOpponent')
+        );
+        return;
+      }
+      if (playerCount !== GROUP_CHALLENGE_ROSTER_SIZE) {
+        showAppAlert(
+          t('league.create.couldNotCreate'),
+          t('league.create.groupChallenge.rosterExact', {
+            count: GROUP_CHALLENGE_ROSTER_SIZE,
+            selected: playerCount,
+          })
+        );
+        return;
+      }
+      if (challengeIneligibleSelected.length > 0) {
+        showAppAlert(
+          t('league.create.couldNotCreate'),
+          t('league.create.groupChallenge.ineligibleBlock', {
+            min: GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
+          })
+        );
+        return;
+      }
+      if (!tournamentCourseId) {
+        showAppAlert(t('league.create.courseAlertTitle'), t('league.create.courseAlertBody'));
+        return;
+      }
+      launchInFlightRef.current = true;
+      setBusy(true);
+      try {
+        if (dateRangeError) {
+          setDateError(dateRangeError);
+          return;
+        }
+        const rosterMeta: Record<
+          string,
+          { eligibility: 'eligible' | 'ineligible'; qualifyingRounds: number }
+        > = {};
+        for (const m of playingMembers) {
+          const q = m.roundsLogged ?? 0;
+          rosterMeta[m.userId] = {
+            eligibility: q >= GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS ? 'eligible' : 'ineligible',
+            qualifyingRounds: q,
+          };
+        }
+        const res = await createGroupChallenge(
+          {
+            name: name.trim(),
+            challengingGroupId: groupId,
+            challengedGroupId: opponentGroup.id,
+            courseId: tournamentCourseId,
+            teeName: challengeTeeName,
+            holesPerRound,
+            verificationMode,
+            startDate: startDateYmd,
+            endDate: endDateYmd,
+            createdBy: user.id,
+            notes: notes.trim() || null,
+            rosterUserIds: playingMembers.map((m) => m.userId),
+            rosterMeta,
+          },
+          googleOAuthAccessToken ?? undefined
+        );
+        if (res.error || !res.data) {
+          showAppAlert(
+            t('league.create.couldNotCreate'),
+            res.error ?? t('match.create.alerts.unknownError')
+          );
+          return;
+        }
+        clearTournamentSectionCache(groupId);
+        router.replace(`/(tabs)/group-challenge/${res.data.id}` as never);
+        showAppAlert(
+          t('league.create.groupChallenge.sentTitle'),
+          t('league.create.groupChallenge.sentBody', { name: opponentGroup.name })
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error ? err.message : t('match.create.alerts.unknownError');
+        showAppAlert(t('league.create.couldNotCreate'), message);
+      } finally {
+        launchInFlightRef.current = false;
+        setBusy(false);
+      }
+      return;
+    }
     if (needsTeams && !teamsStepCanContinue) {
       showAppAlert(t('league.create.invalidTeamsTitle'), t('league.create.assignEveryPlayer'));
       return;
@@ -971,55 +1178,138 @@ export default function LeagueCreateScreen() {
               style={styles.input}
               value={name}
               onChangeText={setName}
-              placeholder={t('league.create.namePlaceholder')}
+              placeholder={
+                isGroupChallenge
+                  ? t('league.create.groupChallenge.namePlaceholder')
+                  : t('league.create.namePlaceholder')
+              }
               placeholderTextColor={colors.subtle}
             />
-            <Text style={[styles.lbl, { marginTop: 16 }]}>{t('league.create.format')}</Text>
-            {TOURNAMENT_FORMAT_COPY.map((f) => {
-              const on = format === f.key;
-              const needsFour = isTeamFormat(f.key) && teamFormatsDisabled;
-              const needsMatchPlayMin = f.key === 'match_play' && matchPlayFormatCardDisabled;
-              const disabled = needsFour || needsMatchPlayMin;
-              return (
-                <Pressable
-                  key={f.key}
-                  style={[
-                    styles.formatCard,
-                    on && !disabled && styles.formatCardOn,
-                    disabled && styles.formatCardDisabled,
-                  ]}
-                  disabled={disabled}
-                  onPress={() => setFormat(f.key)}
-                >
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.formatTitle, disabled && styles.formatTitleDisabled]}>
-                      {t(`league.create.formats.${f.key}.title`)}
-                    </Text>
-                    <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>
-                      {t(`league.create.formats.${f.key}.sub`)}
-                    </Text>
-                    {needsFour ? (
-                      <Text style={styles.formatDisabledNote}>
-                        {t('league.create.requiresMinGroupMembers', {
-                          count: MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS,
-                        })}
-                      </Text>
-                    ) : null}
-                    {needsMatchPlayMin ? (
-                      <Text style={styles.formatDisabledNote}>
-                        {t('league.create.requiresMinGroupMembers', {
-                          count: MATCH_PLAY_MIN_PLAYERS,
-                        })}
-                      </Text>
-                    ) : null}
-                  </View>
-                  {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
-                </Pressable>
-              );
-            })}
+            <View style={[styles.memberRow, { marginTop: 16 }]}>
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={styles.formatTitle}>{t('league.create.groupChallenge.title')}</Text>
+                <Text style={styles.formatSub}>{t('league.create.groupChallenge.subtitle')}</Text>
+              </View>
+              <Switch
+                value={isGroupChallenge}
+                onValueChange={enableGroupChallenge}
+                trackColor={{ false: colors.border, true: colors.accent }}
+                accessibilityLabel={t('league.create.groupChallenge.title')}
+              />
+            </View>
+            {isGroupChallenge ? (
+              <Text style={[styles.helper, { marginTop: 12 }]}>
+                {t('league.create.groupChallenge.formatLocked')}
+              </Text>
+            ) : (
+              <>
+                <Text style={[styles.lbl, { marginTop: 16 }]}>{t('league.create.format')}</Text>
+                {TOURNAMENT_FORMAT_COPY.map((f) => {
+                  const on = format === f.key;
+                  const needsFour = isTeamFormat(f.key) && teamFormatsDisabled;
+                  const needsMatchPlayMin = f.key === 'match_play' && matchPlayFormatCardDisabled;
+                  const disabled = needsFour || needsMatchPlayMin;
+                  return (
+                    <Pressable
+                      key={f.key}
+                      style={[
+                        styles.formatCard,
+                        on && !disabled && styles.formatCardOn,
+                        disabled && styles.formatCardDisabled,
+                      ]}
+                      disabled={disabled}
+                      onPress={() => setFormat(f.key)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.formatTitle, disabled && styles.formatTitleDisabled]}>
+                          {t(`league.create.formats.${f.key}.title`)}
+                        </Text>
+                        <Text style={[styles.formatSub, disabled && styles.formatSubDisabled]}>
+                          {t(`league.create.formats.${f.key}.sub`)}
+                        </Text>
+                        {needsFour ? (
+                          <Text style={styles.formatDisabledNote}>
+                            {t('league.create.requiresMinGroupMembers', {
+                              count: MIN_GROUP_MEMBERS_FOR_TEAM_FORMATS,
+                            })}
+                          </Text>
+                        ) : null}
+                        {needsMatchPlayMin ? (
+                          <Text style={styles.formatDisabledNote}>
+                            {t('league.create.requiresMinGroupMembers', {
+                              count: MATCH_PLAY_MIN_PLAYERS,
+                            })}
+                          </Text>
+                        ) : null}
+                      </View>
+                      {on && !disabled ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                    </Pressable>
+                  );
+                })}
+              </>
+            )}
             <Pressable
               style={[styles.primaryBtn, !name.trim() && styles.btnDisabled]}
               disabled={!name.trim()}
+              onPress={() => goToStep(isGroupChallenge ? 'opponent' : 'players')}
+            >
+              <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
+            </Pressable>
+          </>
+        ) : null}
+
+        {step === 'opponent' ? (
+          <>
+            <Text style={styles.head}>{t('league.create.groupChallenge.opponentLabel')}</Text>
+            <Text style={styles.helper}>{t('league.create.groupChallenge.opponentHelper')}</Text>
+            <TextInput
+              style={styles.input}
+              value={opponentQuery}
+              onChangeText={(v) => {
+                setOpponentQuery(v);
+                setOpponentGroup(null);
+              }}
+              placeholder={t('league.create.groupChallenge.opponentPlaceholder')}
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+            {opponentSearching ? (
+              <ActivityIndicator color={colors.header} style={{ marginVertical: 12 }} />
+            ) : null}
+            {opponentGroup ? (
+              <View style={[styles.memberRowOn, { marginTop: 10, padding: 12, borderRadius: 10 }]}>
+                <Text style={styles.formatTitle}>{opponentGroup.name}</Text>
+                <Text style={styles.helper}>{t('league.create.groupChallenge.opponentSelected')}</Text>
+              </View>
+            ) : null}
+            {opponentResults.map((g) => {
+              const on = opponentGroup?.id === g.id;
+              return (
+                <Pressable
+                  key={g.id}
+                  style={[styles.memberRow, on && styles.memberRowOn]}
+                  onPress={() => {
+                    setOpponentGroup(g);
+                    setOpponentQuery(g.name);
+                  }}
+                >
+                  <Text style={styles.formatTitle}>{g.name}</Text>
+                  {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                </Pressable>
+              );
+            })}
+            {!opponentSearching &&
+            opponentQuery.trim().length >= 2 &&
+            opponentResults.length === 0 &&
+            !opponentGroup ? (
+              <Text style={styles.formatDisabledNote}>
+                {t('league.create.groupChallenge.opponentNotFound')}
+              </Text>
+            ) : null}
+            <Pressable
+              style={[styles.primaryBtn, !opponentGroup && styles.btnDisabled]}
+              disabled={!opponentGroup}
               onPress={() => goToStep('players')}
             >
               <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
@@ -1029,8 +1319,22 @@ export default function LeagueCreateScreen() {
 
         {step === 'players' ? (
           <>
-            <Text style={styles.head}>{t('league.create.whosPlaying')}</Text>
-            <Text style={styles.helper}>{t('league.create.playersHelper')}</Text>
+            <Text style={styles.head}>
+              {isGroupChallenge
+                ? t('league.create.groupChallenge.rosterLabel', {
+                    count: GROUP_CHALLENGE_ROSTER_SIZE,
+                  })
+                : t('league.create.whosPlaying')}
+            </Text>
+            <Text style={styles.helper}>
+              {isGroupChallenge
+                ? t('league.create.groupChallenge.rosterHelper', {
+                    count: GROUP_CHALLENGE_ROSTER_SIZE,
+                    min: GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
+                  })
+                : t('league.create.playersHelper')}
+            </Text>
+            {!isGroupChallenge ? (
             <View style={styles.selectAllRow}>
               <Pressable
                 onPress={() => (allPlayersSelected ? deselectAllPlayers() : selectAllPlayers())}
@@ -1048,6 +1352,7 @@ export default function LeagueCreateScreen() {
                 </Text>
               </Pressable>
             </View>
+            ) : null}
             {groupMembers.length >= PLAYER_ROSTER_SEARCH_MIN ? (
               <>
                 <Text style={styles.lbl}>{t('league.create.search')}</Text>
@@ -1064,14 +1369,37 @@ export default function LeagueCreateScreen() {
               </>
             ) : null}
             {filteredGroupMembers.map((m) => {
-              const checked = selectedPlayerIds[m.userId] !== false;
+              const checked = isGroupChallenge
+                ? selectedPlayerIds[m.userId] === true
+                : selectedPlayerIds[m.userId] !== false;
+              const rounds = m.roundsLogged ?? 0;
+              const ineligible =
+                isGroupChallenge && rounds < GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS;
+              const atCap =
+                isGroupChallenge &&
+                !checked &&
+                playerCount >= GROUP_CHALLENGE_ROSTER_SIZE;
               return (
                 <Pressable
                   key={m.userId}
-                  style={[styles.memberRow, checked && styles.memberRowOn]}
-                  onPress={() => togglePlayerSelected(m.userId)}
+                  style={[
+                    styles.memberRow,
+                    checked && styles.memberRowOn,
+                    ineligible && checked && { opacity: 0.85 },
+                  ]}
+                  onPress={() => {
+                    if (atCap) return;
+                    if (isGroupChallenge) {
+                      setSelectedPlayerIds((prev) => ({
+                        ...prev,
+                        [m.userId]: !prev[m.userId],
+                      }));
+                      return;
+                    }
+                    togglePlayerSelected(m.userId);
+                  }}
                   accessibilityRole="checkbox"
-                  accessibilityState={{ checked }}
+                  accessibilityState={{ checked, disabled: atCap }}
                 >
                   <View style={[styles.checkBox, checked && styles.checkBoxOn]}>
                     {checked ? <IconCheckmark size={14} color="#fff" /> : null}
@@ -1079,9 +1407,19 @@ export default function LeagueCreateScreen() {
                   <View style={styles.memberAv}>
                     <Text style={styles.memberAvTxt}>{m.initials}</Text>
                   </View>
-                  <Text style={styles.memberName} numberOfLines={1}>
-                    {m.displayName.replace(' (you)', '')}
-                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.memberName} numberOfLines={1}>
+                      {m.displayName.replace(' (you)', '')}
+                    </Text>
+                    {ineligible ? (
+                      <Text style={styles.formatDisabledNote}>
+                        {t('league.create.groupChallenge.needsRounds', {
+                          have: rounds,
+                          min: GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
+                        })}
+                      </Text>
+                    ) : null}
+                  </View>
                   {m.index != null ? (
                     <Text style={styles.memberIdx}>{m.index.toFixed(1)}</Text>
                   ) : (
@@ -1091,16 +1429,33 @@ export default function LeagueCreateScreen() {
               );
             })}
             <Text style={styles.selectedCount}>
-              {t('league.create.selectedCount', { count: playerCount })}
+              {isGroupChallenge
+                ? t('league.create.groupChallenge.selectedOf', {
+                    selected: playerCount,
+                    count: GROUP_CHALLENGE_ROSTER_SIZE,
+                  })
+                : t('league.create.selectedCount', { count: playerCount })}
             </Text>
             {playersStepError ? (
               <Text style={styles.formatDisabledNote}>{playersStepError}</Text>
             ) : null}
+            {challengeIneligibleSelected.length > 0 ? (
+              <Text style={styles.formatDisabledNote}>
+                {t('league.create.groupChallenge.ineligibleSelected', {
+                  count: challengeIneligibleSelected.length,
+                  min: GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
+                })}
+              </Text>
+            ) : null}
             <Pressable
-              style={[styles.primaryBtn, !!playersStepError && styles.btnDisabled]}
-              disabled={!!playersStepError}
+              style={[
+                styles.primaryBtn,
+                (!!playersStepError || challengeIneligibleSelected.length > 0) &&
+                  styles.btnDisabled,
+              ]}
+              disabled={!!playersStepError || challengeIneligibleSelected.length > 0}
               onPress={() => {
-                if (needsTeams) {
+                if (needsTeams && !isGroupChallenge) {
                   prepareTeamCountFromSelection();
                   goToStep('teamCount');
                 } else {
@@ -1450,7 +1805,72 @@ export default function LeagueCreateScreen() {
                 {dateError ?? dateRangeError}
               </Text>
             ) : null}
-            {isMatchPlay ? (
+            {isGroupChallenge ? (
+              <>
+                {challengeCourseTees.length > 0 ? (
+                  <>
+                    <Text style={[styles.lbl, { marginTop: 12 }]}>
+                      {t('league.create.groupChallenge.teeLabel')}
+                    </Text>
+                    <View style={styles.dayRow}>
+                      {challengeCourseTees.map((tee) => {
+                        const on = challengeTeeName === tee.name;
+                        return (
+                          <Pressable
+                            key={tee.name}
+                            style={[styles.dayBtn, on && styles.dayBtnOn]}
+                            onPress={() => setChallengeTeeName(tee.name)}
+                          >
+                            <Text style={[styles.dayDn, on && styles.dayDnOn]}>{tee.name}</Text>
+                            <Text style={[styles.dayDs, on && styles.dayDsOn]}>
+                              {tee.rating.toFixed(1)} / {tee.slope}
+                            </Text>
+                          </Pressable>
+                        );
+                      })}
+                    </View>
+                  </>
+                ) : null}
+                <Text style={[styles.lbl, { marginTop: 12 }]}>
+                  {t('league.create.groupChallenge.verificationLabel')}
+                </Text>
+                <Text style={styles.helper}>
+                  {t('league.create.groupChallenge.verificationHelper')}
+                </Text>
+                {(
+                  [
+                    {
+                      key: 'verified' as const,
+                      title: t('league.create.groupChallenge.verifiedOption'),
+                      sub: t('league.create.groupChallenge.verifiedSub'),
+                    },
+                    {
+                      key: 'casual' as const,
+                      title: t('league.create.groupChallenge.casualOption'),
+                      sub: t('league.create.groupChallenge.casualSub'),
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const on = verificationMode === opt.key;
+                  return (
+                    <Pressable
+                      key={opt.key}
+                      style={[styles.formatCard, on && styles.formatCardOn]}
+                      onPress={() => setVerificationMode(opt.key)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.formatTitle}>{opt.title}</Text>
+                        <Text style={styles.formatSub}>{opt.sub}</Text>
+                      </View>
+                      {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
+                    </Pressable>
+                  );
+                })}
+                <Text style={[styles.helper, { marginTop: 8 }]}>
+                  {t('league.create.groupChallenge.handicapSnapshotNote')}
+                </Text>
+              </>
+            ) : isMatchPlay ? (
               <View style={styles.bracketInfo}>
                 <Text style={styles.bracketInfoTitle}>{t('league.create.bracketTitle')}</Text>
                 <Text style={styles.helper}>{t('league.create.bracketHelper')}</Text>
@@ -1499,6 +1919,8 @@ export default function LeagueCreateScreen() {
                 </Text>
               </>
             )}
+            {!isGroupChallenge ? (
+              <>
             <View style={styles.toggleRow}>
               <Text style={styles.toggleLbl}>{t('league.create.useHandicap')}</Text>
               <View style={styles.toggleRight}>
@@ -1518,6 +1940,8 @@ export default function LeagueCreateScreen() {
               </View>
             </View>
             <Text style={styles.helper}>{t('league.create.useHandicapHelper')}</Text>
+              </>
+            ) : null}
             {!isMatchPlay && !needsTeams ? (
               <>
                 <Text style={[styles.sectionLbl, { marginTop: 12 }]}>
@@ -1553,7 +1977,7 @@ export default function LeagueCreateScreen() {
                 <Text style={styles.helper}>{t('league.create.overrideHandicapHelper')}</Text>
               </>
             ) : null}
-            {activeSeason ? (
+            {activeSeason && !isGroupChallenge ? (
               <View style={styles.toggleRow}>
                 <View style={styles.toggleLblRow}>
                   <Text style={styles.toggleLbl}>
@@ -1803,23 +2227,47 @@ export default function LeagueCreateScreen() {
 
         {step === 'review' ? (
           <>
-            <Text style={styles.head}>{t('league.create.reviewLaunch')}</Text>
+            <Text style={styles.head}>
+              {isGroupChallenge
+                ? t('league.create.groupChallenge.reviewTitle')
+                : t('league.create.reviewLaunch')}
+            </Text>
             <View style={styles.summaryCard}>
               <Text style={styles.summaryLine}>{name}</Text>
+              {isGroupChallenge && opponentGroup ? (
+                <Text style={styles.summaryMeta}>
+                  {t('league.create.groupChallenge.vsLine', { name: opponentGroup.name })}
+                </Text>
+              ) : null}
               {tournamentCourseId ? (
                 <Text style={styles.summaryMeta}>
                   📍 {tournamentCourseName ?? t('log.round.course')}
+                  {isGroupChallenge && challengeTeeName ? ` · ${challengeTeeName}` : ''}
                 </Text>
               ) : null}
               <Text style={styles.summaryMeta}>
-                {t(`league.create.formats.${format}.title`)} · {formatYmdDisplay(startDateYmd)} –{' '}
-                {formatYmdDisplay(endDateYmd)}
+                {isGroupChallenge
+                  ? t('league.create.groupChallenge.summaryFormat')
+                  : t(`league.create.formats.${format}.title`)}{' '}
+                · {formatYmdDisplay(startDateYmd)} – {formatYmdDisplay(endDateYmd)}
               </Text>
               {dateError || dateRangeError ? (
                 <Text style={[styles.helper, { color: colors.danger, fontWeight: '600' }]}>
                   {dateError ?? dateRangeError}
                 </Text>
               ) : null}
+              {isGroupChallenge ? (
+                <Text style={styles.summaryMeta}>
+                  {t('league.create.groupChallenge.summaryDetails', {
+                    roster: GROUP_CHALLENGE_ROSTER_SIZE,
+                    mode:
+                      verificationMode === 'verified'
+                        ? t('league.create.groupChallenge.verifiedOption')
+                        : t('league.create.groupChallenge.casualOption'),
+                    holes: holesPerRound,
+                  })}
+                </Text>
+              ) : (
               <Text style={styles.summaryMeta}>
                 {(isMatchPlay
                   ? t('league.create.summaryBracket', {
@@ -1841,12 +2289,13 @@ export default function LeagueCreateScreen() {
                       : t('league.create.summaryNineHoles')
                     : '')}
               </Text>
+              )}
               {notes.trim() ? (
                 <Text style={styles.summaryMeta}>
                   {t('league.create.notesPrefix', { notes: notes.trim() })}
                 </Text>
               ) : null}
-              {activeSeason ? (
+              {activeSeason && !isGroupChallenge ? (
                 <Text style={styles.summaryMeta}>
                   {joinSeason
                     ? t('league.create.seasonPrefix', { name: activeSeason.name })
@@ -1918,7 +2367,11 @@ export default function LeagueCreateScreen() {
               {busy ? (
                 <ActivityIndicator color="#fff" />
               ) : (
-                <Text style={styles.primaryBtnTxt}>{t('league.create.launchTournament')}</Text>
+                <Text style={styles.primaryBtnTxt}>
+                  {isGroupChallenge
+                    ? t('league.create.groupChallenge.send')
+                    : t('league.create.launchTournament')}
+                </Text>
               )}
             </Pressable>
             <Pressable

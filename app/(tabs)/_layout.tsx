@@ -333,6 +333,24 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="group-challenge/[id]"
+        options={{
+          href: null,
+          title: t('tabs.groupChallenge.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
+          headerRight: renderHeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
+        name="group-challenge-log/[challengeId]"
+        options={{
+          href: null,
+          title: t('tabs.groupChallengeLog.title'),
+          headerLeft: renderTabBack('/(tabs)/groups'),
+          headerRight: renderHeaderInstagramAndSimCap,
+        }}
+      />
+      <Tabs.Screen
         name="group-chat/[groupId]"
         options={{
           href: null,

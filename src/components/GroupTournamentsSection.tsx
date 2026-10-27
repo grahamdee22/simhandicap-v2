@@ -43,7 +43,14 @@ import {
 } from '../lib/tournamentSectionCache';
 import { supabase } from '../lib/supabase';
 import { buildBracketViewModel } from '../lib/matchPlayBracket';
-import type { FriendGroup } from '../store/useAppStore';
+import { useAppStore, type FriendGroup } from '../store/useAppStore';
+import {
+  challengeResultLabel,
+  fetchGroupChallengesForGroup,
+  opponentGroupId,
+  type DbGroupChallenge,
+} from '../lib/groupChallenges';
+import { resolveGroupNames, truncatedGroupId } from '../lib/groupChallengeGroupNames';
 import { formatOrdinalPlace } from '../lib/formatOrdinal';
 
 /** Stripped from production builds via `__DEV__` (same pattern as MatchPlayHub dev tools). */
@@ -184,6 +191,10 @@ export function GroupTournamentsSection({
   const [scrambleTeamLine, setScrambleTeamLine] = useState<string | null>(null);
   const [bestBallTeamLine, setBestBallTeamLine] = useState<string | null>(null);
   const [seasons, setSeasons] = useState<DbLeagueSeasonRow[]>([]);
+  const storeGroups = useAppStore((s) => s.groups);
+  const [challenges, setChallenges] = useState<DbGroupChallenge[]>([]);
+  const [challengeNames, setChallengeNames] = useState<Record<string, string>>({});
+  const [challengeHistoryOpen, setChallengeHistoryOpen] = useState(false);
   const [pastSeasonsOpen, setPastSeasonsOpen] = useState(false);
   const realtimeDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -191,11 +202,16 @@ export function GroupTournamentsSection({
     const cached = getTournamentSectionCache(group.id);
     if (!cached) setLoading(true);
     const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
-    const [res, seasonRes] = await Promise.all([
+    const [res, seasonRes, challengeRes] = await Promise.all([
       fetchLeaguesForGroup(group.id, accessToken),
       fetchSeasonsForGroup(group.id, accessToken),
+      fetchGroupChallengesForGroup(group.id, accessToken).catch(() => ({
+        data: null,
+        error: 'failed',
+      })),
     ]);
     setSeasons(seasonRes.data ?? []);
+    setChallenges(challengeRes.data ?? []);
     const synced = await syncLeagueStatuses(res.data ?? [], accessToken);
     const active = synced.find((l) => l.status === 'active' && isLeagueActive(l));
     let top3: { name: string; rank: number }[] = [];
@@ -318,6 +334,61 @@ export function GroupTournamentsSection({
     () => seasons.filter((s) => s.status !== 'active'),
     [seasons]
   );
+  const liveChallenges = useMemo(() => {
+    const rank: Record<string, number> = { active: 0, disputed: 1, accepted: 2, pending: 3 };
+    return challenges
+      .filter((c) => c.status in rank)
+      .sort((a, b) => rank[a.status] - rank[b.status] || a.start_date.localeCompare(b.start_date));
+  }, [challenges]);
+  const completedChallenges = useMemo(
+    () => challenges.filter((c) => c.status === 'completed'),
+    [challenges]
+  );
+  const challengeRecord = useMemo(() => {
+    let w = 0;
+    let l = 0;
+    let tie = 0;
+    for (const c of completedChallenges) {
+      const r = challengeResultLabel({
+        status: c.status,
+        myGroupId: group.id,
+        winnerGroupId: c.winner_group_id,
+      });
+      if (r === 'win') w += 1;
+      else if (r === 'loss') l += 1;
+      else if (r === 'tie') tie += 1;
+    }
+    return { w, l, t: tie };
+  }, [completedChallenges, group.id]);
+
+  useEffect(() => {
+    if (challenges.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const accessToken = (await resolveSocialGroupsAccessToken()) ?? undefined;
+      const names = await resolveGroupNames(
+        challenges.map((c) => opponentGroupId(c, group.id)),
+        storeGroups,
+        accessToken
+      );
+      if (!cancelled) setChallengeNames((prev) => ({ ...prev, ...names }));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [challenges, group.id, storeGroups]);
+
+  const opponentLabel = useCallback(
+    (c: DbGroupChallenge) => {
+      const oppId = opponentGroupId(c, group.id);
+      return (
+        storeGroups.find((g) => g.id === oppId)?.name ??
+        challengeNames[oppId] ??
+        truncatedGroupId(oppId)
+      );
+    },
+    [group.id, storeGroups, challengeNames]
+  );
 
   useEffect(() => {
     const client = supabase;
@@ -344,16 +415,38 @@ export function GroupTournamentsSection({
       await client.realtime.setAuth(token);
       if (cancelled) return;
 
-      let next = client.channel(`group-tournaments:${group.id}`).on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'leagues',
-          filter: `group_id=eq.${group.id}`,
-        },
-        scheduleLoad
-      );
+      let next = client
+        .channel(`group-tournaments:${group.id}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'leagues',
+            filter: `group_id=eq.${group.id}`,
+          },
+          scheduleLoad
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'group_challenges',
+            filter: `challenging_group_id=eq.${group.id}`,
+          },
+          scheduleLoad
+        )
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'group_challenges',
+            filter: `challenged_group_id=eq.${group.id}`,
+          },
+          scheduleLoad
+        );
 
       if (activeId) {
         const leagueFilter = `league_id=eq.${activeId}`;
@@ -538,7 +631,10 @@ export function GroupTournamentsSection({
             accessibilityLabel={t('tournaments.section.loadingOptionsA11y')}
             accessibilityRole="progressbar"
           />
-        ) : !activeLeague && scheduledLeagues.length === 0 && !showCreateBtn ? (
+        ) : !activeLeague &&
+          scheduledLeagues.length === 0 &&
+          liveChallenges.length === 0 &&
+          !showCreateBtn ? (
           <Text style={styles.emptyMuted}>{t('tournaments.section.noActive')}</Text>
         ) : null}
 
@@ -565,6 +661,52 @@ export function GroupTournamentsSection({
                 ) : null}
               </Pressable>
             ))}
+          </View>
+        ) : null}
+
+        {liveChallenges.length > 0 ? (
+          <View style={styles.comingUpWrap}>
+            <Text style={styles.comingUpTitle}>{t('groupChallenge.section.title')}</Text>
+            {liveChallenges.map((c) => {
+              const opp = opponentLabel(c);
+              return (
+                <Pressable
+                  key={c.id}
+                  onPress={() => router.push(`/(tabs)/group-challenge/${c.id}` as never)}
+                  style={({ pressed }) => [
+                    c.status === 'active' ? styles.challengeCardActive : styles.comingUpRow,
+                    pressed && styles.pressed,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('groupChallenge.section.cardA11y', { name: c.name, opponent: opp })}
+                >
+                  <View style={styles.badgeRow}>
+                    <View style={styles.formatBadge}>
+                      <Text style={styles.formatBadgeTxt}>
+                        {t(`groupChallenge.status.${c.status}`)}
+                      </Text>
+                    </View>
+                    <View style={styles.daysBadge}>
+                      <Text style={styles.daysBadgeTxt}>
+                        {c.verification_mode === 'verified'
+                          ? t('groupChallenge.mode.verified')
+                          : t('groupChallenge.mode.casual')}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.tournamentName}>
+                    {t('groupChallenge.vsOpponent', { name: opp })}
+                  </Text>
+                  <Text style={styles.pastMeta}>
+                    {c.name} · {formatLeagueDateRange(c.start_date, c.end_date)}
+                  </Text>
+                  <Text style={styles.matchPreview}>
+                    📍 {getCourseById(c.course_id)?.name ?? c.course_id}
+                  </Text>
+                  <Text style={styles.seeAll}>{t('groupChallenge.section.viewChallenge')}</Text>
+                </Pressable>
+              );
+            })}
           </View>
         ) : null}
 
@@ -638,6 +780,70 @@ export function GroupTournamentsSection({
                     </Text>
                   </Pressable>
                 ))
+              : null}
+          </View>
+        ) : null}
+
+
+        {completedChallenges.length > 0 ? (
+          <View style={styles.pastCard}>
+            <Pressable
+              onPress={() => setChallengeHistoryOpen((o) => !o)}
+              style={styles.pastToggle}
+              accessibilityRole="button"
+            >
+              <Text style={styles.pastToggleTxt}>
+                {t('groupChallenge.section.history', {
+                  w: challengeRecord.w,
+                  l: challengeRecord.l,
+                  t: challengeRecord.t,
+                })}
+              </Text>
+              <Text style={styles.pastChev}>{challengeHistoryOpen ? '▾' : '▸'}</Text>
+            </Pressable>
+            {challengeHistoryOpen
+              ? completedChallenges.map((c) => {
+                  const result = challengeResultLabel({
+                    status: c.status,
+                    myGroupId: group.id,
+                    winnerGroupId: c.winner_group_id,
+                  });
+                  const resultKey = result === 'win' || result === 'loss' ? result : 'tie';
+                  return (
+                    <Pressable
+                      key={c.id}
+                      onPress={() => router.push(`/(tabs)/group-challenge/${c.id}` as never)}
+                      style={styles.pastRow}
+                      accessibilityRole="button"
+                    >
+                      <View style={styles.challengeHistoryRow}>
+                        <View
+                          style={[
+                            styles.resultPill,
+                            resultKey === 'win' && styles.resultPillWin,
+                            resultKey === 'loss' && styles.resultPillLoss,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.resultPillTxt,
+                              resultKey === 'win' && styles.resultPillTxtWin,
+                              resultKey === 'loss' && styles.resultPillTxtLoss,
+                            ]}
+                          >
+                            {t(`groupChallenge.section.result.${resultKey}`)}
+                          </Text>
+                        </View>
+                        <Text style={styles.pastName} numberOfLines={1}>
+                          {t('groupChallenge.vsOpponent', { name: opponentLabel(c) })}
+                        </Text>
+                      </View>
+                      <Text style={styles.pastMeta}>
+                        {c.name} · {formatLeagueDateRange(c.start_date, c.end_date)}
+                      </Text>
+                    </Pressable>
+                  );
+                })
               : null}
           </View>
         ) : null}
@@ -797,6 +1003,27 @@ const styles = StyleSheet.create({
   pastRow: { paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   pastName: { fontSize: 14, fontWeight: '600', color: colors.ink },
   pastMeta: { fontSize: 12, color: colors.subtle, marginTop: 2 },
+  challengeCardActive: {
+    backgroundColor: '#f0f7f3',
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.sage,
+    padding: 14,
+  },
+  challengeHistoryRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  resultPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 999,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  resultPillWin: { backgroundColor: '#e6f4ec', borderColor: colors.accentMuted },
+  resultPillLoss: { backgroundColor: '#fdecec', borderColor: colors.danger },
+  resultPillTxt: { fontSize: 11, fontWeight: '700', color: colors.muted },
+  resultPillTxtWin: { color: colors.accent },
+  resultPillTxtLoss: { color: colors.danger },
   devCreatorBtn: {
     marginTop: 12,
     paddingVertical: 6,
