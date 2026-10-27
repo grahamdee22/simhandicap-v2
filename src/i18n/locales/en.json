@@ -1137,7 +1137,7 @@
   "groups": {
     "section": {
       "match": {
-        "title": "Match Play",
+        "title": "Head-to-Head",
         "body": "Challenge any SimCap golfer to a head-to-head stroke play match from any simulator, anywhere. Net scores are calculated from your SimCap index and your tee."
       },
       "groups": {
@@ -1146,7 +1146,7 @@
       },
       "tournaments": {
         "title": "Tournaments",
-        "body": "Run a tournament for your crew. The group creator or admins can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards. Want to tie several tournaments together into one points race? Start a season — it tracks placement points across every tournament in it, with its own standings."
+        "body": "Run a tournament for your crew. The group creator or admins can launch stroke play, match play, scramble, or best ball — with standings that update as players log rounds and hole-by-hole scorecards. Want to tie several tournaments together into one points race? Start a season — it tracks placement points across every tournament in it, with its own standings. Want to compete against another crew? Send a Group Challenge — a 5v5 net stroke play matchup between two groups, with handicaps locked at the start."
       },
       "net": {
         "title": "Crew Match Calculator",
@@ -1493,7 +1493,7 @@
         "challengeLimitNew": "You have {{count}} active challenges. Finish or resolve an existing match before sending a new one.",
         "verifyOpenTitle": "Could not verify open challenges",
         "openLimitTitle": "Open challenge limit",
-        "openLimitBody": "You already have {{count}} open challenges. Cancel one from the Match Play section on Social before posting another.",
+        "openLimitBody": "You already have {{count}} open challenges. Cancel one from the Head-to-Head section on Social before posting another.",
         "verifyMatchesTitle": "Could not verify your matches",
         "verifyMatchesTimeout": "Could not verify your matches — check your connection and try again.",
         "matchInProgressTitle": "Match already in progress",
@@ -1637,8 +1637,8 @@
     }
   },
   "matchPlay": {
-    "title": "Match Play",
-    "aboutA11y": "About Match Play",
+    "title": "Head-to-Head",
+    "aboutA11y": "About Head-to-Head",
     "offlineHint": "Sign in with Supabase configured to see matches.",
     "createMatch": "Create Match",
     "createMatchA11y": "Create match",

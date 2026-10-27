@@ -1172,17 +1172,6 @@ export default function LeagueCreateScreen() {
         <Text style={styles.stepProg}>
           {t('match.create.stepOf', { current: stepNumber, total: totalSteps })}
         </Text>
-        {stepIdx > 0 ? (
-          <Pressable
-            onPress={goBackStep}
-            style={styles.wizardBackLink}
-            accessibilityRole="button"
-            accessibilityLabel={t('match.create.goBack')}
-            hitSlop={8}
-          >
-            <Text style={styles.wizardBackLinkTxt}>{t('match.create.back')}</Text>
-          </Pressable>
-        ) : null}
 
         {step === 'basic' ? (
           <>
@@ -1291,12 +1280,6 @@ export default function LeagueCreateScreen() {
             {opponentSearching ? (
               <ActivityIndicator color={colors.header} style={{ marginVertical: 12 }} />
             ) : null}
-            {opponentGroup ? (
-              <View style={[styles.memberRowOn, { marginTop: 10, padding: 12, borderRadius: 10 }]}>
-                <Text style={styles.formatTitle}>{opponentGroup.name}</Text>
-                <Text style={styles.helper}>{t('league.create.groupChallenge.opponentSelected')}</Text>
-              </View>
-            ) : null}
             {opponentResults.map((g) => {
               const on = opponentGroup?.id === g.id;
               return (
@@ -1307,6 +1290,8 @@ export default function LeagueCreateScreen() {
                     setOpponentGroup(g);
                     setOpponentQuery(g.name);
                   }}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
                 >
                   <Text style={styles.formatTitle}>{g.name}</Text>
                   {on ? <IconCheckmark size={20} color={colors.accent} /> : null}
@@ -2388,14 +2373,6 @@ export default function LeagueCreateScreen() {
                 </Text>
               )}
             </Pressable>
-            <Pressable
-              style={styles.secondaryBtn}
-              onPress={goBackStep}
-              accessibilityRole="button"
-              accessibilityLabel={t('match.create.goBack')}
-            >
-              <Text style={styles.secondaryBtnTxt}>{t('match.create.back')}</Text>
-            </Pressable>
           </>
         ) : null}
         </ScrollView>
@@ -2432,19 +2409,6 @@ export default function LeagueCreateScreen() {
 const styles = StyleSheet.create({
   flex1: { flex: 1 },
   stepProg: { fontSize: 12, color: colors.muted, marginBottom: 8 },
-  wizardBackLink: { alignSelf: 'flex-start', marginBottom: 10, paddingVertical: 4 },
-  wizardBackLinkTxt: { fontSize: 15, fontWeight: '600', color: colors.accent },
-  secondaryBtn: {
-    marginTop: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: colors.pillBorder,
-    backgroundColor: colors.bg,
-  },
-  secondaryBtnTxt: { fontSize: 16, fontWeight: '600', color: colors.ink },
   head: { fontSize: 22, fontWeight: '700', color: colors.ink, marginBottom: 12 },
   lbl: { fontSize: 12, fontWeight: '600', color: colors.muted, marginBottom: 6 },
   input: {

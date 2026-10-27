@@ -1089,7 +1089,7 @@
   "groups": {
     "section": {
       "match": {
-        "title": "Match Play",
+        "title": "Cara a cara",
         "body": "Reta a cualquier golfista de SimCap a un partido de stroke play cara a cara desde cualquier simulador, en cualquier lugar. Los scores netos se calculan a partir de tu índice SimCap y tu tee."
       },
       "groups": {
@@ -1098,7 +1098,7 @@
       },
       "tournaments": {
         "title": "Torneos",
-        "body": "Organiza un torneo para tu grupo. El creador del grupo o los administradores pueden lanzar torneos de stroke play, match play, scramble o best ball, con clasificaciones que se actualizan a medida que los jugadores registran rondas y tarjetas hoyo por hoyo. ¿Quieres unir varios torneos en una sola carrera por puntos? Inicia una temporada: lleva los puntos por posición de todos los torneos que incluya, con su propia clasificación."
+        "body": "Organiza un torneo para tu grupo. El creador del grupo o los administradores pueden lanzar torneos de stroke play, match play, scramble o best ball, con clasificaciones que se actualizan a medida que los jugadores registran rondas y tarjetas hoyo por hoyo. ¿Quieres unir varios torneos en una sola carrera por puntos? Inicia una temporada: lleva los puntos por posición de todos los torneos que incluya, con su propia clasificación. ¿Quieres competir contra otra cuadrilla? Envía un Group Challenge: un enfrentamiento 5v5 a stroke play neto entre dos grupos, con handicaps bloqueados al inicio."
       },
       "net": {
         "title": "Calculadora de partido del grupo",
@@ -1445,7 +1445,7 @@
         "challengeLimitNew": "Tienes {{count}} retos activos. Termina o resuelve un partido existente antes de enviar uno nuevo.",
         "verifyOpenTitle": "No se pudieron verificar los retos abiertos",
         "openLimitTitle": "Límite de retos abiertos",
-        "openLimitBody": "Ya tienes {{count}} retos abiertos. Cancela uno desde la sección Match Play en Social antes de publicar otro.",
+        "openLimitBody": "Ya tienes {{count}} retos abiertos. Cancela uno desde la sección Cara a cara en Social antes de publicar otro.",
         "verifyMatchesTitle": "No se pudieron verificar tus partidos",
         "verifyMatchesTimeout": "No se pudieron verificar tus partidos; revisa tu conexión e inténtalo de nuevo.",
         "matchInProgressTitle": "Ya hay un partido en curso",
@@ -1589,8 +1589,8 @@
     }
   },
   "matchPlay": {
-    "title": "Match Play",
-    "aboutA11y": "Acerca de Match Play",
+    "title": "Cara a cara",
+    "aboutA11y": "Acerca de Cara a cara",
     "offlineHint": "Inicia sesión con Supabase configurado para ver los partidos.",
     "createMatch": "Crear partido",
     "createMatchA11y": "Crear partido",

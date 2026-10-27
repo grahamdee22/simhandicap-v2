@@ -53,9 +53,11 @@ export async function pickOpponentGroup(page: Page, opponentName: string): Promi
     .last();
   await expect(row).toBeVisible({ timeout: 20_000 });
   await row.click({ force: true });
-  await expect(page.getByText('Selected as opponent', { exact: true })).toBeVisible({
-    timeout: 15_000,
-  });
+  // Selection is the checked result row (no separate summary card).
+  await expect(row).toBeVisible({ timeout: 15_000 });
+  await expect(
+    sheet.getByText(opponentName, { exact: true }).first()
+  ).toBeVisible();
 }
 
 /**
