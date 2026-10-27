@@ -1948,7 +1948,10 @@
       "needExactlyBody": "Select exactly {{count}} players.",
       "save": "Save roster",
       "edit": "Edit roster",
-      "cancelEdit": "Cancel editing"
+      "cancelEdit": "Cancel editing",
+      "onOtherSide": "Other side",
+      "otherSideTitle": "Player already rostered",
+      "otherSideBody": "A player can only represent one side of a challenge. Uncheck anyone already on the opposing roster."
     },
     "activateTitle": "Start the challenge",
     "activateNeedRosters": "Both groups need {{count}} eligible players before the challenge can start.",

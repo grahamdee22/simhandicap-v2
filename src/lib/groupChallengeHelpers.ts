@@ -160,6 +160,46 @@ export function opponentGroupId(
     : challenge.challenging_group_id;
 }
 
+/** Extract a readable message from a PostgREST / RPC error body. */
+export function friendlyChallengeError(raw: string | null | undefined): string {
+  if (!raw) return '';
+  const text = raw.trim();
+  if (/row-level security|42501|violates row-level/i.test(text)) {
+    return 'Could not create challenge (permission denied). Confirm you admin the challenging group and try again.';
+  }
+  if (
+    /group_challenge_rosters_challenge_id_user_id_key|duplicate key.*user_id|23505/i.test(text)
+  ) {
+    return 'A player can only represent one side of a challenge. Remove anyone already on the opposing roster and try again.';
+  }
+  if (text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text) as { message?: string; error?: string; code?: string };
+      if (parsed.code === '23505' || /duplicate key/i.test(parsed.message ?? '')) {
+        return 'A player can only represent one side of a challenge. Remove anyone already on the opposing roster and try again.';
+      }
+      if (parsed.message) return parsed.message;
+      if (parsed.error) return parsed.error;
+    } catch {
+      /* fall through */
+    }
+  }
+  return text;
+}
+
+/** Users already rostered for a challenge (any side) cannot be added to the other side. */
+export function opposingRosterUserIds(
+  rosters: { user_id: string; group_id: string; withdrawn_at?: string | null }[],
+  myGroupId: string
+): Set<string> {
+  const out = new Set<string>();
+  for (const r of rosters) {
+    if (r.withdrawn_at) continue;
+    if (r.group_id !== myGroupId) out.add(r.user_id);
+  }
+  return out;
+}
+
 export function canSubmitChallengeRound(params: {
   challenge: GroupChallengeLike;
   roster: RosterLike | null;

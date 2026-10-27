@@ -951,13 +951,15 @@ export default function LeagueCreateScreen() {
         showAppAlert(t('league.create.courseAlertTitle'), t('league.create.courseAlertBody'));
         return;
       }
+      if (busy || launchInFlightRef.current) return;
+      if (dateRangeError) {
+        setDateError(dateRangeError);
+        showAppAlert(t('league.create.couldNotCreate'), dateRangeError);
+        return;
+      }
       launchInFlightRef.current = true;
       setBusy(true);
       try {
-        if (dateRangeError) {
-          setDateError(dateRangeError);
-          return;
-        }
         const rosterMeta: Record<
           string,
           { eligibility: 'eligible' | 'ineligible'; qualifyingRounds: number }
@@ -969,6 +971,8 @@ export default function LeagueCreateScreen() {
             qualifyingRounds: q,
           };
         }
+        const token =
+          googleOAuthAccessToken ?? (await resolveSocialGroupsAccessToken()) ?? undefined;
         const res = await createGroupChallenge(
           {
             name: name.trim(),
@@ -985,7 +989,7 @@ export default function LeagueCreateScreen() {
             rosterUserIds: playingMembers.map((m) => m.userId),
             rosterMeta,
           },
-          googleOAuthAccessToken ?? undefined
+          token
         );
         if (res.error || !res.data) {
           showAppAlert(
@@ -995,10 +999,17 @@ export default function LeagueCreateScreen() {
           return;
         }
         clearTournamentSectionCache(groupId);
-        router.replace(`/(tabs)/group-challenge/${res.data.id}` as never);
+        clearTournamentSectionCache(opponentGroup.id);
+        const challengeId = res.data.id;
+        const opponentName = opponentGroup.name;
         showAppAlert(
           t('league.create.groupChallenge.sentTitle'),
-          t('league.create.groupChallenge.sentBody', { name: opponentGroup.name })
+          t('league.create.groupChallenge.sentBody', { name: opponentName }),
+          {
+            onOk: () => {
+              router.replace(`/(tabs)/group-challenge/${challengeId}` as never);
+            },
+          }
         );
       } catch (err) {
         const message =

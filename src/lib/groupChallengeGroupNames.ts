@@ -7,6 +7,8 @@
 import type { FriendGroup } from '../store/useAppStore';
 import { lookupGroupsForChallenge } from './groupChallenges';
 
+export { friendlyChallengeError } from './groupChallengeHelpers';
+
 const remoteNameCache = new Map<string, string>();
 
 export function truncatedGroupId(id: string): string {
@@ -51,17 +53,3 @@ export async function resolveGroupNames(
   return out;
 }
 
-/** Extract a readable message from a PostgREST / RPC error body. */
-export function friendlyChallengeError(raw: string | null | undefined): string {
-  if (!raw) return '';
-  const text = raw.trim();
-  if (text.startsWith('{')) {
-    try {
-      const parsed = JSON.parse(text) as { message?: string };
-      if (parsed.message) return parsed.message;
-    } catch {
-      /* fall through */
-    }
-  }
-  return text;
-}

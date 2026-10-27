@@ -9,10 +9,12 @@ import {
   buildHandicapSnapshot,
   canSubmitChallengeRound,
   challengeResultLabel,
+  friendlyChallengeError,
   GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
   isGroupChallengeRosterEligible,
   netScoreForGroupChallengeRound,
   opponentGroupId,
+  opposingRosterUserIds,
   qualifyingRoundsCount,
   rosterEligibilityForPlayer,
   teamTotalFromRounds,
@@ -113,6 +115,36 @@ describe('groupChallenges scoring', () => {
     ];
     assert.equal(teamTotalFromRounds(rounds, 'verified'), 70);
     assert.equal(teamTotalFromRounds(rounds, 'casual'), 142);
+  });
+});
+
+describe('groupChallenges create errors', () => {
+  it('maps RLS insert failures to a clear message', () => {
+    const msg = friendlyChallengeError(
+      'new row violates row-level security policy for table "group_challenges"'
+    );
+    assert.match(msg, /permission denied/i);
+  });
+
+  it('maps duplicate roster user to a clear one-side-only message', () => {
+    const msg = friendlyChallengeError(
+      'duplicate key value violates unique constraint "group_challenge_rosters_challenge_id_user_id_key"'
+    );
+    assert.match(msg, /one side/i);
+  });
+
+  it('lists opposing roster users for the picker', () => {
+    const taken = opposingRosterUserIds(
+      [
+        { user_id: 'a1', group_id: 'gA' },
+        { user_id: 'b1', group_id: 'gB' },
+        { user_id: 'b2', group_id: 'gB', withdrawn_at: '2026-01-01' },
+      ],
+      'gB'
+    );
+    assert.equal(taken.has('a1'), true);
+    assert.equal(taken.has('b1'), false);
+    assert.equal(taken.has('b2'), false);
   });
 });
 

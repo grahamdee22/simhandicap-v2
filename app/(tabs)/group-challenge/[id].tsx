@@ -34,6 +34,7 @@ import {
   GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
   GROUP_CHALLENGE_ROSTER_SIZE,
   respondGroupChallenge,
+  opposingRosterUserIds,
   setChallengedGroupRoster,
   teamTotalFromRounds,
   verifyGroupChallengeRound,
@@ -411,18 +412,31 @@ export default function GroupChallengeDetailScreen() {
 
   // Challenged-side roster picker
   const challengedGroup = groups.find((g) => g.id === challengedId) ?? null;
+  const takenByOpposing = useMemo(
+    () =>
+      challenge
+        ? opposingRosterUserIds(bundle?.rosters ?? [], challenge.challenged_group_id)
+        : new Set<string>(),
+    [bundle?.rosters, challenge]
+  );
   const pickableMembers = useMemo(
     () =>
       (challengedGroup?.members ?? [])
         .filter((m) => !!m.userId)
-        .map((m) => ({
-          userId: m.userId,
-          name: m.displayName.replace(' (you)', ''),
-          roundsLogged: m.roundsLogged ?? 0,
-          eligible: (m.roundsLogged ?? 0) >= GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS,
-          index: m.index,
-        })),
-    [challengedGroup?.members]
+        .map((m) => {
+          const onOtherSide = takenByOpposing.has(m.userId);
+          const enoughRounds =
+            (m.roundsLogged ?? 0) >= GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS;
+          return {
+            userId: m.userId,
+            name: m.displayName.replace(' (you)', ''),
+            roundsLogged: m.roundsLogged ?? 0,
+            eligible: enoughRounds && !onOtherSide,
+            onOtherSide,
+            index: m.index,
+          };
+        }),
+    [challengedGroup?.members, takenByOpposing]
   );
 
   const showRosterPicker =
@@ -434,12 +448,18 @@ export default function GroupChallengeDetailScreen() {
 
   useEffect(() => {
     if (!showRosterPicker) return;
-    setPickedIds((prev) =>
-      prev.length > 0 ? prev : rosterBySide.challenged.map((r) => r.user_id)
-    );
-    // Only seed when the picker opens.
+    setPickedIds((prev) => {
+      if (prev.length > 0) {
+        // Drop anyone who became unavailable (e.g. already on the other side).
+        return prev.filter((id) => !takenByOpposing.has(id));
+      }
+      return rosterBySide.challenged
+        .map((r) => r.user_id)
+        .filter((id) => !takenByOpposing.has(id));
+    });
+    // Only seed when the picker opens / opposing roster changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showRosterPicker]);
+  }, [showRosterPicker, takenByOpposing]);
 
   const togglePick = (userId: string, eligible: boolean) => {
     if (!eligible) return;
@@ -451,7 +471,7 @@ export default function GroupChallengeDetailScreen() {
   };
 
   const onSaveRoster = () => {
-    if (!challenge) return;
+    if (!challenge || busyKey != null) return;
     if (pickedIds.length !== rosterSize) {
       showAppAlert(
         t('groupChallenge.rosterPick.needExactlyTitle'),
@@ -459,14 +479,25 @@ export default function GroupChallengeDetailScreen() {
       );
       return;
     }
+    const blocked = pickedIds.filter((id) => takenByOpposing.has(id));
+    if (blocked.length > 0) {
+      showAppAlert(
+        t('groupChallenge.rosterPick.otherSideTitle'),
+        t('groupChallenge.rosterPick.otherSideBody')
+      );
+      return;
+    }
     const rosterMeta: Record<
       string,
       { eligibility: GroupChallengeEligibility; qualifyingRounds: number }
     > = {};
-    for (const m of pickableMembers) {
-      rosterMeta[m.userId] = {
-        eligibility: m.eligible ? 'eligible' : 'ineligible',
-        qualifyingRounds: m.roundsLogged,
+    for (const id of pickedIds) {
+      const m = pickableMembers.find((x) => x.userId === id);
+      const rounds = m?.roundsLogged ?? 0;
+      rosterMeta[id] = {
+        eligibility:
+          rounds >= GROUP_CHALLENGE_MIN_QUALIFYING_ROUNDS ? 'eligible' : 'ineligible',
+        qualifyingRounds: rounds,
       };
     }
     void runAction(
@@ -477,11 +508,12 @@ export default function GroupChallengeDetailScreen() {
           groupId: challenge.challenged_group_id,
           userIds: pickedIds,
           rosterMeta,
+          opposingUserIds: takenByOpposing,
           accessToken: token,
         }),
       () => {
         setEditingRoster(false);
-        setPickedIds([]);
+        // Keep picks until reload seeds from the saved roster (avoid flashing 0/5).
       }
     );
   };
@@ -818,7 +850,13 @@ export default function GroupChallengeDetailScreen() {
                         {m.index != null ? ` · ${t('groupChallenge.indexShort', { value: fmtNum(m.index) })}` : ''}
                       </Text>
                     </View>
-                    {!m.eligible ? (
+                    {m.onOtherSide ? (
+                      <View style={styles.pillDanger}>
+                        <Text style={styles.pillDangerTxt}>
+                          {t('groupChallenge.rosterPick.onOtherSide')}
+                        </Text>
+                      </View>
+                    ) : !m.eligible ? (
                       <View style={styles.pillDanger}>
                         <Text style={styles.pillDangerTxt}>
                           {t('groupChallenge.rosterPick.ineligible', { missing })}

@@ -11,9 +11,11 @@ import {
   buildHandicapSnapshot,
   canSubmitChallengeRound,
   challengeResultLabel,
+  friendlyChallengeError,
   isGroupChallengeRosterEligible,
   netScoreForGroupChallengeRound,
   opponentGroupId,
+  opposingRosterUserIds,
   qualifyingRoundsCount,
   rosterEligibilityForPlayer,
   teamTotalFromRounds,
@@ -30,9 +32,11 @@ export {
   buildHandicapSnapshot,
   canSubmitChallengeRound,
   challengeResultLabel,
+  friendlyChallengeError,
   isGroupChallengeRosterEligible,
   netScoreForGroupChallengeRound,
   opponentGroupId,
+  opposingRosterUserIds,
   qualifyingRoundsCount,
   rosterEligibilityForPlayer,
   teamTotalFromRounds,
@@ -323,7 +327,44 @@ export type CreateGroupChallengeInput = {
   >;
 };
 
+const CREATE_CHALLENGE_TIMEOUT_MS = 25_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} timed out after ${Math.round(ms / 1000)}s. Try again.`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 export async function createGroupChallenge(
+  input: CreateGroupChallengeInput,
+  accessToken?: string
+): Promise<{ data: DbGroupChallenge | null; error: string | null }> {
+  try {
+    return await withTimeout(
+      createGroupChallengeInner(input, accessToken),
+      CREATE_CHALLENGE_TIMEOUT_MS,
+      'Send challenge'
+    );
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Could not create challenge';
+    return { data: null, error: message };
+  }
+}
+
+async function createGroupChallengeInner(
   input: CreateGroupChallengeInput,
   accessToken?: string
 ): Promise<{ data: DbGroupChallenge | null; error: string | null }> {
@@ -366,6 +407,9 @@ export async function createGroupChallenge(
 
   if (accessToken) {
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return { data: null, error: 'Supabase is not configured' };
+    }
     const res = await fetch(`${supabaseUrl}/rest/v1/group_challenges`, {
       method: 'POST',
       headers: {
@@ -376,9 +420,16 @@ export async function createGroupChallenge(
       },
       body: JSON.stringify([payload]),
     });
-    if (!res.ok) return { data: null, error: await res.text().catch(() => res.statusText) };
+    if (!res.ok) {
+      return {
+        data: null,
+        error:
+          friendlyChallengeError(await res.text().catch(() => res.statusText)) ||
+          'Could not create challenge',
+      };
+    }
     const rows = (await res.json()) as DbGroupChallenge[];
-    challenge = rows[0] ?? null;
+    challenge = Array.isArray(rows) ? rows[0] ?? null : null;
   } else {
     if (!supabase) return { data: null, error: 'Supabase is not configured' };
     const { data, error } = await supabase
@@ -386,11 +437,22 @@ export async function createGroupChallenge(
       .insert(payload)
       .select('*')
       .single();
-    if (error) return { data: null, error: error.message };
+    if (error) {
+      return {
+        data: null,
+        error: friendlyChallengeError(error.message) || 'Could not create challenge',
+      };
+    }
     challenge = data as DbGroupChallenge;
   }
 
-  if (!challenge) return { data: null, error: 'Could not create challenge' };
+  if (!challenge?.id) {
+    return {
+      data: null,
+      error:
+        'Challenge was not returned after create. If this keeps happening, refresh and check whether it appeared under Tournaments.',
+    };
+  }
 
   const rosterRows = input.rosterUserIds.map((userId) => ({
     challenge_id: challenge!.id,
@@ -412,14 +474,28 @@ export async function createGroupChallenge(
       },
       body: JSON.stringify(rosterRows),
     });
-    if (!res.ok) return { data: null, error: await res.text().catch(() => res.statusText) };
+    if (!res.ok) {
+      return {
+        data: null,
+        error:
+          friendlyChallengeError(await res.text().catch(() => res.statusText)) ||
+          'Could not save challenge roster',
+      };
+    }
   } else if (supabase) {
     const { error } = await supabase.from('group_challenge_rosters').insert(rosterRows);
-    if (error) return { data: null, error: error.message };
+    if (error) {
+      return {
+        data: null,
+        error: friendlyChallengeError(error.message) || 'Could not save challenge roster',
+      };
+    }
   }
 
   return { data: challenge, error: null };
 }
+
+const SAVE_ROSTER_TIMEOUT_MS = 25_000;
 
 export async function setChallengedGroupRoster(params: {
   challengeId: string;
@@ -429,6 +505,32 @@ export async function setChallengedGroupRoster(params: {
     string,
     { eligibility: GroupChallengeEligibility; qualifyingRounds: number }
   >;
+  /** User ids already on the opposing side — rejected client-side before write. */
+  opposingUserIds?: Iterable<string>;
+  accessToken?: string;
+}): Promise<{ error: string | null }> {
+  try {
+    return await withTimeout(
+      setChallengedGroupRosterInner(params),
+      SAVE_ROSTER_TIMEOUT_MS,
+      'Save roster'
+    );
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : 'Could not save roster',
+    };
+  }
+}
+
+async function setChallengedGroupRosterInner(params: {
+  challengeId: string;
+  groupId: string;
+  userIds: string[];
+  rosterMeta: Record<
+    string,
+    { eligibility: GroupChallengeEligibility; qualifyingRounds: number }
+  >;
+  opposingUserIds?: Iterable<string>;
   accessToken?: string;
 }): Promise<{ error: string | null }> {
   const { challengeId, groupId, userIds, rosterMeta, accessToken } = params;
@@ -439,10 +541,19 @@ export async function setChallengedGroupRoster(params: {
   if (ineligible.length > 0) {
     return { error: 'Every selected player needs at least 5 qualifying SimCap rounds' };
   }
+  const opposing = new Set(params.opposingUserIds ?? []);
+  const overlap = userIds.filter((id) => opposing.has(id));
+  if (overlap.length > 0) {
+    return {
+      error:
+        'A player can only represent one side of a challenge. Remove anyone already on the opposing roster and try again.',
+    };
+  }
 
   // Replace existing challenged-side roster (pre-active only; RLS enforces).
   if (accessToken) {
     const { supabaseUrl, supabaseAnonKey } = getSupabaseRestConfig();
+    if (!supabaseUrl || !supabaseAnonKey) return { error: 'Supabase is not configured' };
     const del = await fetch(
       `${supabaseUrl}/rest/v1/group_challenge_rosters?challenge_id=eq.${encodeURIComponent(challengeId)}&group_id=eq.${encodeURIComponent(groupId)}`,
       {
@@ -453,7 +564,13 @@ export async function setChallengedGroupRoster(params: {
         },
       }
     );
-    if (!del.ok) return { error: await del.text().catch(() => del.statusText) };
+    if (!del.ok) {
+      return {
+        error:
+          friendlyChallengeError(await del.text().catch(() => del.statusText)) ||
+          'Could not clear previous roster',
+      };
+    }
 
     const rows = userIds.map((userId) => ({
       challenge_id: challengeId,
@@ -472,7 +589,13 @@ export async function setChallengedGroupRoster(params: {
       },
       body: JSON.stringify(rows),
     });
-    if (!ins.ok) return { error: await ins.text().catch(() => ins.statusText) };
+    if (!ins.ok) {
+      return {
+        error:
+          friendlyChallengeError(await ins.text().catch(() => ins.statusText)) ||
+          'Could not save roster',
+      };
+    }
     return { error: null };
   }
 
@@ -482,7 +605,7 @@ export async function setChallengedGroupRoster(params: {
     .delete()
     .eq('challenge_id', challengeId)
     .eq('group_id', groupId);
-  if (delErr) return { error: delErr.message };
+  if (delErr) return { error: friendlyChallengeError(delErr.message) || delErr.message };
   const { error } = await supabase.from('group_challenge_rosters').insert(
     userIds.map((userId) => ({
       challenge_id: challengeId,
@@ -492,7 +615,8 @@ export async function setChallengedGroupRoster(params: {
       qualifying_rounds_count: rosterMeta[userId]?.qualifyingRounds ?? 0,
     }))
   );
-  return { error: error?.message ?? null };
+  if (error) return { error: friendlyChallengeError(error.message) || error.message };
+  return { error: null };
 }
 
 export async function respondGroupChallenge(
