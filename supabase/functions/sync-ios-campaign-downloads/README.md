@@ -33,8 +33,16 @@ supabase secrets set \
    success with `upserted: 0` and a note until Admin completes this step.
 2. After ~24–48h, daily **App Downloads Detailed** instances appear under COMMERCE.
 3. Keys with **Sales and Reports** can then download those instances (this job’s path).
-4. Apple may return **empty** data when a campaign has fewer than ~5 downloads in range —
-   the function treats that as success with `upserted: 0`, not an error.
+4. Apple may return **empty** Campaign cells when a campaign has fewer than ~5 first-time
+   downloads, or when no App Analytics **Campaign Link** exists for that `ct=` token.
+   Organic rows still appear (Source Type populated, Campaign blank). The sync skips blank
+   Campaign rows and returns `ok: true` with `warning` + counters (`dataRows`,
+   `skippedEmptyCampaign`, `downloadsSkippedEmptyCampaign`, `upserted`) so this is visible
+   in edge logs / `net._http_response` instead of a silent `instances:N, upserted:0`.
+5. Create Campaign Links in App Store Connect Analytics for each channel token you use
+   (`reddit`, `homepage`, `email`, `kevin`, …) so `ct=` traffic can populate the Campaign
+   column. Until that column is non-empty, `ios_campaign_downloads` will stay at 0 rows
+   even though the job is downloading TSVs successfully.
 
 ## Schedule
 

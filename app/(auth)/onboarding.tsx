@@ -30,7 +30,7 @@ export default function OnboardingScreen() {
 
   return (
     <OnboardingCarousel
-      onSkip={() => void goAuth('/(auth)/sign-in')}
+      onSkip={() => void goAuth('/(auth)/sign-up')}
       onComplete={() => void goAuth('/(auth)/sign-up')}
     />
   );

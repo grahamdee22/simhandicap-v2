@@ -6,6 +6,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  aliasPlayChannel,
   isCampaignPlayChannel,
   parseChannelFromPlayInstallReferrer,
 } from '../playInstallReferrer';
@@ -50,11 +51,44 @@ describe('isCampaignPlayChannel', () => {
   it('rejects Play organic sources', () => {
     assert.equal(isCampaignPlayChannel('google-play'), false);
     assert.equal(isCampaignPlayChannel('organic'), false);
+    assert.equal(isCampaignPlayChannel('google'), false);
     assert.equal(isCampaignPlayChannel(null), false);
   });
 
   it('accepts channel labels', () => {
     assert.equal(isCampaignPlayChannel('kevin'), true);
     assert.equal(isCampaignPlayChannel('Reddit'), true);
+  });
+
+  it('accepts simcap-google (marketing google channel; not Play organic)', () => {
+    assert.equal(isCampaignPlayChannel('simcap-google'), true);
+  });
+});
+
+describe('aliasPlayChannel', () => {
+  it('maps simcap-google → google for reporting / referral_code', () => {
+    assert.equal(aliasPlayChannel('simcap-google'), 'google');
+    assert.equal(aliasPlayChannel('SimCap-Google'), 'google');
+  });
+
+  it('leaves other channels unchanged', () => {
+    assert.equal(aliasPlayChannel('kevin'), 'kevin');
+    assert.equal(aliasPlayChannel('chatgpt'), 'chatgpt');
+    assert.equal(aliasPlayChannel(null), null);
+  });
+});
+
+describe('parse + campaign + alias (google collision path)', () => {
+  it('utm_source=simcap-google is campaign and aliases to google', () => {
+    const parsed = parseChannelFromPlayInstallReferrer('utm_source=simcap-google');
+    assert.equal(parsed, 'simcap-google');
+    assert.equal(isCampaignPlayChannel(parsed), true);
+    assert.equal(aliasPlayChannel(parsed), 'google');
+  });
+
+  it('utm_source=google stays organic and does not become a campaign', () => {
+    const parsed = parseChannelFromPlayInstallReferrer('utm_source=google');
+    assert.equal(parsed, 'google');
+    assert.equal(isCampaignPlayChannel(parsed), false);
   });
 });

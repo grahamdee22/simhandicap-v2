@@ -8,7 +8,10 @@
  * First-time: an Admin must create an ONGOING analyticsReportRequest for the app
  * (or this job will POST one). Sales and Reports can then download instances.
  *
- * Empty / privacy-suppressed ASC windows are treated as success with zero upserts.
+ * Empty Campaign cells are skipped (organic / privacy-suppressed). When instances
+ * download successfully but every Campaign cell is blank, the job still returns
+ * HTTP 200 with ok:true and a loud `warning` + counters so silent "upserted:0"
+ * failures are visible in logs / net._http_response.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -16,6 +19,7 @@ import { SignJWT, importPKCS8 } from 'https://esm.sh/jose@5.9.6'
 
 const ASC_BASE = 'https://api.appstoreconnect.apple.com'
 const BUNDLE_ID = 'com.simcap.app'
+const LOG = '[sync-ios-campaign-downloads]'
 
 type JsonApiList<T> = { data: T[]; links?: { next?: string } }
 type ReportRequest = { id: string; type: string; attributes?: { accessType?: string } }
@@ -110,7 +114,7 @@ async function ensureOngoingRequest(token: string, appId: string): Promise<strin
   })
   if (res.status === 403 || res.status === 401) {
     console.warn(
-      '[sync-ios-campaign-downloads] Cannot create ONGOING analyticsReportRequest (need ASC Admin once). Sales and Reports key can download after that.',
+      `${LOG} Cannot create ONGOING analyticsReportRequest (need ASC Admin once). Sales and Reports key can download after that.`,
     )
     return null
   }
@@ -122,17 +126,21 @@ async function ensureOngoingRequest(token: string, appId: string): Promise<strin
   return created.data.id
 }
 
-async function findDownloadsDetailedReport(token: string, requestId: string): Promise<string | null> {
+async function findDownloadsDetailedReport(token: string, requestId: string): Promise<{
+  id: string | null
+  reportNames: string[]
+}> {
   // Campaign token column exists only on detailed downloads reports.
   const reports = await ascJson<JsonApiList<Report>>(
     `/v1/analyticsReportRequests/${requestId}/reports?filter[category]=COMMERCE&limit=50`,
     token,
   )
+  const reportNames = (reports.data ?? []).map((r) => r.attributes?.name ?? r.id)
   const preferred =
     reports.data.find((r) => /app\s*downloads/i.test(r.attributes?.name ?? '') && /detailed/i.test(r.attributes?.name ?? '')) ??
     reports.data.find((r) => /app\s*downloads/i.test(r.attributes?.name ?? '') && /detail/i.test(r.attributes?.name ?? '')) ??
     reports.data.find((r) => /downloads/i.test(r.attributes?.name ?? '') && /detailed/i.test(r.attributes?.name ?? ''))
-  return preferred?.id ?? null
+  return { id: preferred?.id ?? null, reportNames }
 }
 
 async function listDailyInstances(token: string, reportId: string, limit = 14): Promise<Instance[]> {
@@ -176,10 +184,29 @@ function colIndex(header: string[], candidates: string[]): number {
 
 type AggRow = { date: string; campaign_token: string; downloads: number; product_page_views: number | null }
 
+type ParseStats = {
+  dataRows: number
+  kept: number
+  skippedEmptyCampaign: number
+  skippedBadDateOrCount: number
+  downloadsKept: number
+  downloadsSkippedEmptyCampaign: number
+  header: string[]
+}
+
 /** Aggregate TSV rows by (date, campaign). Empty / missing Campaign → skip (organic bucket not tracked here). */
-function parseDownloadsTsv(tsv: string): AggRow[] {
+export function parseDownloadsTsv(tsv: string): { rows: AggRow[]; stats: ParseStats } {
   const lines = tsv.split(/\r?\n/).filter((l) => l.trim().length > 0)
-  if (lines.length < 2) return []
+  const emptyStats: ParseStats = {
+    dataRows: 0,
+    kept: 0,
+    skippedEmptyCampaign: 0,
+    skippedBadDateOrCount: 0,
+    downloadsKept: 0,
+    downloadsSkippedEmptyCampaign: 0,
+    header: [],
+  }
+  if (lines.length < 2) return { rows: [], stats: emptyStats }
   const header = lines[0].split('\t')
   const iDate = colIndex(header, ['Date', 'date'])
   const iCampaign = colIndex(header, ['Campaign', 'Campaign Token', 'campaign'])
@@ -192,13 +219,34 @@ function parseDownloadsTsv(tsv: string): AggRow[] {
     )
   }
 
+  const stats: ParseStats = {
+    dataRows: 0,
+    kept: 0,
+    skippedEmptyCampaign: 0,
+    skippedBadDateOrCount: 0,
+    downloadsKept: 0,
+    downloadsSkippedEmptyCampaign: 0,
+    header,
+  }
+
   const map = new Map<string, AggRow>()
   for (const line of lines.slice(1)) {
     const cols = line.split('\t')
+    stats.dataRows += 1
     const date = (cols[iDate] ?? '').trim()
     const campaign = (cols[iCampaign] ?? '').trim().toLowerCase()
     const downloads = Number.parseInt((cols[iCounts] ?? '0').replace(/,/g, ''), 10)
-    if (!date || !campaign || !Number.isFinite(downloads)) continue
+    if (!date || !Number.isFinite(downloads)) {
+      stats.skippedBadDateOrCount += 1
+      continue
+    }
+    if (!campaign) {
+      stats.skippedEmptyCampaign += 1
+      stats.downloadsSkippedEmptyCampaign += downloads
+      continue
+    }
+    stats.kept += 1
+    stats.downloadsKept += downloads
     const ppvRaw = iPageViews >= 0 ? Number.parseInt((cols[iPageViews] ?? '').replace(/,/g, ''), 10) : NaN
     const key = `${date}\0${campaign}`
     const prev = map.get(key)
@@ -216,7 +264,7 @@ function parseDownloadsTsv(tsv: string): AggRow[] {
       })
     }
   }
-  return [...map.values()]
+  return { rows: [...map.values()], stats }
 }
 
 Deno.serve(async (_req) => {
@@ -226,32 +274,37 @@ Deno.serve(async (_req) => {
     const appId = await resolveAppAppleId(token)
     const requestId = await ensureOngoingRequest(token, appId)
     if (!requestId) {
-      return Response.json({
+      const body = {
         ok: true,
         note:
           'No ONGOING analyticsReportRequest yet. An ASC Admin must create one once in App Store Connect (Analytics → Reports / API). This Sales and Reports key cannot create it; sync will succeed after that exists.',
         appId,
         upserted: 0,
         ms: Date.now() - started,
-      })
+      }
+      console.warn(LOG, JSON.stringify(body))
+      return Response.json(body)
     }
 
-    const reportId = await findDownloadsDetailedReport(token, requestId)
+    const { id: reportId, reportNames } = await findDownloadsDetailedReport(token, requestId)
 
     if (!reportId) {
-      return Response.json({
+      const body = {
         ok: true,
         note: 'No COMMERCE App Downloads Detailed report yet (ONGOING first instance usually 24–48h after request). Treated as empty, not an error.',
         appId,
         requestId,
+        reportNames,
         upserted: 0,
         ms: Date.now() - started,
-      })
+      }
+      console.warn(LOG, JSON.stringify(body))
+      return Response.json(body)
     }
 
     const instances = await listDailyInstances(token, reportId, 21)
     if (instances.length === 0) {
-      return Response.json({
+      const body = {
         ok: true,
         note: 'No DAILY instances yet (Apple may withhold <5 download windows). Empty result, not an error.',
         appId,
@@ -259,15 +312,37 @@ Deno.serve(async (_req) => {
         reportId,
         upserted: 0,
         ms: Date.now() - started,
-      })
+      }
+      console.warn(LOG, JSON.stringify(body))
+      return Response.json(body)
     }
 
     const aggregated = new Map<string, AggRow>()
+    let segmentsFetched = 0
+    let segmentsMissingUrl = 0
+    let tsvFilesParsed = 0
+    let dataRows = 0
+    let skippedEmptyCampaign = 0
+    let skippedBadDateOrCount = 0
+    let downloadsKept = 0
+    let downloadsSkippedEmptyCampaign = 0
+    let sampleHeader: string[] | null = null
+
     for (const inst of instances) {
       const urls = await listSegmentUrls(token, inst.id)
+      if (urls.length === 0) segmentsMissingUrl += 1
       for (const url of urls) {
+        segmentsFetched += 1
         const text = await downloadGunzipText(url)
-        for (const row of parseDownloadsTsv(text)) {
+        const { rows, stats } = parseDownloadsTsv(text)
+        tsvFilesParsed += 1
+        dataRows += stats.dataRows
+        skippedEmptyCampaign += stats.skippedEmptyCampaign
+        skippedBadDateOrCount += stats.skippedBadDateOrCount
+        downloadsKept += stats.downloadsKept
+        downloadsSkippedEmptyCampaign += stats.downloadsSkippedEmptyCampaign
+        if (!sampleHeader && stats.header.length) sampleHeader = stats.header
+        for (const row of rows) {
           const key = `${row.date}\0${row.campaign_token}`
           const prev = aggregated.get(key)
           if (prev) {
@@ -301,25 +376,57 @@ Deno.serve(async (_req) => {
         product_page_views: r.product_page_views,
         synced_at: syncedAt,
       }))
-      const { error } = await supabase.from('ios_campaign_downloads').upsert(chunk, {
+      const { error, count } = await supabase.from('ios_campaign_downloads').upsert(chunk, {
         onConflict: 'date,campaign_token',
+        count: 'exact',
       })
       if (error) throw new Error(`upsert failed: ${error.message}`)
-      upserted += chunk.length
+      // Prefer attempted chunk length; PostgREST count can be null depending on Prefer headers.
+      upserted += typeof count === 'number' ? count : chunk.length
     }
 
-    return Response.json({
+    let warning: string | undefined
+    if (instances.length > 0 && segmentsFetched > 0 && dataRows > 0 && upserted === 0) {
+      warning =
+        `ASC returned ${dataRows} download row(s) across ${segmentsFetched} segment(s) but Campaign was blank on all of them ` +
+        `(${downloadsSkippedEmptyCampaign} download(s) skipped). ios_campaign_downloads stays empty until App Store Connect ` +
+        `populates Campaign (create Campaign Links for ct= tokens; Apple also privacy-suppresses campaigns with <~5 first-time downloads).`
+    } else if (instances.length > 0 && segmentsFetched === 0) {
+      warning = `Found ${instances.length} DAILY instance(s) but no segment URLs to download.`
+    }
+
+    const body = {
       ok: true,
       appId,
       requestId,
       reportId,
+      reportNames,
       instances: instances.length,
+      segmentsFetched,
+      segmentsMissingUrl,
+      tsvFilesParsed,
+      dataRows,
+      rowsAttempted: rows.length,
+      skippedEmptyCampaign,
+      skippedBadDateOrCount,
+      downloadsKept,
+      downloadsSkippedEmptyCampaign,
+      sampleHeader,
       upserted,
+      warning,
       ms: Date.now() - started,
-    })
+    }
+
+    if (warning) {
+      console.warn(LOG, JSON.stringify(body))
+    } else {
+      console.log(LOG, JSON.stringify(body))
+    }
+
+    return Response.json(body)
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e)
-    console.error('[sync-ios-campaign-downloads]', message)
+    console.error(LOG, message)
     return Response.json({ ok: false, error: message, ms: Date.now() - started }, { status: 500 })
   }
 })

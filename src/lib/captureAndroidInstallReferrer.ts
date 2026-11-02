@@ -11,6 +11,7 @@ import { Platform } from 'react-native';
 
 import { setPendingReferralCode, setPendingReferralSource } from './pendingReferralCode';
 import {
+  aliasPlayChannel,
   isCampaignPlayChannel,
   parseChannelFromPlayInstallReferrer,
 } from './playInstallReferrer';
@@ -104,14 +105,16 @@ export async function captureAndroidInstallReferrerOnce(): Promise<{
     return { ran: true, channel: null, reason: 'empty_referrer' };
   }
 
+  // Keep raw token for ORGANIC_UTM_SOURCES check (simcap-google ≠ google).
   const parsedChannel = parseChannelFromPlayInstallReferrer(referrerRaw);
-  await insertReferrerEvent({ referrerRaw, parsedChannel });
+  const channel = aliasPlayChannel(parsedChannel);
+  await insertReferrerEvent({ referrerRaw, parsedChannel: channel });
 
   if (isCampaignPlayChannel(parsedChannel)) {
-    await setPendingReferralCode(parsedChannel);
+    await setPendingReferralCode(channel);
     await setPendingReferralSource('link');
-    return { ran: true, channel: parsedChannel };
+    return { ran: true, channel };
   }
 
-  return { ran: true, channel: parsedChannel, reason: 'organic_or_no_utm_source' };
+  return { ran: true, channel, reason: 'organic_or_no_utm_source' };
 }

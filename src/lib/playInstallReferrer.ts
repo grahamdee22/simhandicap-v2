@@ -16,6 +16,22 @@ const ORGANIC_UTM_SOURCES = new Set([
 ]);
 
 /**
+ * Marketing-site Play links use utm_source=simcap-google for the google channel
+ * (Play treats bare "google" as organic). Alias back so referral_code / reporting
+ * stay on the shared channel label.
+ */
+const PLAY_CHANNEL_ALIASES: Record<string, string> = {
+  'simcap-google': 'google',
+};
+
+/** Map Play utm_source tokens onto canonical channel labels used in reporting. */
+export function aliasPlayChannel(channel: string | null | undefined): string | null {
+  const c = normalizeReferralCode(channel);
+  if (!c) return null;
+  return PLAY_CHANNEL_ALIASES[c] ?? c;
+}
+
+/**
  * Parse `utm_source` from a Play Install Referrer string.
  * Accepts raw query (`utm_source=kevin&utm_medium=…`), a full URL, or a single token.
  */

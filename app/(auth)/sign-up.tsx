@@ -150,22 +150,6 @@ export default function SignUpScreen() {
           <Text style={styles.contextTxt}>{t('auth.signUp.context')}</Text>
         </View>
 
-        {/* Shared above OAuth + email so a typed (or deep-linked) code is present when OAuth is tapped. */}
-        {REFERRAL_CODE_FIELD_ENABLED && (
-          <>
-            <Text style={styles.lbl}>{t('auth.signUp.referralCode')}</Text>
-            <TextInput
-              style={styles.input}
-              value={referralCode}
-              onChangeText={onReferralCodeChange}
-              placeholder={t('auth.signUp.referralPlaceholder')}
-              placeholderTextColor={colors.subtle}
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-          </>
-        )}
-
         <OAuthSignInButtons
           dividerLabel={t('auth.signUp.orCreateWithEmail')}
           referralCode={resolvedReferral?.code}
@@ -205,6 +189,22 @@ export default function SignUpScreen() {
           secureTextEntry
           textContentType="newPassword"
         />
+
+        {/* Below OAuth + email so one-tap sign-up is first; deep-link still prefills for OAuth. */}
+        {REFERRAL_CODE_FIELD_ENABLED && (
+          <>
+            <Text style={styles.lbl}>{t('auth.signUp.referralCode')}</Text>
+            <TextInput
+              style={styles.input}
+              value={referralCode}
+              onChangeText={onReferralCodeChange}
+              placeholder={t('auth.signUp.referralPlaceholder')}
+              placeholderTextColor={colors.subtle}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </>
+        )}
 
         <Pressable
           onPress={onSubmit}
