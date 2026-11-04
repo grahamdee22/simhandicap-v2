@@ -316,6 +316,3 @@ export function pickLatestHoleCardsByUser(
 export function expectedSideGameHoleCount(holesPerRound: HolesPerRound | string | null | undefined): number {
   return holesPerRound === '9' ? 9 : 18;
 }
-
-// silence unused in case tree-shaking; courseHoleToScorecardIndex kept for callers
-void courseHoleToScorecardIndex;
