@@ -1,5 +1,5 @@
 /**
- * Side-game unit tests (Skins, Stableford, Nassau).
+ * Side-game unit tests (Skins, Stableford, Nassau) + Part 2 verification cases.
  * Run: npm test
  */
 
@@ -18,6 +18,13 @@ import {
   computeStableford,
 } from '../stableford';
 import { holeNet, strokesReceivedOnHole } from '../netHandicap';
+import {
+  computeIndividualSideGamesBoard,
+  computeTeamSideGamesBoard,
+  netsFromGrossCard,
+  teamCardsFromTeamHoleScores,
+} from '../sideGameCompute';
+import type { DbTournamentTeamHoleScoreRow } from '../tournamentTypes';
 
 describe('sideGames format matrix', () => {
   it('offers Nassau only on Match Play; nothing on Stroke', () => {
@@ -78,6 +85,8 @@ describe('skins carryover', () => {
     assert.equal(after.holes[0].carried, true);
     assert.equal(after.holes[1].winnerId, 'a');
     assert.equal(after.holes[1].skinsWon, 2);
+    assert.equal(after.holes[2].winnerId, 'a');
+    assert.equal(after.totals.a, 3);
   });
 
   it('no-ops with fewer than 2 participants', () => {
@@ -98,7 +107,7 @@ describe('stableford R&A table', () => {
     assert.equal(stablefordPointsForHole(3, 4), 3);
   });
 
-  it('sums running totals', () => {
+  it('sums running totals when the field is complete', () => {
     const r = computeStableford(
       [
         { id: 'a', nets: [3, 5] },
@@ -109,6 +118,22 @@ describe('stableford R&A table', () => {
     );
     assert.equal(r.totals.a, 3 + 1);
     assert.equal(r.totals.b, 2 + 2);
+  });
+
+  it('does not credit a hole until every participant has a net', () => {
+    const r = computeStableford(
+      [
+        { id: 'a', nets: [3, 4] },
+        { id: 'b', nets: [4, null] },
+      ],
+      [4, 4],
+      2
+    );
+    assert.equal(r.holes[0].complete, true);
+    assert.equal(r.holes[1].complete, false);
+    assert.deepEqual(r.holes[1].pointsById, {});
+    assert.equal(r.totals.a, 3);
+    assert.equal(r.totals.b, 2);
   });
 });
 
@@ -128,11 +153,16 @@ describe('nassau segments', () => {
   });
 
   it('collapses to one overall bet on 9-hole', () => {
-    const results = Array.from({ length: 9 }, () => 'W' as const);
+    const results = Array.from({ length: 9 }, (_, i) =>
+      i < 5 ? ('W' as const) : ('L' as const)
+    );
     const r = computeNassau(results, 9);
     assert.equal(r.segments.length, 1);
     assert.equal(r.segments[0].key, 'overall');
     assert.equal(r.segments[0].winner, 'p1');
+    assert.equal(r.segments[0].p1Wins, 5);
+    assert.equal(r.segments[0].p2Wins, 4);
+    assert.equal(r.segments[0].halved, 0);
   });
 
   it('stays unresolved until segment is complete', () => {
@@ -150,5 +180,177 @@ describe('full-CH holeNet', () => {
     assert.equal(strokesReceivedOnHole(16, 2, si), 1); // SI 2
     assert.equal(holeNet(5, 7, 2, si), 4);
     assert.equal(holeNet(5, 1, 2, si), 5);
+  });
+});
+
+describe('use_handicap false flattens net to gross', () => {
+  it('netsFromGrossCard ignores course handicap when useHandicap is false', () => {
+    const holes = [
+      { hole_number: 1, gross_score: 5 },
+      { hole_number: 2, gross_score: 4 },
+    ];
+    const nets = netsFromGrossCard({
+      holes,
+      holeCount: 2,
+      useHandicap: false,
+      courseHandicap: 18,
+      strokeIndexByHole: Array.from({ length: 18 }, (_, i) => i + 1),
+      nine: null,
+    });
+    assert.deepEqual(nets, [5, 4]);
+  });
+
+  it('team cards use team_score (gross) when useHandicap is false', () => {
+    const row = (teamId: string, hole: number, gross: number, net: number): DbTournamentTeamHoleScoreRow => ({
+      id: `${teamId}-${hole}`,
+      league_id: 'L',
+      league_team_id: teamId,
+      round_date: '2026-01-01',
+      hole_number: hole,
+      team_score: gross,
+      team_net_score: net,
+      is_partial: false,
+      source_league_round_id: null,
+      created_at: '',
+      updated_at: '',
+    });
+    const cards = teamCardsFromTeamHoleScores(
+      [row('t1', 1, 4, 2), row('t1', 2, 5, 3), row('t2', 1, 5, 4), row('t2', 2, 4, 2)],
+      [
+        { id: 't1', displayName: 'A' },
+        { id: 't2', displayName: 'B' },
+      ],
+      2,
+      false
+    );
+    assert.deepEqual(cards[0].nets, [4, 5]);
+    assert.deepEqual(cards[1].nets, [5, 4]);
+  });
+});
+
+describe('team-level side games (Scramble / Best Ball)', () => {
+  it('drives Skins and Stableford from team_net_score, not individual rows', () => {
+    const row = (
+      teamId: string,
+      hole: number,
+      gross: number,
+      net: number,
+      partial = false
+    ): DbTournamentTeamHoleScoreRow => ({
+      id: `${teamId}-${hole}`,
+      league_id: 'L',
+      league_team_id: teamId,
+      round_date: '2026-01-01',
+      hole_number: hole,
+      team_score: gross,
+      team_net_score: net,
+      is_partial: partial,
+      source_league_round_id: null,
+      created_at: '',
+      updated_at: '',
+    });
+    // Team nets: t1 wins hole 1 (net 3 vs 4); hole 2 tied at 4 → carry; t2 wins hole 3 with pot
+    const cards = teamCardsFromTeamHoleScores(
+      [
+        row('t1', 1, 5, 3),
+        row('t1', 2, 5, 4),
+        row('t1', 3, 6, 5),
+        row('t2', 1, 5, 4),
+        row('t2', 2, 5, 4),
+        row('t2', 3, 5, 3),
+      ],
+      [
+        { id: 't1', displayName: 'Alpha' },
+        { id: 't2', displayName: 'Bravo' },
+      ],
+      3,
+      true
+    );
+    const board = computeTeamSideGamesBoard({
+      flags: { skins: true, stableford: true },
+      cards,
+      holeCount: 3,
+      pars: [4, 4, 4],
+    });
+    assert.ok(board.skins);
+    assert.equal(board.skins!.holes[0].winnerId, 't1');
+    assert.equal(board.skins!.holes[1].carried, true);
+    assert.equal(board.skins!.holes[2].winnerId, 't2');
+    assert.equal(board.skins!.holes[2].skinsWon, 2);
+    assert.equal(board.skins!.totals.t1, 1);
+    assert.equal(board.skins!.totals.t2, 2);
+    // Stableford: t1 nets 3,4,5 vs par 4 → 3+2+1=6; t2 4,4,3 → 2+2+3=7
+    assert.equal(board.stableford!.totals.t1, 6);
+    assert.equal(board.stableford!.totals.t2, 7);
+  });
+
+  it('treats is_partial holes as missing for comparable-net gating', () => {
+    const row = (
+      teamId: string,
+      hole: number,
+      net: number,
+      partial: boolean
+    ): DbTournamentTeamHoleScoreRow => ({
+      id: `${teamId}-${hole}`,
+      league_id: 'L',
+      league_team_id: teamId,
+      round_date: '2026-01-01',
+      hole_number: hole,
+      team_score: net,
+      team_net_score: net,
+      is_partial: partial,
+      source_league_round_id: null,
+      created_at: '',
+      updated_at: '',
+    });
+    const cards = teamCardsFromTeamHoleScores(
+      [
+        row('t1', 1, 3, false),
+        row('t1', 2, 4, true),
+        row('t2', 1, 4, false),
+        row('t2', 2, 3, false),
+      ],
+      [
+        { id: 't1', displayName: 'Alpha' },
+        { id: 't2', displayName: 'Bravo' },
+      ],
+      2,
+      true
+    );
+    assert.equal(cards[0].nets[1], null);
+    const board = computeTeamSideGamesBoard({
+      flags: { skins: true, stableford: true },
+      cards,
+      holeCount: 2,
+      pars: [4, 4],
+    });
+    assert.equal(board.skins!.holes[0].awarded, true);
+    assert.equal(board.skins!.holes[1].pending, true);
+    assert.equal(board.stableford!.holes[1].complete, false);
+    assert.equal(board.stableford!.totals.t1, 3);
+    assert.equal(board.stableford!.totals.t2, 2);
+  });
+});
+
+describe('side games leave core standings untouched (additive flags only)', () => {
+  it('empty flags produce null boards', () => {
+    const board = computeIndividualSideGamesBoard({
+      flags: {},
+      cards: [
+        {
+          userId: 'u1',
+          displayName: 'A',
+          holes: [{ hole_number: 1, gross_score: 4 }],
+          courseHandicap: 10,
+        },
+      ],
+      holeCount: 1,
+      useHandicap: true,
+      strokeIndexByHole: Array.from({ length: 18 }, (_, i) => i + 1),
+      nine: null,
+      pars: [4],
+    });
+    assert.equal(board.skins, null);
+    assert.equal(board.stableford, null);
   });
 });

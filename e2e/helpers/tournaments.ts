@@ -220,6 +220,8 @@ function futureRangeForFormat(
   return { startYmd: ymdUTC(start), endYmd: ymdUTC(end) };
 }
 
+export type SideGameWizardKey = 'skins' | 'nassau' | 'stableford';
+
 /**
  * Walk the create-tournament wizard for the given format (18 holes).
  * Caller must already be on Basic info and have dialog auto-accept registered.
@@ -230,7 +232,16 @@ function futureRangeForFormat(
  */
 export async function completeTournamentWizard(
   page: Page,
-  opts: { format: FormatKey; name: string }
+  opts: {
+    format: FormatKey;
+    name: string;
+    /** Side games to enable on the post-format step (Match/Scramble/Best Ball). */
+    sideGames?: SideGameWizardKey[];
+    /** When false, turns off handicap scoring on Settings. Default true. */
+    useHandicap?: boolean;
+    /** Stop on Review & Launch without clicking Launch (for summary assertions). */
+    stopAtReview?: boolean;
+  }
 ): Promise<void> {
   await page.getByPlaceholder('Spring League').fill(opts.name);
   // Format title may also appear in Social chrome still mounted behind the wizard on web.
@@ -239,6 +250,18 @@ export async function completeTournamentWizard(
     .last()
     .click();
   await clickContinue(page);
+
+  // Side games (skipped for Group Challenges; always present for regular tournaments)
+  await expect(page.getByText('Side games', { exact: true }).first()).toBeVisible({
+    timeout: 20_000,
+  });
+  for (const key of opts.sideGames ?? []) {
+    const label =
+      key === 'skins' ? 'Skins' : key === 'nassau' ? 'Nassau' : 'Stableford';
+    await page.getByText(label, { exact: true }).first().click();
+  }
+  const skipOrContinue = page.getByText(/^(Continue|Skip — no side games)$/).last();
+  await skipOrContinue.click();
 
   // Players
   await expect(page.getByText("Who's playing?", { exact: true })).toBeVisible();
@@ -255,6 +278,19 @@ export async function completeTournamentWizard(
   // Settings
   await expect(page.getByText('Settings', { exact: true })).toBeVisible({ timeout: 20_000 });
   await page.getByText('18 holes', { exact: true }).click().catch(() => undefined);
+  if (opts.useHandicap === false) {
+    const row = page
+      .locator('div')
+      .filter({ hasText: 'Use SimCap handicap' })
+      .filter({ has: page.getByRole('switch') })
+      .first();
+    const sw = row.getByRole('switch');
+    await expect(sw).toBeVisible({ timeout: 15_000 });
+    if (await sw.isChecked()) {
+      await sw.click();
+    }
+    await expect(page.getByText('Off', { exact: true }).first()).toBeVisible();
+  }
   await pickCoursePebble(page);
   if (opts.format !== 'stroke') {
     let placed = false;
@@ -283,6 +319,8 @@ export async function completeTournamentWizard(
   }
 
   await expect(page.getByText('Review & Launch', { exact: true })).toBeVisible();
+  if (opts.stopAtReview) return;
+
   await page.getByText('Launch Tournament', { exact: true }).click();
 
   // Success alert auto-accepted; land back on Social / groups

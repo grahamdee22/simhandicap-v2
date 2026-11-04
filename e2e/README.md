@@ -42,3 +42,10 @@ npm run seed:group-challenge-qa
 | Dual admins | Graham (manual QA) + Walter White (Playwright) |
 
 **Documented gap:** Verified-mode screenshot upload + admin approval is not automated (file picker). The Verified wizard asserts mode copy / review summary only.
+
+### Side games (Skins / Nassau / Stableford)
+
+Spec: `side-games.spec.ts`.
+
+- Pure scoring regressions (carryover + edit recompute, partial-net gating, `use_handicap=false`, team-level Scramble/Best Ball nets, 9-hole Nassau) import `src/lib` modules directly.
+- UI smoke creates a Scramble with Skins + Stableford and handicaps off, then asserts the Side games section on the tournament detail screen.

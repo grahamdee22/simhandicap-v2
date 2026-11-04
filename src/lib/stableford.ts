@@ -38,9 +38,8 @@ export type StablefordResult = {
 };
 
 /**
- * Running Stableford totals. Points are credited per hole as soon as that
- * participant has a net (partial-friendly for display), but `complete` flags
- * whether the whole field has posted for the hole (Skins-style gating for UI).
+ * Running Stableford totals. Same comparable-net gating as Skins: a hole only
+ * credits points once every participant has a net for that hole.
  */
 export function computeStableford(
   participants: StablefordParticipant[],
@@ -55,15 +54,20 @@ export function computeStableford(
     const par = pars[i] ?? 4;
     const pointsById: Record<string, number> = {};
     let complete = participants.length > 0;
+    const pending: { id: string; pts: number }[] = [];
     for (const p of participants) {
       const net = p.nets[i];
       if (net == null || !Number.isFinite(net)) {
         complete = false;
         continue;
       }
-      const pts = stablefordPointsForHole(net, par);
-      pointsById[p.id] = pts;
-      totals[p.id] = (totals[p.id] ?? 0) + pts;
+      pending.push({ id: p.id, pts: stablefordPointsForHole(net, par) });
+    }
+    if (complete) {
+      for (const row of pending) {
+        pointsById[row.id] = row.pts;
+        totals[row.id] = (totals[row.id] ?? 0) + row.pts;
+      }
     }
     holes.push({ holeNumber: i + 1, pointsById, complete });
   }
