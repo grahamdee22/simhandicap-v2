@@ -798,6 +798,20 @@
       "tournamentName": "Nombre del torneo",
       "namePlaceholder": "Liga de primavera",
       "format": "Formato",
+      "sideGames": {
+        "title": "Juegos secundarios",
+        "helper": "Opcional. Puntuación de bragging rights calculada automáticamente a partir de los hoyos — nunca cambia el resultado principal del torneo.",
+        "noneForFormat": "Los juegos secundarios aún no están disponibles en Stroke Play. Elige Match Play, Scramble o Best Ball para activar Skins o Stableford.",
+        "skins": "Skins",
+        "skinsSub": "El neto más bajo en cada hoyo gana. Los empates se acumulan al siguiente hoyo.",
+        "nassau": "Nassau",
+        "nassauSub": "Ida, vuelta y total frente a tu rival del cuadro (una sola apuesta global en eventos de 9 hoyos).",
+        "stableford": "Stableford",
+        "stablefordSub": "Puntos por hoyo frente al par (tabla estándar R&A).",
+        "skip": "Omitir — sin juegos secundarios",
+        "summaryNone": "Sin juegos secundarios",
+        "summaryList": "Juegos secundarios: {{list}}"
+      },
       "formats": {
         "stroke": {
           "title": "Stroke Play",
@@ -991,7 +1005,20 @@
       "colW": "G",
       "colL": "P",
       "colH": "E",
-      "colPts": "Pts"
+      "colPts": "Pts",
+      "sideGames": {
+        "title": "Juegos secundarios",
+        "sub": "Solo bragging rights — separado del resultado del torneo.",
+        "skins": "Skins",
+        "skinsEmpty": "Aún no hay skins. Se otorgan cuando cada jugador o equipo tiene un neto en el hoyo.",
+        "skinsCount": "{{count}} skins",
+        "skinsPot": "{{count}} skin(s) se acumulan al siguiente hoyo",
+        "stableford": "Stableford",
+        "stablefordEmpty": "Aún no hay puntos Stableford — aparecen al registrar los hoyos.",
+        "stablefordPoints": "{{count}} pts",
+        "nassau": "Nassau",
+        "nassauHint": "Ida, vuelta y total frente a tu rival del cuadro — abre un partido para ver resultados."
+      }
     },
     "manage": {
       "cannotManage": "Solo el creador del grupo o un administrador puede administrar este torneo.",
@@ -1064,7 +1091,16 @@
       "logRoundHint": "Registra una ronda e ingresa los scores brutos hoyo por hoyo para registrar tu partido.",
       "holeResultW": "G",
       "holeResultL": "P",
-      "holeResultH": "E"
+      "holeResultH": "E",
+      "nassauTitle": "Nassau",
+      "nassauSub": "Juego secundario frente a tu rival del cuadro — solo bragging rights.",
+      "nassauFront": "Ida (1–9)",
+      "nassauBack": "Vuelta (10–18)",
+      "nassauOverall": "Total",
+      "nassauPending": "Pendiente",
+      "nassauWinner": "{{name}}",
+      "nassauHalved": "Empate",
+      "nassauRecord": "{{p1}}–{{p2}}–{{h}}"
     },
     "holes": {
       "scrambleBlocked": "Solo el anotador designado puede ingresar los scores de hoyo del equipo en este torneo.",

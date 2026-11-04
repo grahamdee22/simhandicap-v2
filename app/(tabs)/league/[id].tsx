@@ -16,12 +16,15 @@ import { useAuth } from '../../../src/auth/AuthContext';
 import { isSocialGroupManager } from '../../../src/lib/socialGroupCreator';
 import { ContentWidth } from '../../../src/components/ContentWidth';
 import { MatchPlayBracketSection } from '../../../src/components/MatchPlayBracketSection';
+import { TournamentSideGamesSection } from '../../../src/components/TournamentSideGamesSection';
 import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { resolveSocialGroupsAccessToken } from '../../../src/lib/socialGroups';
 import {
   fetchLeagueBundle,
+  isActiveLeagueEntry,
+  leagueSideGames,
   syncLeagueStatuses,
   type LeagueBundle,
 } from '../../../src/lib/leagues';
@@ -32,7 +35,11 @@ import {
   type DbLeagueMatchPairingRow,
 } from '../../../src/lib/matchPlayTournamentPairings';
 import { fetchTeamHoleScoresForLeague } from '../../../src/lib/tournamentTeamScores';
-import type { DbTournamentTeamHoleScoreRow } from '../../../src/lib/tournamentTypes';
+import { fetchTournamentHoleScoresForLeague } from '../../../src/lib/tournamentHoleScores';
+import type {
+  DbTournamentHoleScoreRow,
+  DbTournamentTeamHoleScoreRow,
+} from '../../../src/lib/tournamentTypes';
 import {
   computeLeagueStandings,
   formatLeagueDateRange,
@@ -42,6 +49,19 @@ import {
   leagueDaysRemaining,
 } from '../../../src/lib/leagueStandings';
 import { getCourseById } from '../../../src/lib/courses';
+import { hasAnySideGame } from '../../../src/lib/sideGames';
+import {
+  computeIndividualSideGamesBoard,
+  computeTeamSideGamesBoard,
+  courseHandicapForSideGame,
+  expectedSideGameHoleCount,
+  parsForSideGame,
+  pickLatestHoleCardsByUser,
+  strokeIndexForSideGame,
+  teamCardsFromTeamHoleScores,
+  type SideGamesBoard,
+} from '../../../src/lib/sideGameCompute';
+import { fetchSideGameRoundSnaps } from '../../../src/lib/sideGameRoundSnaps';
 import { useResponsive } from '../../../src/lib/responsive';
 import { isSupabaseConfigured, supabase } from '../../../src/lib/supabase';
 import { useAppStore } from '../../../src/store/useAppStore';
@@ -60,6 +80,10 @@ export default function LeagueDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [pairings, setPairings] = useState<DbLeagueMatchPairingRow[]>([]);
   const [teamHoleScores, setTeamHoleScores] = useState<DbTournamentTeamHoleScoreRow[]>([]);
+  const [mpHoleScores, setMpHoleScores] = useState<DbTournamentHoleScoreRow[]>([]);
+  const [roundIndexByRoundId, setRoundIndexByRoundId] = useState<Record<string, number | null>>(
+    {}
+  );
   const [lowNetInfoOpen, setLowNetInfoOpen] = useState(false);
 
   const group = useMemo(
@@ -86,22 +110,45 @@ export default function LeagueDetailScreen() {
       const synced = await syncLeagueStatuses([res.data.league], accessToken);
       const league = synced[0] ?? res.data.league;
       setBundle({ ...res.data, league });
+      const flags = leagueSideGames(league);
       if (league.format === 'match_play') {
         const pr = await fetchLeagueMatchPairings(league.id, accessToken);
         setPairings(pr.data ?? []);
         setTeamHoleScores([]);
+        if (hasAnySideGame(flags)) {
+          const roundIds = res.data.rounds.map((r) => r.id);
+          const holes = await fetchTournamentHoleScoresForLeague(roundIds, accessToken);
+          setMpHoleScores(holes.data ?? []);
+          const linkedRoundIds = res.data.rounds.map((r) => r.round_id);
+          const snaps = await fetchSideGameRoundSnaps(linkedRoundIds, accessToken);
+          const idxMap: Record<string, number | null> = {};
+          for (const lr of res.data.rounds) {
+            const snap = (snaps.data ?? []).find((s) => s.id === lr.round_id);
+            idxMap[lr.id] = snap?.simcap_index_at_time ?? null;
+          }
+          setRoundIndexByRoundId(idxMap);
+        } else {
+          setMpHoleScores([]);
+          setRoundIndexByRoundId({});
+        }
       } else if (league.format === 'best_ball' || league.format === 'scramble') {
         setPairings([]);
+        setMpHoleScores([]);
+        setRoundIndexByRoundId({});
         const th = await fetchTeamHoleScoresForLeague(league.id, accessToken);
         setTeamHoleScores(th.data ?? []);
       } else {
         setPairings([]);
         setTeamHoleScores([]);
+        setMpHoleScores([]);
+        setRoundIndexByRoundId({});
       }
     } else {
       setBundle(null);
       setPairings([]);
       setTeamHoleScores([]);
+      setMpHoleScores([]);
+      setRoundIndexByRoundId({});
     }
     setLoading(false);
   }, [leagueId]);
@@ -245,6 +292,88 @@ export default function LeagueDetailScreen() {
       ? bundle.teams.find((team) => team.id === entry.league_team_id) ?? null
       : null;
   }, [bundle, user?.id]);
+
+  const sideGameFlags = useMemo(
+    () => (bundle ? leagueSideGames(bundle.league) : {}),
+    [bundle]
+  );
+
+  const sideGamesBoard = useMemo((): SideGamesBoard | null => {
+    if (!bundle || !hasAnySideGame(sideGameFlags)) return null;
+    const league = bundle.league;
+    const holeCount = expectedSideGameHoleCount(league.holes_per_round);
+    const course = league.course_id ? getCourseById(league.course_id) ?? null : null;
+    const nine = league.match_play_nine;
+    const pars = parsForSideGame(course, holeCount, nine);
+    const useHandicap = league.use_handicap !== false;
+
+    if (league.format === 'scramble' || league.format === 'best_ball') {
+      const teams = bundle.teams.map((team) => ({
+        id: team.id,
+        displayName: team.name,
+      }));
+      const cards = teamCardsFromTeamHoleScores(
+        teamHoleScores,
+        teams,
+        holeCount,
+        useHandicap
+      );
+      return computeTeamSideGamesBoard({
+        flags: sideGameFlags,
+        cards,
+        holeCount,
+        pars,
+      });
+    }
+
+    if (league.format === 'match_play') {
+      const cardsByUser = pickLatestHoleCardsByUser(mpHoleScores, holeCount);
+      const strokeIndex = strokeIndexForSideGame(course);
+      const holesPlayed =
+        holeCount === 9 ? (nine === 'back' ? 'back' : 'front') : '18';
+      const activeEntries = bundle.entries.filter(isActiveLeagueEntry);
+      const cards = activeEntries
+        .map((entry) => {
+          const holes = cardsByUser.get(entry.user_id);
+          if (!holes) return null;
+          const lr = bundle.rounds
+            .filter((r) => r.user_id === entry.user_id)
+            .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))[0];
+          const index = lr ? roundIndexByRoundId[lr.id] ?? null : null;
+          return {
+            userId: entry.user_id,
+            displayName: displayNames[entry.user_id] ?? t('league.create.playerFallback'),
+            holes,
+            courseHandicap: courseHandicapForSideGame({
+              index,
+              useHandicap,
+              course,
+              holesPlayed,
+            }),
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c != null);
+      return computeIndividualSideGamesBoard({
+        flags: sideGameFlags,
+        cards,
+        holeCount,
+        useHandicap,
+        strokeIndexByHole: strokeIndex,
+        nine,
+        pars,
+      });
+    }
+
+    return null;
+  }, [
+    bundle,
+    sideGameFlags,
+    teamHoleScores,
+    mpHoleScores,
+    roundIndexByRoundId,
+    displayNames,
+    t,
+  ]);
 
   const isScrambleScorer = useMemo(() => {
     if (!myScrambleTeam || !user?.id) return false;
@@ -557,6 +686,8 @@ export default function LeagueDetailScreen() {
         </View>
         ) : null}
 
+        <TournamentSideGamesSection flags={sideGameFlags} board={sideGamesBoard} />
+
         {(myStanding || myTeamStanding || user?.id) && !isBracketMp ? (
           <View style={styles.myStats}>
             <Text style={styles.myStatsTitle}>{t('league.detail.myStats')}</Text>
@@ -766,11 +897,12 @@ const styles = StyleSheet.create({
   colRank: { width: 28 },
   colName: { flex: 1 },
   colNameMp: { flex: 1, paddingRight: 4 },
-  colR: { width: 36, textAlign: 'center' },
+  colR: { width: 32, textAlign: 'center' },
   colMp: { width: 28, textAlign: 'center', fontSize: 12 },
   colPts: { width: 32, textAlign: 'right', fontSize: 12 },
-  colScore: { width: 72, textAlign: 'right' },
-  colGross: { width: 48, textAlign: 'right' },
+  /** Wide enough for "LOW NET" + ⓘ without colliding with GROSS on team boards. */
+  colScore: { width: 92, textAlign: 'right', flexShrink: 0 },
+  colGross: { width: 48, textAlign: 'right', flexShrink: 0 },
   thLowNetRow: {
     flexDirection: 'row',
     alignItems: 'center',

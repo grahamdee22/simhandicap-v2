@@ -22,9 +22,15 @@ import {
   type MatchPlayPairingMethod,
 } from './tournamentTypes';
 import type { HolesPlayed } from './nineHoleRating';
+import {
+  normalizeSideGames,
+  sideGamesPayload,
+  type LeagueSideGames,
+} from './sideGames';
 
 export type { HoleEntryStatus, MatchPlayPairingMethod } from './tournamentTypes';
 export { isHoleByHoleLeagueFormat } from './tournamentTypes';
+export type { LeagueSideGames } from './sideGames';
 
 export const LEAGUE_FORMATS = ['stroke', 'match_play', 'scramble', 'best_ball'] as const;
 export type LeagueFormat = (typeof LEAGUE_FORMATS)[number];
@@ -59,9 +65,18 @@ export type DbLeagueRow = {
   match_play_nine: 'front' | 'back' | null;
   course_id: string | null;
   season_id?: string | null;
+  /** Enabled side games (Skins / Nassau / Stableford). Empty = none. */
+  side_games?: LeagueSideGames | null;
   created_at: string;
   updated_at: string;
 };
+
+/** Normalized side-game flags from a league row. */
+export function leagueSideGames(league: {
+  side_games?: LeagueSideGames | null;
+}): LeagueSideGames {
+  return normalizeSideGames(league.side_games);
+}
 
 export type DbLeagueTeamRow = {
   id: string;
@@ -485,6 +500,8 @@ export type CreateLeagueInput = {
   matchPlayNine?: 'front' | 'back' | null;
   courseId?: string | null;
   seasonId?: string | null;
+  /** Optional side games (filtered by format before insert). */
+  sideGames?: LeagueSideGames | null;
 };
 
 export async function createLeague(
@@ -526,6 +543,7 @@ export async function createLeague(
       input.format === 'match_play' ? (input.matchPlayNine ?? null) : null,
     course_id: input.courseId ?? null,
     season_id: input.seasonId ?? null,
+    side_games: sideGamesPayload(normalizeSideGames(input.sideGames)),
   };
 
   let league: DbLeagueRow | null = null;

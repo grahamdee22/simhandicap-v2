@@ -39,6 +39,13 @@ import {
 import { fetchCourseAliases, type CourseAlias } from '../../../src/lib/courseAliases';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { createLeague, fetchLeaguesForGroup, type DbLeagueRow, type LeagueFormat } from '../../../src/lib/leagues';
+import {
+  availableSideGamesForFormat,
+  filterSideGamesForFormat,
+  hasAnySideGame,
+  type LeagueSideGames,
+  type SideGameKey,
+} from '../../../src/lib/sideGames';
 import { dateRangesOverlap, formatLeagueDateRange, isLeagueActive } from '../../../src/lib/leagueStandings';
 import {
   createGroupChallenge,
@@ -128,6 +135,7 @@ function formatYmdDisplay(ymd: string): string {
 
 type WizardStep =
   | 'basic'
+  | 'sideGames'
   | 'opponent'
   | 'players'
   | 'teamCount'
@@ -185,6 +193,7 @@ export default function LeagueCreateScreen() {
   const [step, setStep] = useState<WizardStep>('basic');
   const [name, setName] = useState('');
   const [format, setFormat] = useState<LeagueFormat>('stroke');
+  const [sideGames, setSideGames] = useState<LeagueSideGames>({});
   const [isGroupChallenge, setIsGroupChallenge] = useState(false);
   const [opponentQuery, setOpponentQuery] = useState('');
   const [opponentResults, setOpponentResults] = useState<{ id: string; name: string }[]>([]);
@@ -526,15 +535,36 @@ export default function LeagueCreateScreen() {
   );
   const stepSequence = useMemo((): WizardStep[] => {
     if (isGroupChallenge) return ['basic', 'opponent', 'players', 'settings', 'review'];
-    if (needsTeams) return ['basic', 'players', 'teamCount', 'settings', 'teams', 'review'];
-    return ['basic', 'players', 'settings', 'review'];
+    if (needsTeams) {
+      return ['basic', 'sideGames', 'players', 'teamCount', 'settings', 'teams', 'review'];
+    }
+    return ['basic', 'sideGames', 'players', 'settings', 'review'];
   }, [isGroupChallenge, needsTeams]);
+
+  const sideGameOptions = useMemo(
+    () => availableSideGamesForFormat(format),
+    [format]
+  );
+
+  const setSideGameFlag = useCallback((key: SideGameKey, on: boolean) => {
+    setSideGames((prev) => {
+      const next = { ...prev };
+      if (on) next[key] = true;
+      else delete next[key];
+      return filterSideGamesForFormat(next, format);
+    });
+  }, [format]);
+
+  useEffect(() => {
+    setSideGames((prev) => filterSideGamesForFormat(prev, format));
+  }, [format]);
 
   const enableGroupChallenge = useCallback(
     (on: boolean) => {
       setIsGroupChallenge(on);
       if (!on) return;
       setFormat('stroke');
+      setSideGames({});
       setUseHandicap(true);
       setJoinSeason(false);
       setOpponentGroup(null);
@@ -1084,6 +1114,7 @@ export default function LeagueCreateScreen() {
           matchPlayNine: isMatchPlay && holesPerRound === '9' ? matchPlayNine : null,
           courseId: tournamentCourseId,
           seasonId: activeSeason && joinSeason ? activeSeason.id : null,
+          sideGames: filterSideGamesForFormat(sideGames, format),
           matchPlayMatchesThatCount: isMatchPlay ? 1 : null,
           scrambleHandicapOverride: isScramble
             ? scrambleHandicapOverride.trim()
@@ -1254,9 +1285,59 @@ export default function LeagueCreateScreen() {
             <Pressable
               style={[styles.primaryBtn, !name.trim() && styles.btnDisabled]}
               disabled={!name.trim()}
-              onPress={() => goToStep(isGroupChallenge ? 'opponent' : 'players')}
+              onPress={() => goToStep(isGroupChallenge ? 'opponent' : 'sideGames')}
             >
               <Text style={styles.primaryBtnTxt}>{t('common.continue')}</Text>
+            </Pressable>
+          </>
+        ) : null}
+
+        {step === 'sideGames' ? (
+          <>
+            <Text style={styles.head}>{t('league.create.sideGames.title')}</Text>
+            <Text style={styles.helper}>{t('league.create.sideGames.helper')}</Text>
+            {sideGameOptions.length === 0 ? (
+              <Text style={[styles.helper, { marginTop: 12 }]}>
+                {t('league.create.sideGames.noneForFormat')}
+              </Text>
+            ) : (
+              <View style={{ marginTop: 8 }}>
+                {sideGameOptions.map((key) => {
+                  const on = !!sideGames[key];
+                  return (
+                    <Pressable
+                      key={key}
+                      style={[styles.formatCard, on && styles.formatCardOn]}
+                      onPress={() => setSideGameFlag(key, !on)}
+                    >
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.formatTitle}>
+                          {t(`league.create.sideGames.${key}`)}
+                        </Text>
+                        <Text style={styles.formatSub}>
+                          {t(`league.create.sideGames.${key}Sub`)}
+                        </Text>
+                      </View>
+                      <Switch
+                        value={on}
+                        onValueChange={(v) => setSideGameFlag(key, v)}
+                        trackColor={{ false: colors.border, true: colors.sage }}
+                        thumbColor={colors.surface}
+                      />
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+            <Pressable
+              style={styles.primaryBtn}
+              onPress={() => goToStep('players')}
+            >
+              <Text style={styles.primaryBtnTxt}>
+                {hasAnySideGame(sideGames)
+                  ? t('common.continue')
+                  : t('league.create.sideGames.skip')}
+              </Text>
             </Pressable>
           </>
         ) : null}
@@ -2292,6 +2373,18 @@ export default function LeagueCreateScreen() {
               {notes.trim() ? (
                 <Text style={styles.summaryMeta}>
                   {t('league.create.notesPrefix', { notes: notes.trim() })}
+                </Text>
+              ) : null}
+              {!isGroupChallenge ? (
+                <Text style={styles.summaryMeta}>
+                  {hasAnySideGame(sideGames)
+                    ? t('league.create.sideGames.summaryList', {
+                        list: (['skins', 'nassau', 'stableford'] as const)
+                          .filter((k) => sideGames[k])
+                          .map((k) => t(`league.create.sideGames.${k}`))
+                          .join(', '),
+                      })
+                    : t('league.create.sideGames.summaryNone')}
                 </Text>
               ) : null}
               {activeSeason && !isGroupChallenge ? (

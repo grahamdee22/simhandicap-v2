@@ -7,7 +7,7 @@ import { ContentWidth } from '../../../src/components/ContentWidth';
 import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
-import { fetchLeagueBundle, type LeagueBundle } from '../../../src/lib/leagues';
+import { fetchLeagueBundle, leagueSideGames, type LeagueBundle } from '../../../src/lib/leagues';
 import { formatMatchPlayStatus } from '../../../src/lib/matchPlayTournament';
 import {
   fetchLeagueMatchPairingById,
@@ -16,9 +16,11 @@ import {
   type DbLeagueMatchPairingRow,
   type LeagueMatchPairingStatus,
 } from '../../../src/lib/matchPlayTournamentPairings';
+import { computeNassau } from '../../../src/lib/nassau';
+import { expectedSideGameHoleCount } from '../../../src/lib/sideGameCompute';
 import { fetchTournamentHoleScores } from '../../../src/lib/tournamentHoleScores';
 import { resolveTournamentAccessToken } from '../../../src/lib/tournamentApi';
-import type { DbTournamentHoleScoreRow } from '../../../src/lib/tournamentTypes';
+import type { DbTournamentHoleScoreRow, MatchPlayHoleResult } from '../../../src/lib/tournamentTypes';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
@@ -171,6 +173,7 @@ export default function LeagueMatchDetailScreen() {
   const matchStatusLine = useMemo(() => {
     if (!pairing || pairing.status === 'scheduled') return null;
     const net = pairing.holes_won_p1 - pairing.holes_won_p2;
+    const holeCount = expectedSideGameHoleCount(bundle?.league.holes_per_round);
     return formatMatchPlayStatus(
       {
         wins: pairing.holes_won_p1,
@@ -178,9 +181,44 @@ export default function LeagueMatchDetailScreen() {
         halved: pairing.holes_halved,
         net_holes: net,
       },
-      18
+      holeCount,
+      holeCount
     );
-  }, [pairing]);
+  }, [pairing, bundle?.league.holes_per_round]);
+
+  const nassauEnabled = useMemo(() => {
+    if (!bundle) return false;
+    return !!leagueSideGames(bundle.league).nassau;
+  }, [bundle]);
+
+  const nassauResult = useMemo(() => {
+    if (!nassauEnabled || !bundle) return null;
+    const holeCount = expectedSideGameHoleCount(bundle.league.holes_per_round);
+    const p1ByHole = new Map(p1Holes.map((h) => [h.hole_number, h]));
+    const p2ByHole = new Map(p2Holes.map((h) => [h.hole_number, h]));
+    const results: (MatchPlayHoleResult | null)[] = [];
+    for (let n = 1; n <= holeCount; n += 1) {
+      const h1 = p1ByHole.get(n);
+      const h2 = p2ByHole.get(n);
+      if (
+        h1?.gross_score == null ||
+        h2?.gross_score == null ||
+        !Number.isFinite(h1.gross_score) ||
+        !Number.isFinite(h2.gross_score)
+      ) {
+        results.push(null);
+        continue;
+      }
+      if (h1.result === 'W' || h1.result === 'L' || h1.result === 'H') {
+        results.push(h1.result);
+        continue;
+      }
+      if (h1.gross_score < h2.gross_score) results.push('W');
+      else if (h2.gross_score < h1.gross_score) results.push('L');
+      else results.push('H');
+    }
+    return computeNassau(results, holeCount);
+  }, [nassauEnabled, bundle, p1Holes, p2Holes]);
 
   if (loading) {
     return (
@@ -271,6 +309,50 @@ export default function LeagueMatchDetailScreen() {
           <View style={styles.tiebreakBox}>
             <Text style={styles.tiebreakTitle}>{t('league.match.bracketTiebreaker')}</Text>
             <Text style={styles.tiebreakLine}>{t('league.match.tiebreakerBody')}</Text>
+          </View>
+        ) : null}
+
+        {nassauEnabled && nassauResult ? (
+          <View style={styles.nassauCard}>
+            <Text style={styles.nassauTitle}>{t('league.match.nassauTitle')}</Text>
+            <Text style={styles.nassauSub}>{t('league.match.nassauSub')}</Text>
+            {nassauResult.segments.map((seg) => {
+              const labelKey =
+                seg.key === 'front'
+                  ? 'league.match.nassauFront'
+                  : seg.key === 'back'
+                    ? 'league.match.nassauBack'
+                    : 'league.match.nassauOverall';
+              let outcome = t('league.match.nassauPending');
+              if (seg.resolved) {
+                if (seg.winner === 'halved') outcome = t('league.match.nassauHalved');
+                else if (seg.winner === 'p1') {
+                  outcome = t('league.match.nassauWinner', { name: name1 });
+                } else if (seg.winner === 'p2') {
+                  outcome = t('league.match.nassauWinner', { name: name2 });
+                }
+              }
+              return (
+                <View key={seg.key} style={styles.nassauRow}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.nassauSeg}>{t(labelKey)}</Text>
+                    {seg.resolved &&
+                    seg.p1Wins != null &&
+                    seg.p2Wins != null &&
+                    seg.halved != null ? (
+                      <Text style={styles.nassauRecord}>
+                        {t('league.match.nassauRecord', {
+                          p1: seg.p1Wins,
+                          p2: seg.p2Wins,
+                          h: seg.halved,
+                        })}
+                      </Text>
+                    ) : null}
+                  </View>
+                  <Text style={styles.nassauOutcome}>{outcome}</Text>
+                </View>
+              );
+            })}
           </View>
         ) : null}
 
@@ -434,4 +516,26 @@ const styles = StyleSheet.create({
   },
   tiebreakTitle: { fontSize: 12, fontWeight: '700', color: colors.sage, textTransform: 'uppercase' },
   tiebreakLine: { fontSize: 13, color: colors.ink, marginTop: 6, lineHeight: 18 },
+  nassauCard: {
+    marginBottom: 16,
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  nassauTitle: { fontSize: 16, fontWeight: '700', color: colors.ink },
+  nassauSub: { fontSize: 12, color: colors.muted, marginTop: 4, marginBottom: 10 },
+  nassauRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: colors.border,
+    gap: 12,
+  },
+  nassauSeg: { fontSize: 14, fontWeight: '600', color: colors.ink },
+  nassauRecord: { fontSize: 12, color: colors.muted, marginTop: 2 },
+  nassauOutcome: { fontSize: 13, fontWeight: '700', color: colors.accent, textAlign: 'right' },
 });

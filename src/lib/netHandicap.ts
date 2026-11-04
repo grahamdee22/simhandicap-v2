@@ -158,6 +158,35 @@ export function holesForStrokes(strokeCount: number, strokeIndexByHole: number[]
   return out;
 }
 
+/**
+ * Strokes to subtract from gross on this hole (negative for plus handicaps).
+ * Full course-handicap allocation — used by Scramble/Best Ball and Skins/Stableford.
+ * Match Play relative stroke gifts stay in matchPlayGrossCompare / matchStrokeMath.
+ */
+export function strokesReceivedOnHole(
+  holeNumber: number,
+  courseHandicap: number,
+  strokeIndexByHole: number[] = DEFAULT_STROKE_INDEX_BY_HOLE
+): number {
+  if (!Number.isFinite(courseHandicap) || courseHandicap === 0) return 0;
+  if (courseHandicap > 0) {
+    return holesForStrokes(courseHandicap, strokeIndexByHole).filter((h) => h === holeNumber)
+      .length;
+  }
+  return -holesForStrokes(-courseHandicap, strokeIndexByHole).filter((h) => h === holeNumber)
+    .length;
+}
+
+/** Net for one hole given full course handicap and stroke index. */
+export function holeNet(
+  gross: number,
+  holeNumber: number,
+  courseHandicap: number,
+  strokeIndexByHole: number[] = DEFAULT_STROKE_INDEX_BY_HOLE
+): number {
+  return gross - strokesReceivedOnHole(holeNumber, courseHandicap, strokeIndexByHole);
+}
+
 /** Dedupe consecutive laps for display: "3, 5, 12 (2nd: 3, 5)" — keep simple sorted unique first pass + count */
 export function formatHolesStrokeSummary(strokeCount: number, strokeIndexByHole: number[]): string {
   const holes = holesForStrokes(strokeCount, strokeIndexByHole);

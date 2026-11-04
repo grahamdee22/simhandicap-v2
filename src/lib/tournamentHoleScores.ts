@@ -117,6 +117,30 @@ export async function fetchTournamentHoleScores(
   return { data: (data ?? []) as DbTournamentHoleScoreRow[], error: null };
 }
 
+/** All hole rows for a league (via league_rounds), ordered for side-game derive-on-read. */
+export async function fetchTournamentHoleScoresForLeague(
+  leagueRoundIds: string[],
+  accessToken?: string
+): Promise<{ data: DbTournamentHoleScoreRow[] | null; error: string | null }> {
+  if (leagueRoundIds.length === 0) return { data: [], error: null };
+  const inList = leagueRoundIds.map(encodeURIComponent).join(',');
+  const path = `tournament_hole_scores?league_round_id=in.(${inList})&order=hole_number.asc`;
+
+  if (accessToken) {
+    return restSelect<DbTournamentHoleScoreRow>(path, accessToken);
+  }
+
+  if (!supabase) return { data: null, error: 'Supabase is not configured' };
+  const { data, error } = await supabase
+    .from('tournament_hole_scores')
+    .select('*')
+    .in('league_round_id', leagueRoundIds)
+    .order('hole_number', { ascending: true });
+
+  if (error) return { data: null, error: error.message };
+  return { data: (data ?? []) as DbTournamentHoleScoreRow[], error: null };
+}
+
 export async function upsertTournamentHoleScores(
   leagueRoundId: string,
   holes: TournamentHoleInput[],

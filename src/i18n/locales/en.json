@@ -846,6 +846,20 @@
       "tournamentName": "Tournament name",
       "namePlaceholder": "Spring League",
       "format": "Format",
+      "sideGames": {
+        "title": "Side games",
+        "helper": "Optional. Bragging-rights scoring tracked automatically from hole scores — never changes the tournament’s main result.",
+        "noneForFormat": "Side games aren’t available for Stroke Play yet. Choose Match Play, Scramble, or Best Ball to enable Skins or Stableford.",
+        "skins": "Skins",
+        "skinsSub": "Lowest net on each hole wins. Ties carry to the next hole.",
+        "nassau": "Nassau",
+        "nassauSub": "Front 9, back 9, and overall vs your bracket opponent (one overall bet on 9-hole events).",
+        "stableford": "Stableford",
+        "stablefordSub": "Points vs par on each hole (standard R&A table).",
+        "skip": "Skip — no side games",
+        "summaryNone": "No side games",
+        "summaryList": "Side games: {{list}}"
+      },
       "formats": {
         "stroke": {
           "title": "Stroke Play",
@@ -1039,7 +1053,20 @@
       "colW": "W",
       "colL": "L",
       "colH": "H",
-      "colPts": "Pts"
+      "colPts": "Pts",
+      "sideGames": {
+        "title": "Side games",
+        "sub": "Bragging-rights scoring only — separate from the tournament result.",
+        "skins": "Skins",
+        "skinsEmpty": "No skins awarded yet. Skins pay when every player or team has a net on the hole.",
+        "skinsCount": "{{count}} skins",
+        "skinsPot": "{{count}} skin(s) carrying to the next hole",
+        "stableford": "Stableford",
+        "stablefordEmpty": "No Stableford points yet — points appear as hole scores are entered.",
+        "stablefordPoints": "{{count}} pts",
+        "nassau": "Nassau",
+        "nassauHint": "Front 9, back 9, and overall vs your bracket opponent — open a match for results."
+      }
     },
     "manage": {
       "cannotManage": "Only the group creator or an admin can manage this tournament.",
@@ -1112,7 +1139,16 @@
       "logRoundHint": "Log a round and enter gross scores hole-by-hole to record your match.",
       "holeResultW": "W",
       "holeResultL": "L",
-      "holeResultH": "H"
+      "holeResultH": "H",
+      "nassauTitle": "Nassau",
+      "nassauSub": "Side game vs your bracket opponent — bragging rights only.",
+      "nassauFront": "Front 9",
+      "nassauBack": "Back 9",
+      "nassauOverall": "Overall",
+      "nassauPending": "Pending",
+      "nassauWinner": "{{name}}",
+      "nassauHalved": "Halved",
+      "nassauRecord": "{{p1}}–{{p2}}–{{h}}"
     },
     "holes": {
       "scrambleBlocked": "Only the designated scorer can enter team hole scores for this tournament.",
