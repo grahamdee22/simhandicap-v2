@@ -623,7 +623,7 @@
     "proActive": "Your SimCap Pro subscription is active.",
     "proManage": "View plans and manage your subscription.",
     "matchHistoryA11y": "View full match history",
-    "matchPlayRecord": "Match play record",
+    "matchPlayRecord": "Head-to-head record",
     "matchRecordLbl": "W–L–D · stroke matches on SimCap",
     "forfeits": "Forfeits (matches you abandoned): {{count}}",
     "roundsActivity": "Rounds & activity",
@@ -1179,7 +1179,7 @@
     "section": {
       "match": {
         "title": "Head-to-Head",
-        "body": "Challenge any SimCap golfer to a head-to-head stroke play match from any simulator, anywhere. Net scores are calculated from your SimCap index and your tee."
+        "body": "Challenge any SimCap golfer to a head-to-head stroke play match from any simulator, anywhere. Net scores are calculated from each player's GHIN index and their tee."
       },
       "groups": {
         "title": "My Groups",
@@ -1363,7 +1363,7 @@
       "saveToIndex": "Save to index",
       "saveToIndexA11y": "Save to index",
       "savedNote": "This match is saved to your SimCap index.",
-      "note": "Lower net wins. Course handicaps use each player's SimCap index and their tee (rating / slope) vs course par, with strokes given on the hardest holes by stroke index — no round-logging difficulty modifier.",
+      "note": "Lower net wins. Course handicaps use each player's GHIN index and their tee (rating / slope) vs course par, with strokes given on the hardest holes by stroke index — no round-logging difficulty modifier.",
       "alerts": {
         "rematchTitle": "Rematch",
         "couldNotVerifyMatches": "Could not verify your matches.",
@@ -1722,7 +1722,7 @@
     "verificationRequired": "Verification required",
     "aboutAwaitingOpponentA11y": "About awaiting opponent",
     "awaitingOpponentExplainTitle": "Awaiting opponent",
-    "awaitingOpponentExplainBody": "Match Play doesn't use a shared scorecard — you and your opponent each enter your own hole-by-hole scores separately. This just means they haven't finished entering theirs yet. Nothing's broken and there's nothing for you to do.",
+    "awaitingOpponentExplainBody": "Stroke play doesn't use a shared scorecard — you and your opponent each enter your own hole-by-hole scores separately. This just means they haven't finished entering theirs yet. Nothing's broken and there's nothing for you to do.",
     "tapForDetails": "Tap for details",
     "tapForResults": "Tap for results",
     "tapToEnterScores": "Tap to enter scores",

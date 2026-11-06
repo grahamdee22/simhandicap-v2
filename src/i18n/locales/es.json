@@ -575,7 +575,7 @@
     "proActive": "Tu suscripción a SimCap Pro está activa.",
     "proManage": "Consulta los planes y administra tu suscripción.",
     "matchHistoryA11y": "Ver el historial completo de partidos",
-    "matchPlayRecord": "Récord de match play",
+    "matchPlayRecord": "Récord cara a cara",
     "matchRecordLbl": "G–P–E · partidos de stroke play en SimCap",
     "forfeits": "Abandonos (partidos que abandonaste): {{count}}",
     "roundsActivity": "Rondas y actividad",
@@ -1131,7 +1131,7 @@
     "section": {
       "match": {
         "title": "Cara a cara",
-        "body": "Reta a cualquier golfista de SimCap a un partido de stroke play cara a cara desde cualquier simulador, en cualquier lugar. Los scores netos se calculan a partir de tu índice SimCap y tu tee."
+        "body": "Reta a cualquier golfista de SimCap a un partido de stroke play cara a cara desde cualquier simulador, en cualquier lugar. Los scores netos se calculan a partir del índice GHIN de cada jugador y su tee."
       },
       "groups": {
         "title": "Mis grupos",
@@ -1315,7 +1315,7 @@
       "saveToIndex": "Guardar en el índice",
       "saveToIndexA11y": "Guardar en el índice",
       "savedNote": "Este partido está guardado en tu índice SimCap.",
-      "note": "Gana el neto más bajo. Los hándicaps de campo usan el índice SimCap de cada jugador y su tee (rating / slope) frente al par del campo, con golpes otorgados en los hoyos más difíciles según el índice de golpes; sin el modificador de dificultad del registro de rondas.",
+      "note": "Gana el neto más bajo. Los hándicaps de campo usan el índice GHIN de cada jugador y su tee (rating / slope) frente al par del campo, con golpes otorgados en los hoyos más difíciles según el índice de golpes; sin el modificador de dificultad del registro de rondas.",
       "alerts": {
         "rematchTitle": "Revancha",
         "couldNotVerifyMatches": "No se pudieron verificar tus partidos.",
@@ -1674,7 +1674,7 @@
     "verificationRequired": "Verificación requerida",
     "aboutAwaitingOpponentA11y": "Acerca de esperando al oponente",
     "awaitingOpponentExplainTitle": "Esperando al oponente",
-    "awaitingOpponentExplainBody": "Match Play no usa una tarjeta compartida: tú y tu oponente ingresan sus propios scores hoyo por hoyo por separado. Esto solo significa que el otro jugador aún no termina de ingresar los suyos. No hay ningún problema y no tienes nada que hacer.",
+    "awaitingOpponentExplainBody": "El stroke play no usa una tarjeta compartida: tú y tu oponente ingresan sus propios scores hoyo por hoyo por separado. Esto solo significa que el otro jugador aún no termina de ingresar los suyos. No hay ningún problema y no tienes nada que hacer.",
     "tapForDetails": "Toca para ver los detalles",
     "tapForResults": "Toca para ver los resultados",
     "tapToEnterScores": "Toca para ingresar los scores",

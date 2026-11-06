@@ -82,7 +82,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "SimCap needs photo access to upload a sim settings screenshot for Match Play.",
+          "photosPermission": "SimCap needs photo access to upload a sim settings screenshot for a head-to-head match.",
           "cameraPermission": "SimCap needs camera access to scan your GS Pro scorecard."
         }
       ],

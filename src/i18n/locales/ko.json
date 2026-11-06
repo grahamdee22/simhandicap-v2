@@ -575,7 +575,7 @@
     "proActive": "SimCap Pro 구독이 활성화되어 있어요.",
     "proManage": "요금제를 확인하고 구독을 관리해요.",
     "matchHistoryA11y": "전체 매치 기록 보기",
-    "matchPlayRecord": "매치 플레이 전적",
+    "matchPlayRecord": "헤드투헤드 전적",
     "matchRecordLbl": "승–패–무 · SimCap 스트로크 매치",
     "forfeits": "몰수패 (포기한 매치): {{count}}회",
     "roundsActivity": "라운드 및 활동",
@@ -1094,7 +1094,7 @@
     "section": {
       "match": {
         "title": "헤드투헤드",
-        "body": "어떤 시뮬레이터에서든, 어디에 있든 SimCap 골퍼에게 1:1 스트로크 플레이 매치를 신청해 보세요. 네트 스코어는 SimCap 인덱스와 티를 기준으로 계산해요."
+        "body": "어떤 시뮬레이터에서든, 어디에 있든 SimCap 골퍼에게 1:1 스트로크 플레이 매치를 신청해 보세요. 네트 스코어는 각 선수의 GHIN 인덱스와 티를 기준으로 계산해요."
       },
       "groups": {
         "title": "내 그룹",
@@ -1278,7 +1278,7 @@
       "saveToIndex": "인덱스에 저장",
       "saveToIndexA11y": "인덱스에 저장",
       "savedNote": "이 매치는 SimCap 인덱스에 저장됐어요.",
-      "note": "네트가 낮은 쪽이 이겨요. 코스 핸디캡은 각 선수의 SimCap 인덱스와 티(레이팅 / 슬로프), 코스 파를 기준으로 계산하고, 스트로크는 스트로크 인덱스에 따라 가장 어려운 홀부터 적용해요. 라운드 기록에 쓰이는 난이도 보정은 적용되지 않아요.",
+      "note": "네트가 낮은 쪽이 이겨요. 코스 핸디캡은 각 선수의 GHIN 인덱스와 티(레이팅 / 슬로프), 코스 파를 기준으로 계산하고, 스트로크는 스트로크 인덱스에 따라 가장 어려운 홀부터 적용해요. 라운드 기록에 쓰이는 난이도 보정은 적용되지 않아요.",
       "alerts": {
         "rematchTitle": "재대결",
         "couldNotVerifyMatches": "매치를 확인할 수 없어요.",
@@ -1637,7 +1637,7 @@
     "verificationRequired": "확인 필요",
     "aboutAwaitingOpponentA11y": "상대 대기 중 정보",
     "awaitingOpponentExplainTitle": "상대 대기 중",
-    "awaitingOpponentExplainBody": "매치 플레이에는 공동 스코어카드가 없어요. 나와 상대가 각자 홀별 스코어를 따로 입력해요. 이 상태는 상대가 아직 입력을 마치지 않았다는 뜻일 뿐이에요. 문제가 있는 게 아니고, 내가 할 일도 없어요.",
+    "awaitingOpponentExplainBody": "스트로크 플레이에는 공동 스코어카드가 없어요. 나와 상대가 각자 홀별 스코어를 따로 입력해요. 이 상태는 상대가 아직 입력을 마치지 않았다는 뜻일 뿐이에요. 문제가 있는 게 아니고, 내가 할 일도 없어요.",
     "tapForDetails": "탭하여 상세 보기",
     "tapForResults": "탭하여 결과 보기",
     "tapToEnterScores": "탭하여 스코어 입력",
