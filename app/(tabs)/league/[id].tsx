@@ -48,6 +48,7 @@ import {
   isTeamLeagueFormat,
   leagueDaysRemaining,
 } from '../../../src/lib/leagueStandings';
+import { todayLocalYmd } from '../../../src/lib/dates';
 import { getCourseById } from '../../../src/lib/courses';
 import { hasAnySideGame } from '../../../src/lib/sideGames';
 import {
@@ -398,7 +399,13 @@ export default function LeagueDetailScreen() {
   }
 
   const { league } = bundle;
-  const completed = league.status === 'completed' || !isLeagueActive(league);
+  const matchPlayAwaitingResult =
+    league.format === 'match_play' &&
+    league.status === 'active' &&
+    todayLocalYmd() > league.end_date;
+  const completed =
+    !matchPlayAwaitingResult &&
+    (league.status === 'completed' || !isLeagueActive(league));
   const isBracketMp = league.format === 'match_play' && league.match_play_pairing_method === 'bracket';
   const isLegacyMp = league.format === 'match_play' && !isBracketMp;
   const isTeamLeague = isTeamLeagueFormat(league.format);
@@ -421,7 +428,11 @@ export default function LeagueDetailScreen() {
               {t(`league.create.formats.${league.format}.title`)}
             </Text>
           </View>
-          {!completed ? (
+          {matchPlayAwaitingResult ? (
+            <View style={styles.pillMuted}>
+              <Text style={styles.pillMutedTxt}>{t('league.detail.needsResults')}</Text>
+            </View>
+          ) : !completed ? (
             <View style={styles.pillMuted}>
               <Text style={styles.pillMutedTxt}>
                 {t('league.detail.daysLeft', { count: leagueDaysRemaining(league) })}

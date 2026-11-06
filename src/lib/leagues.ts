@@ -7,7 +7,7 @@ import { todayLocalYmd } from './dates';
 import { supabase } from './supabase';
 import { currentIndexFromRounds, type GroupMember, type SimRound } from '../store/useAppStore';
 import { resolveEffectiveHandicap } from './effectiveHandicap';
-import { isLeagueReadyToAutoComplete } from './leagueCompletion';
+import { isLeagueReadyToAutoComplete, shouldAutoCompleteLeague } from './leagueCompletion';
 import { dateRangesOverlap } from './leagueStandings';
 import { fetchLeagueMatchPairings } from './matchPlayTournamentPairings';
 import { isUserDesignatedScorerForTeam } from './scrambleTournament';
@@ -130,6 +130,8 @@ export type ActiveTournamentOption = {
   groupId: string;
   groupName: string;
   format: LeagueFormat;
+  /** Match Play still open after its scheduled window. Opt-in defaults off. */
+  pastWindow?: boolean;
 };
 
 export function isTeamLeagueFormat(format: LeagueFormat): boolean {
@@ -254,9 +256,11 @@ export async function syncLeagueStatuses(
     const l = out[i];
     if (l.status !== 'active') continue;
 
-    let shouldComplete = l.end_date < today;
-
-    if (!shouldComplete) {
+    // Stroke, Scramble, and Best Ball close when the window ends.
+    // Match Play closes only when the bracket or pairings are decided.
+    const closesOnDate = l.format !== 'match_play' && l.end_date < today;
+    let ready = false;
+    if (!closesOnDate) {
       const bundleRes = await fetchLeagueBundle(l.id, token);
       if (bundleRes.data) {
         let pairings: Awaited<ReturnType<typeof fetchLeagueMatchPairings>>['data'] = [];
@@ -270,7 +274,7 @@ export async function syncLeagueStatuses(
           teamHoleScores = th.data ?? [];
         }
 
-        shouldComplete = isLeagueReadyToAutoComplete({
+        ready = isLeagueReadyToAutoComplete({
           league: l,
           teams: bundleRes.data.teams,
           entries: bundleRes.data.entries,
@@ -281,7 +285,7 @@ export async function syncLeagueStatuses(
       }
     }
 
-    if (shouldComplete) {
+    if (shouldAutoCompleteLeague(l, today, ready)) {
       await updateLeague(l.id, { status: 'completed' }, token);
       out[i] = { ...l, status: 'completed' };
     }
@@ -687,7 +691,9 @@ export async function fetchActiveTournamentsForUser(params: {
     const synced = await syncLeagueStatuses(leagues, params.accessToken);
     for (const league of synced) {
       if (league.status !== 'active') continue;
-      if (playedYmd < league.start_date || playedYmd > league.end_date) continue;
+      if (playedYmd < league.start_date) continue;
+      const pastWindow = playedYmd > league.end_date;
+      if (pastWindow && league.format !== 'match_play') continue;
       if (!leagueAcceptsLoggedHoles(league, params.holesPlayed, params.courseId)) continue;
       if (seen.has(league.id)) continue;
       const bundleRes = await fetchLeagueBundle(league.id, params.accessToken);
@@ -717,6 +723,7 @@ export async function fetchActiveTournamentsForUser(params: {
         groupId: group.id,
         groupName: group.name,
         format: league.format,
+        pastWindow: pastWindow || undefined,
       });
     }
   }

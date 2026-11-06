@@ -17,10 +17,10 @@ import {
   type LeagueMatchPairingStatus,
 } from '../../../src/lib/matchPlayTournamentPairings';
 import { computeNassau } from '../../../src/lib/nassau';
-import { expectedSideGameHoleCount } from '../../../src/lib/sideGameCompute';
+import { expectedSideGameHoleCount, nassauResultsFromScorecards } from '../../../src/lib/sideGameCompute';
 import { fetchTournamentHoleScores } from '../../../src/lib/tournamentHoleScores';
 import { resolveTournamentAccessToken } from '../../../src/lib/tournamentApi';
-import type { DbTournamentHoleScoreRow, MatchPlayHoleResult } from '../../../src/lib/tournamentTypes';
+import type { DbTournamentHoleScoreRow } from '../../../src/lib/tournamentTypes';
 import { useResponsive } from '../../../src/lib/responsive';
 import { useAppStore } from '../../../src/store/useAppStore';
 
@@ -34,11 +34,11 @@ function pairingStatusLabel(
 ): string {
   switch (status) {
     case 'scheduled':
-      return t('match.status.scheduled');
+      return t('matchPlay.status.scheduled');
     case 'in_progress':
-      return t('match.status.inProgress');
+      return t('matchPlay.status.inProgress');
     case 'complete':
-      return t('match.status.complete');
+      return t('matchPlay.status.complete');
     case 'halved':
       return t('league.match.statusHalved');
     default:
@@ -194,30 +194,7 @@ export default function LeagueMatchDetailScreen() {
   const nassauResult = useMemo(() => {
     if (!nassauEnabled || !bundle) return null;
     const holeCount = expectedSideGameHoleCount(bundle.league.holes_per_round);
-    const p1ByHole = new Map(p1Holes.map((h) => [h.hole_number, h]));
-    const p2ByHole = new Map(p2Holes.map((h) => [h.hole_number, h]));
-    const results: (MatchPlayHoleResult | null)[] = [];
-    for (let n = 1; n <= holeCount; n += 1) {
-      const h1 = p1ByHole.get(n);
-      const h2 = p2ByHole.get(n);
-      if (
-        h1?.gross_score == null ||
-        h2?.gross_score == null ||
-        !Number.isFinite(h1.gross_score) ||
-        !Number.isFinite(h2.gross_score)
-      ) {
-        results.push(null);
-        continue;
-      }
-      if (h1.result === 'W' || h1.result === 'L' || h1.result === 'H') {
-        results.push(h1.result);
-        continue;
-      }
-      if (h1.gross_score < h2.gross_score) results.push('W');
-      else if (h2.gross_score < h1.gross_score) results.push('L');
-      else results.push('H');
-    }
-    return computeNassau(results, holeCount);
+    return computeNassau(nassauResultsFromScorecards(p1Holes, p2Holes, holeCount), holeCount);
   }, [nassauEnabled, bundle, p1Holes, p2Holes]);
 
   if (loading) {

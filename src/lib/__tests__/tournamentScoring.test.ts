@@ -294,6 +294,33 @@ describe('9-hole tournament eligibility', () => {
 });
 
 describe('league auto-completion', () => {
+  it('does not close match play when the window ends with the final unplayed', async () => {
+    const { shouldAutoCompleteLeague } = await import('../leagueCompletion');
+    const league = {
+      format: 'match_play',
+      status: 'active',
+      end_date: '2026-10-29',
+    } as import('../leagues').DbLeagueRow;
+    assert.equal(shouldAutoCompleteLeague(league, '2026-11-06', false), false);
+    assert.equal(shouldAutoCompleteLeague(league, '2026-11-06', true), true);
+    assert.equal(
+      shouldAutoCompleteLeague(
+        { ...league, format: 'stroke' },
+        '2026-11-06',
+        false
+      ),
+      true
+    );
+    assert.equal(
+      shouldAutoCompleteLeague(
+        { ...league, format: 'best_ball', end_date: '2026-11-20' },
+        '2026-11-06',
+        false
+      ),
+      false
+    );
+  });
+
   it('completes match play when all pairings are resolved', async () => {
     const { isLeagueReadyToAutoComplete } = await import('../leagueCompletion');
     const league = {

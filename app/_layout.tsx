@@ -15,6 +15,7 @@ import 'react-native-reanimated';
 import { useColorScheme } from '@/components/useColorScheme';
 import { AuthProvider, useAuth } from '@/src/auth/AuthContext';
 import { BrandedSplashGate } from '@/src/components/BrandedSplashGate';
+import { WebAppDialogHost } from '@/src/components/WebAppDialogHost';
 import { colors } from '@/src/lib/constants';
 import { captureAndroidInstallReferrerOnce } from '@/src/lib/captureAndroidInstallReferrer';
 import { captureReferralCodeFromUrl } from '@/src/lib/pendingReferralCode';
@@ -116,6 +117,7 @@ function RootLayoutNav() {
         ]}
       >
         <StatusBar style="light" />
+        {Platform.OS === 'web' ? <WebAppDialogHost /> : null}
         <Stack
           screenOptions={{
             headerStyle: { backgroundColor: colors.header },

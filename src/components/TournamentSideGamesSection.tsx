@@ -33,7 +33,11 @@ export function TournamentSideGamesSection({ flags, board, nassauHint }: Props) 
         <View style={styles.block}>
           <Text style={styles.gameTitle}>{t('league.detail.sideGames.skins')}</Text>
           {!skinsBoard || skinsBoard.every((r) => r.skins === 0) ? (
-            <Text style={styles.empty}>{t('league.detail.sideGames.skinsEmpty')}</Text>
+            <Text style={styles.empty}>
+              {board?.skins == null
+                ? t('league.detail.sideGames.skinsNeedBoth')
+                : t('league.detail.sideGames.skinsEmpty')}
+            </Text>
           ) : (
             skinsBoard.map((row) => (
               <View key={row.id} style={styles.row}>

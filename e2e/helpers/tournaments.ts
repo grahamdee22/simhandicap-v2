@@ -1,10 +1,13 @@
 import { expect, type Page } from '@playwright/test';
 import { seedGroupCandidates, seedGroupName } from '../fixtures';
 
-/** Accept any native window.alert / confirm that the web build still uses. */
+/** Accept leftover native dialogs and the in-page web dialog (confirm / OK). */
 export function acceptNativeDialogs(page: Page): void {
   page.on('dialog', (dialog) => {
     void dialog.accept();
+  });
+  void page.addLocatorHandler(page.getByTestId('app-dialog-confirm'), async (button) => {
+    await button.click();
   });
 }
 

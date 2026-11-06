@@ -24,6 +24,7 @@ import type {
   DbTournamentHoleScoreRow,
   DbTournamentTeamHoleScoreRow,
   HolesPerRound,
+  MatchPlayHoleResult,
 } from './tournamentTypes';
 import type { TournamentHoleInput } from './tournamentHoleScores';
 
@@ -254,6 +255,61 @@ export function computeIndividualSideGamesBoard(opts: {
   }
 
   return { skins, skinsBoard, stableford, stablefordBoard };
+}
+
+type NassauHole = {
+  hole_number: number;
+  gross_score?: number | null;
+  result?: MatchPlayHoleResult | null;
+};
+
+function flipMatchPlayResult(result: MatchPlayHoleResult): MatchPlayHoleResult {
+  if (result === 'W') return 'L';
+  if (result === 'L') return 'W';
+  return 'H';
+}
+
+function isMatchPlayResult(result: string | null | undefined): result is MatchPlayHoleResult {
+  return result === 'W' || result === 'L' || result === 'H';
+}
+
+/**
+ * Hole results from player 1's perspective for Nassau.
+ * Uses a stored W/L/H when either scorecard still has one, so a finished match
+ * stays resolved after the other player's round (and grosses) are deleted.
+ * Player 2's stored result is flipped. Gross comparison is only the fallback
+ * when neither card has a result.
+ */
+export function nassauResultsFromScorecards(
+  p1Holes: NassauHole[],
+  p2Holes: NassauHole[],
+  holeCount: number
+): (MatchPlayHoleResult | null)[] {
+  const p1ByHole = new Map(p1Holes.map((h) => [Number(h.hole_number), h]));
+  const p2ByHole = new Map(p2Holes.map((h) => [Number(h.hole_number), h]));
+  const results: (MatchPlayHoleResult | null)[] = [];
+  for (let n = 1; n <= holeCount; n += 1) {
+    const h1 = p1ByHole.get(n);
+    const h2 = p2ByHole.get(n);
+    if (isMatchPlayResult(h1?.result)) {
+      results.push(h1.result);
+      continue;
+    }
+    if (isMatchPlayResult(h2?.result)) {
+      results.push(flipMatchPlayResult(h2.result));
+      continue;
+    }
+    const g1 = h1?.gross_score;
+    const g2 = h2?.gross_score;
+    if (g1 == null || g2 == null || !Number.isFinite(Number(g1)) || !Number.isFinite(Number(g2))) {
+      results.push(null);
+      continue;
+    }
+    if (Number(g1) < Number(g2)) results.push('W');
+    else if (Number(g2) < Number(g1)) results.push('L');
+    else results.push('H');
+  }
+  return results;
 }
 
 export function computeNassauForPairing(opts: {

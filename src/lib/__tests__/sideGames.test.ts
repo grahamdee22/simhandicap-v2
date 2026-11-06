@@ -21,6 +21,7 @@ import { holeNet, strokesReceivedOnHole } from '../netHandicap';
 import {
   computeIndividualSideGamesBoard,
   computeTeamSideGamesBoard,
+  nassauResultsFromScorecards,
   netsFromGrossCard,
   teamCardsFromTeamHoleScores,
 } from '../sideGameCompute';
@@ -163,6 +164,27 @@ describe('nassau segments', () => {
     assert.equal(r.segments[0].p1Wins, 5);
     assert.equal(r.segments[0].p2Wins, 4);
     assert.equal(r.segments[0].halved, 0);
+  });
+
+  it('resolves from the remaining scorecard after the other round is deleted', () => {
+    const p2Results = [
+      'W', 'W', 'W', 'W', 'H', 'W', 'W', 'W', 'W',
+      'H', 'L', 'W', 'L', 'H', 'L', 'H', 'L', 'L',
+    ] as const;
+    const results = nassauResultsFromScorecards(
+      [],
+      p2Results.map((result, i) => ({ hole_number: i + 1, gross_score: 4, result })),
+      18
+    );
+    const r = computeNassau(results, 18);
+    assert.equal(r.segments.every((seg) => seg.resolved), true);
+    assert.equal(r.segments[0].winner, 'p2');
+    assert.equal(r.segments[0].p2Wins, 8);
+    assert.equal(r.segments[1].winner, 'p1');
+    assert.equal(r.segments[2].winner, 'p2');
+    assert.equal(r.segments[2].p1Wins, 5);
+    assert.equal(r.segments[2].p2Wins, 9);
+    assert.equal(r.segments[2].halved, 4);
   });
 
   it('stays unresolved until segment is complete', () => {

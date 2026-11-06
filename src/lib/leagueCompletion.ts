@@ -107,6 +107,22 @@ function bracketFinalResolved(pairings: DbLeagueMatchPairingRow[]): boolean {
   );
 }
 
+/**
+ * Match Play stays open until the bracket (or every pairing) is decided.
+ * Other formats still close when the end date passes, even with rounds missing.
+ * A commissioner can still end any tournament early from Manage.
+ */
+export function shouldAutoCompleteLeague(
+  league: Pick<DbLeagueRow, 'format' | 'end_date' | 'status'>,
+  today: string,
+  ready: boolean
+): boolean {
+  if (league.status !== 'active') return false;
+  if (league.format === 'match_play') return ready;
+  if (league.end_date < today) return true;
+  return ready;
+}
+
 /** True when every player/team/pairing has satisfied the tournament's counting threshold. */
 export function isLeagueReadyToAutoComplete(input: LeagueCompletionInput): boolean {
   const { league, teams, entries, rounds } = input;

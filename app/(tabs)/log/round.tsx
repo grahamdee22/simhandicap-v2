@@ -344,7 +344,9 @@ export default function LogRoundScreen() {
       if (fetchGen !== tournamentsFetchGen.current) return;
       setActiveTournaments(list);
       setTournamentApply((prev) =>
-        Object.fromEntries(list.map((t) => [t.leagueId, prev[t.leagueId] ?? true]))
+        Object.fromEntries(
+          list.map((t) => [t.leagueId, prev[t.leagueId] ?? !t.pastWindow])
+        )
       );
     } finally {
       if (fetchGen === tournamentsFetchGen.current) {
@@ -1628,6 +1630,9 @@ export default function LogRoundScreen() {
                         </Text>
                       </Pressable>
                     </View>
+                    {tour.pastWindow ? (
+                      <Text style={styles.tournamentTeamNote}>{t('log.round.pastWindowNote')}</Text>
+                    ) : null}
                     {tour.format === 'scramble' ? (
                       <Text style={styles.tournamentTeamNote}>{t('log.round.scrambleNote')}</Text>
                     ) : null}

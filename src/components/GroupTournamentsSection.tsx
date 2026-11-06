@@ -363,6 +363,12 @@ export function GroupTournamentsSection({
     () => leagues.filter((l) => l.status === 'completed' || l.status === 'archived'),
     [leagues]
   );
+  const needsResultLeagues = useMemo(() => {
+    const today = todayLocalYmd();
+    return leagues.filter(
+      (l) => l.format === 'match_play' && l.status === 'active' && l.end_date < today
+    );
+  }, [leagues]);
   const activeSeason = useMemo(
     () => seasons.find((s) => s.status === 'active') ?? null,
     [seasons]
@@ -669,10 +675,34 @@ export function GroupTournamentsSection({
             accessibilityRole="progressbar"
           />
         ) : !activeLeague &&
+          needsResultLeagues.length === 0 &&
           scheduledLeagues.length === 0 &&
           liveChallenges.length === 0 &&
           !showCreateBtn ? (
           <Text style={styles.emptyMuted}>{t('tournaments.section.noActive')}</Text>
+        ) : null}
+
+        {needsResultLeagues.length > 0 ? (
+          <View style={styles.comingUpWrap}>
+            <Text style={styles.comingUpTitle}>{t('tournaments.section.needsResult')}</Text>
+            {needsResultLeagues.map((league) => (
+              <Pressable
+                key={league.id}
+                onPress={() => router.push(`/(tabs)/league/${league.id}` as never)}
+                style={({ pressed }) => [styles.comingUpRow, pressed && styles.pressed]}
+                accessibilityRole="button"
+                accessibilityLabel={t('tournaments.section.needsResultA11y', { name: league.name })}
+              >
+                <Text style={styles.pastMeta}>
+                  {formatLeagueFormatLabel(league.format)} · {t('league.detail.needsResults')}
+                </Text>
+                <Text style={styles.tournamentName}>{league.name}</Text>
+                <Text style={styles.matchPreview}>
+                  {formatLeagueDateRange(league.start_date, league.end_date)}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
         ) : null}
 
         {scheduledLeagues.length > 0 ? (
