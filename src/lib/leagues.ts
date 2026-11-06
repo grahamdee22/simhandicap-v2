@@ -286,8 +286,8 @@ export async function syncLeagueStatuses(
     }
 
     if (shouldAutoCompleteLeague(l, today, ready)) {
-      await updateLeague(l.id, { status: 'completed' }, token);
-      out[i] = { ...l, status: 'completed' };
+      const updated = await updateLeague(l.id, { status: 'completed' }, token);
+      if (!updated.error) out[i] = { ...l, status: 'completed' };
     }
   }
   return out;

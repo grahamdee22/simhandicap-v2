@@ -4,11 +4,18 @@
  * Math cases (carryover, partial gating, handicap-off, team nets) import the same
  * pure modules the app uses — fastest reliable guard for silent scoring regressions.
  * UI smoke: Scramble create with Skins+Stableford and handicaps off against app.sim-cap.com.
+ * Both-teams Skins/Stableford, including a player with no handicap, live in the unit gate
+ * (src/lib/__tests__/tournamentRegressions.test.ts). This spec does not log a round as a
+ * second teammate.
  */
 import { expect, test } from '@playwright/test';
 import { computeSkins } from '../src/lib/skins';
 import { computeStableford } from '../src/lib/stableford';
 import { computeNassau } from '../src/lib/nassau';
+import { leagueDetailStatusBadge } from '../src/lib/leagueStandings';
+import { shouldAutoCompleteLeague } from '../src/lib/leagueCompletion';
+import { PAIRING_STATUS_I18N_KEY } from '../src/lib/matchPlayBracket';
+import { nassauResultsFromScorecards } from '../src/lib/sideGameCompute';
 import {
   computeTeamSideGamesBoard,
   netsFromGrossCard,
@@ -182,6 +189,43 @@ test.describe('side games scoring regressions', () => {
     expect(r.segments[0].winner).toBe('p1');
     expect(r.segments[0].p1Wins).toBe(5);
     expect(r.segments[0].halved).toBe(4);
+  });
+});
+
+test.describe('this week tournament regressions', () => {
+  test('bracket ready before the end date is completed; an unplayed final past the window is not', () => {
+    const league = {
+      format: 'match_play' as const,
+      status: 'active' as const,
+      start_date: '2026-11-03',
+      end_date: '2026-12-01',
+    };
+    expect(shouldAutoCompleteLeague(league, '2026-11-06', true)).toBe(true);
+    expect(
+      leagueDetailStatusBadge({ ...league, status: 'completed' }, '2026-11-06')
+    ).toBe('completed');
+    const unplayed = { ...league, end_date: '2026-10-29' };
+    expect(shouldAutoCompleteLeague(unplayed, '2026-11-06', false)).toBe(false);
+    expect(leagueDetailStatusBadge(unplayed, '2026-11-06')).toBe('needsResults');
+  });
+
+  test('match status badges point at translated keys, not match.status.*', () => {
+    expect(PAIRING_STATUS_I18N_KEY.complete).toBe('matchPlay.status.complete');
+    expect(PAIRING_STATUS_I18N_KEY.scheduled).toBe('matchPlay.status.scheduled');
+    expect(PAIRING_STATUS_I18N_KEY.halved).toBe('league.match.statusHalved');
+    expect(PAIRING_STATUS_I18N_KEY.complete.includes('match.status.')).toBe(false);
+  });
+
+  test('Nassau still resolves after the other scorecard is deleted', () => {
+    const results = nassauResultsFromScorecards(
+      [],
+      (['W', 'W', 'L'] as const).map((result, i) => ({ hole_number: i + 1, result })),
+      3
+    );
+    const nassau = computeNassau(results, 3);
+    expect(nassau.segments[0].resolved).toBe(true);
+    expect(nassau.segments[0].p2Wins).toBe(2);
+    expect(nassau.segments[0].winner).toBe('p2');
   });
 });
 

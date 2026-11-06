@@ -8,6 +8,7 @@ import { useTranslation } from '../../../src/i18n';
 import { colors } from '../../../src/lib/constants';
 import { googleOAuthAccessToken } from '../../../src/lib/googleOAuthAccessToken';
 import { fetchLeagueBundle, leagueSideGames, type LeagueBundle } from '../../../src/lib/leagues';
+import { PAIRING_STATUS_I18N_KEY } from '../../../src/lib/matchPlayBracket';
 import { formatMatchPlayStatus } from '../../../src/lib/matchPlayTournament';
 import {
   fetchLeagueMatchPairingById,
@@ -32,18 +33,7 @@ function pairingStatusLabel(
   status: LeagueMatchPairingStatus,
   t: (key: string) => string
 ): string {
-  switch (status) {
-    case 'scheduled':
-      return t('matchPlay.status.scheduled');
-    case 'in_progress':
-      return t('matchPlay.status.inProgress');
-    case 'complete':
-      return t('matchPlay.status.complete');
-    case 'halved':
-      return t('league.match.statusHalved');
-    default:
-      return status;
-  }
+  return t(PAIRING_STATUS_I18N_KEY[status] ?? status);
 }
 
 export default function LeagueMatchDetailScreen() {

@@ -63,6 +63,14 @@ export function bracketRoundLabel(round: BracketRound | null | undefined): strin
   }
 }
 
+/** Locale keys for a tournament match badge. Values must be human text in en/es/ko. */
+export const PAIRING_STATUS_I18N_KEY: Record<LeagueMatchPairingStatus, string> = {
+  scheduled: 'matchPlay.status.scheduled',
+  in_progress: 'matchPlay.status.inProgress',
+  complete: 'matchPlay.status.complete',
+  halved: 'league.match.statusHalved',
+};
+
 export function pairingStatusLabel(status: LeagueMatchPairingStatus): string {
   switch (status) {
     case 'scheduled':

@@ -41,6 +41,26 @@ export function isLeagueActive(league: DbLeagueRow): boolean {
   return today >= league.start_date && today <= league.end_date;
 }
 
+export type LeagueDetailStatusBadge = 'daysLeft' | 'needsResults' | 'completed';
+
+/**
+ * Tournament detail badge.
+ * Match Play past its window with status still active needs a result (unplayed final).
+ * A bracket that already resolved is status completed and shows Completed even mid-window.
+ */
+export function leagueDetailStatusBadge(
+  league: Pick<DbLeagueRow, 'format' | 'status' | 'start_date' | 'end_date'>,
+  today: string
+): LeagueDetailStatusBadge {
+  const awaitingResult =
+    league.format === 'match_play' && league.status === 'active' && today > league.end_date;
+  if (awaitingResult) return 'needsResults';
+  const inWindow =
+    league.status === 'active' && today >= league.start_date && today <= league.end_date;
+  if (league.status === 'completed' || !inWindow) return 'completed';
+  return 'daysLeft';
+}
+
 /** True if [aStart, aEnd] and [bStart, bEnd] (YYYY-MM-DD strings, inclusive) overlap at all. */
 export function dateRangesOverlap(aStart: string, aEnd: string, bStart: string, bEnd: string): boolean {
   return aStart <= bEnd && bStart <= aEnd;

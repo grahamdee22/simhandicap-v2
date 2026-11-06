@@ -44,9 +44,9 @@ import {
   computeLeagueStandings,
   formatLeagueDateRange,
   formatTeamMemberSummary,
-  isLeagueActive,
   isTeamLeagueFormat,
   leagueDaysRemaining,
+  leagueDetailStatusBadge,
 } from '../../../src/lib/leagueStandings';
 import { todayLocalYmd } from '../../../src/lib/dates';
 import { getCourseById } from '../../../src/lib/courses';
@@ -399,13 +399,9 @@ export default function LeagueDetailScreen() {
   }
 
   const { league } = bundle;
-  const matchPlayAwaitingResult =
-    league.format === 'match_play' &&
-    league.status === 'active' &&
-    todayLocalYmd() > league.end_date;
-  const completed =
-    !matchPlayAwaitingResult &&
-    (league.status === 'completed' || !isLeagueActive(league));
+  const statusBadge = leagueDetailStatusBadge(league, todayLocalYmd());
+  const matchPlayAwaitingResult = statusBadge === 'needsResults';
+  const completed = statusBadge === 'completed';
   const isBracketMp = league.format === 'match_play' && league.match_play_pairing_method === 'bracket';
   const isLegacyMp = league.format === 'match_play' && !isBracketMp;
   const isTeamLeague = isTeamLeagueFormat(league.format);
