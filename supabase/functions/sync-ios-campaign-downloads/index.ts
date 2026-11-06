@@ -8,6 +8,11 @@
  * First-time: an Admin must create an ONGOING analyticsReportRequest for the app
  * (or this job will POST one). Sales and Reports can then download instances.
  *
+ * First-time downloads by Source Type are written to ios_downloads_by_source from
+ * App Downloads Standard. Detailed reports threshold rows under 5 users, so they
+ * are used for the Campaign column only. A later processingDate replaces earlier
+ * rows for the same key (Apple instances overlap; summing them double-counts).
+ *
  * Empty Campaign cells are skipped (organic / privacy-suppressed). When instances
  * download successfully but every Campaign cell is blank, the job still returns
  * HTTP 200 with ok:true and a loud `warning` + counters so silent "upserted:0"
@@ -16,6 +21,11 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { SignJWT, importPKCS8 } from 'https://esm.sh/jose@5.9.6'
+import {
+  keepLatestProcessingDate,
+  parseFirstTimeDownloadsBySource,
+  type SourceDownloadRow,
+} from '../_shared/attributionReports.ts'
 
 const ASC_BASE = 'https://api.appstoreconnect.apple.com'
 const BUNDLE_ID = 'com.simcap.app'
@@ -126,29 +136,36 @@ async function ensureOngoingRequest(token: string, appId: string): Promise<strin
   return created.data.id
 }
 
-async function findDownloadsDetailedReport(token: string, requestId: string): Promise<{
-  id: string | null
+async function findDownloadsReports(token: string, requestId: string): Promise<{
+  detailedId: string | null
+  standardId: string | null
   reportNames: string[]
 }> {
-  // Campaign token column exists only on detailed downloads reports.
   const reports = await ascJson<JsonApiList<Report>>(
     `/v1/analyticsReportRequests/${requestId}/reports?filter[category]=COMMERCE&limit=50`,
     token,
   )
   const reportNames = (reports.data ?? []).map((r) => r.attributes?.name ?? r.id)
-  const preferred =
-    reports.data.find((r) => /app\s*downloads/i.test(r.attributes?.name ?? '') && /detailed/i.test(r.attributes?.name ?? '')) ??
-    reports.data.find((r) => /app\s*downloads/i.test(r.attributes?.name ?? '') && /detail/i.test(r.attributes?.name ?? '')) ??
-    reports.data.find((r) => /downloads/i.test(r.attributes?.name ?? '') && /detailed/i.test(r.attributes?.name ?? ''))
-  return { id: preferred?.id ?? null, reportNames }
+  const downloads = (reports.data ?? []).filter((r) => /app\s*downloads/i.test(r.attributes?.name ?? ''))
+  const detailed =
+    downloads.find((r) => /detailed/i.test(r.attributes?.name ?? '')) ??
+    (reports.data ?? []).find((r) => /downloads/i.test(r.attributes?.name ?? '') && /detailed/i.test(r.attributes?.name ?? ''))
+  const standard = downloads.find((r) => /standard/i.test(r.attributes?.name ?? ''))
+  return { detailedId: detailed?.id ?? null, standardId: standard?.id ?? null, reportNames }
 }
 
-async function listDailyInstances(token: string, reportId: string, limit = 14): Promise<Instance[]> {
-  const res = await ascJson<JsonApiList<Instance>>(
-    `/v1/analyticsReports/${reportId}/instances?filter[granularity]=DAILY&limit=${limit}`,
-    token,
-  )
-  return res.data ?? []
+async function listDailyInstances(token: string, reportId: string): Promise<Instance[]> {
+  const out: Instance[] = []
+  const seen = new Set<string>()
+  let path: string | null =
+    `/v1/analyticsReports/${reportId}/instances?filter[granularity]=DAILY&fields[analyticsReportInstances]=granularity,processingDate&limit=200`
+  while (path && !seen.has(path)) {
+    seen.add(path)
+    const res: JsonApiList<Instance> = await ascJson<JsonApiList<Instance>>(path, token)
+    out.push(...(res.data ?? []))
+    path = res.links?.next ?? null
+  }
+  return out
 }
 
 async function listSegmentUrls(token: string, instanceId: string): Promise<string[]> {
@@ -267,6 +284,35 @@ export function parseDownloadsTsv(tsv: string): { rows: AggRow[]; stats: ParseSt
   return { rows: [...map.values()], stats }
 }
 
+type DownloadCensus = { dates: Set<string>; byType: Map<string, number> }
+
+function censusDownloadsTsv(tsv: string, census: DownloadCensus) {
+  const lines = tsv.split(/\r?\n/).filter((l) => l.trim().length > 0)
+  if (lines.length < 2) return
+  const header = lines[0].split('\t')
+  const iDate = colIndex(header, ['Date', 'date'])
+  const iType = colIndex(header, ['Download Type'])
+  const iCounts = colIndex(header, ['Counts', 'Downloads', 'Total Downloads', 'counts'])
+  if (iDate < 0 || iCounts < 0) return
+  for (const line of lines.slice(1)) {
+    const cols = line.split('\t')
+    const date = (cols[iDate] ?? '').trim()
+    const downloadType = iType >= 0 ? (cols[iType] ?? '').trim().toLowerCase() : ''
+    const downloads = Number.parseInt((cols[iCounts] ?? '0').replace(/,/g, ''), 10)
+    if (date) census.dates.add(date)
+    if (downloadType && Number.isFinite(downloads)) {
+      census.byType.set(downloadType, (census.byType.get(downloadType) ?? 0) + downloads)
+    }
+  }
+}
+
+function combineCampaign(base: AggRow, extra: AggRow) {
+  base.downloads += extra.downloads
+  if (extra.product_page_views != null) {
+    base.product_page_views = (base.product_page_views ?? 0) + extra.product_page_views
+  }
+}
+
 Deno.serve(async (_req) => {
   const started = Date.now()
   try {
@@ -286,7 +332,7 @@ Deno.serve(async (_req) => {
       return Response.json(body)
     }
 
-    const { id: reportId, reportNames } = await findDownloadsDetailedReport(token, requestId)
+    const { detailedId: reportId, standardId, reportNames } = await findDownloadsReports(token, requestId)
 
     if (!reportId) {
       const body = {
@@ -302,7 +348,7 @@ Deno.serve(async (_req) => {
       return Response.json(body)
     }
 
-    const instances = await listDailyInstances(token, reportId, 21)
+    const instances = await listDailyInstances(token, reportId)
     if (instances.length === 0) {
       const body = {
         ok: true,
@@ -317,7 +363,8 @@ Deno.serve(async (_req) => {
       return Response.json(body)
     }
 
-    const aggregated = new Map<string, AggRow>()
+    const campaignBatches: { processingDate: string; rows: AggRow[] }[] = []
+    const sourceBatches: { processingDate: string; rows: SourceDownloadRow[] }[] = []
     let segmentsFetched = 0
     let segmentsMissingUrl = 0
     let tsvFilesParsed = 0
@@ -327,14 +374,23 @@ Deno.serve(async (_req) => {
     let downloadsKept = 0
     let downloadsSkippedEmptyCampaign = 0
     let sampleHeader: string[] | null = null
+    const census: DownloadCensus = { dates: new Set<string>(), byType: new Map<string, number>() }
 
     for (const inst of instances) {
+      const processingDate = (inst.attributes?.processingDate ?? '').slice(0, 10)
       const urls = await listSegmentUrls(token, inst.id)
       if (urls.length === 0) segmentsMissingUrl += 1
+      const campaignRows: AggRow[] = []
+      const detailedSourceRows: SourceDownloadRow[] = []
       for (const url of urls) {
         segmentsFetched += 1
         const text = await downloadGunzipText(url)
         const { rows, stats } = parseDownloadsTsv(text)
+        campaignRows.push(...rows)
+        if (!standardId) {
+          censusDownloadsTsv(text, census)
+          detailedSourceRows.push(...parseFirstTimeDownloadsBySource(text))
+        }
         tsvFilesParsed += 1
         dataRows += stats.dataRows
         skippedEmptyCampaign += stats.skippedEmptyCampaign
@@ -342,22 +398,42 @@ Deno.serve(async (_req) => {
         downloadsKept += stats.downloadsKept
         downloadsSkippedEmptyCampaign += stats.downloadsSkippedEmptyCampaign
         if (!sampleHeader && stats.header.length) sampleHeader = stats.header
-        for (const row of rows) {
-          const key = `${row.date}\0${row.campaign_token}`
-          const prev = aggregated.get(key)
-          if (prev) {
-            prev.downloads += row.downloads
-            if (row.product_page_views != null) {
-              prev.product_page_views = (prev.product_page_views ?? 0) + row.product_page_views
-            }
-          } else {
-            aggregated.set(key, { ...row })
-          }
+      }
+      campaignBatches.push({ processingDate, rows: campaignRows })
+      if (!standardId) sourceBatches.push({ processingDate, rows: detailedSourceRows })
+    }
+
+    let sourceInstances = instances.length
+    const sourceReport = standardId ? 'App Downloads Standard' : 'App Downloads Detailed'
+    if (standardId) {
+      const standardInstances = await listDailyInstances(token, standardId)
+      sourceInstances = standardInstances.length
+      for (const inst of standardInstances) {
+        const processingDate = (inst.attributes?.processingDate ?? '').slice(0, 10)
+        const urls = await listSegmentUrls(token, inst.id)
+        const sourceRowsForInstance: SourceDownloadRow[] = []
+        for (const url of urls) {
+          const text = await downloadGunzipText(url)
+          censusDownloadsTsv(text, census)
+          sourceRowsForInstance.push(...parseFirstTimeDownloadsBySource(text))
         }
+        sourceBatches.push({ processingDate, rows: sourceRowsForInstance })
       }
     }
 
-    const rows = [...aggregated.values()]
+    const rows = keepLatestProcessingDate(
+      campaignBatches,
+      (row) => `${row.date}\0${row.campaign_token}`,
+      combineCampaign,
+    )
+    const sourceRows = keepLatestProcessingDate(
+      sourceBatches,
+      (row) => `${row.date}\0${row.source_type}\0${row.source_info}`,
+      (base, extra) => {
+        base.downloads += extra.downloads
+      },
+    )
+    const sourceDates = [...new Set(sourceRows.map((row) => row.date))].sort()
     const supabase = createClient(
       requireEnv('SUPABASE_URL'),
       requireEnv('SUPABASE_SERVICE_ROLE_KEY'),
@@ -385,6 +461,23 @@ Deno.serve(async (_req) => {
       upserted += typeof count === 'number' ? count : chunk.length
     }
 
+    let sourceUpserted = 0
+    for (let i = 0; i < sourceRows.length; i += chunkSize) {
+      const chunk = sourceRows.slice(i, i + chunkSize).map((r) => ({
+        date: r.date,
+        source_type: r.source_type,
+        source_info: r.source_info,
+        downloads: r.downloads,
+        synced_at: syncedAt,
+      }))
+      const { error, count } = await supabase.from('ios_downloads_by_source').upsert(chunk, {
+        onConflict: 'date,source_type,source_info',
+        count: 'exact',
+      })
+      if (error) throw new Error(`source upsert failed: ${error.message}`)
+      sourceUpserted += typeof count === 'number' ? count : chunk.length
+    }
+
     let warning: string | undefined
     if (instances.length > 0 && segmentsFetched > 0 && dataRows > 0 && upserted === 0) {
       warning =
@@ -402,11 +495,19 @@ Deno.serve(async (_req) => {
       reportId,
       reportNames,
       instances: instances.length,
+      sourceReport,
+      sourceInstances,
       segmentsFetched,
       segmentsMissingUrl,
       tsvFilesParsed,
       dataRows,
       rowsAttempted: rows.length,
+      sourceRowsAttempted: sourceRows.length,
+      sourceDateMin: sourceDates[0] ?? null,
+      sourceDateMax: sourceDates[sourceDates.length - 1] ?? null,
+      censusDates: [...census.dates].sort(),
+      censusByType: Object.fromEntries(census.byType),
+      sourceUpserted,
       skippedEmptyCampaign,
       skippedBadDateOrCount,
       downloadsKept,

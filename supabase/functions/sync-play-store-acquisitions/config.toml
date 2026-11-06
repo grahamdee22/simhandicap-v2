@@ -1,0 +1,2 @@
+# Not scheduled. Deploy the function, then invoke only after secrets exist.
+# verify_jwt left default; the function no-ops when PLAY_* secrets are absent.

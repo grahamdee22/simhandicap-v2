@@ -1,11 +1,19 @@
 # email-daily-acquisition-report
 
-Daily Resend email of Reddit + email channel acquisition (trailing 14 days).
+Daily Resend email of combined Reddit + email outreach (trailing 14 days).
+iOS downloads are the app-wide first-time total from `ios_downloads_by_source`.
+Android downloads are app-wide install-referrer events (`is_duplicate = false`), not outreach-attributed.
+Total downloads sums the two.
 
 ## Schedule
 
-pg_cron job **`email-daily-acquisition-report-daily`**: `0 11 * * *` (**11:00 UTC**), after
-`sync-ios-campaign-downloads-daily` at 10:30 UTC.
+pg_cron on this project is UTC-only (`cron.schedule` has no timezone argument).
+
+| Job | Cron | Pacific |
+| --- | --- | --- |
+| `email-daily-acquisition-report-daily` | `0 18 * * *` | 10:00am PST |
+
+During PDT that same UTC time is 11:00am Pacific. On March 14, 2027 move it to `0 17 * * *` to stay at 10:00am, then back to `0 18 * * *` the following November. The iOS column still refreshes at the 10:30 UTC sync (2:30am PST), before this mail.
 
 ## Secrets
 

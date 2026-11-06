@@ -611,7 +611,7 @@ export default function LeagueDetailScreen() {
                       {t('league.detail.colGross')}
                     </Text>
                     <View style={[styles.colScore, styles.thLowNetRow]}>
-                      <Text style={styles.th}>{t('league.detail.colLowNet')}</Text>
+                      <Text style={[styles.th, styles.thLowNetLabel]}>{t('league.detail.colLowNet')}</Text>
                       <Pressable
                         style={styles.infoBtn}
                         onPress={() => setLowNetInfoOpen(true)}
@@ -625,7 +625,7 @@ export default function LeagueDetailScreen() {
                   </>
                 ) : (
                   <View style={[styles.colScore, styles.thLowNetRow]}>
-                    <Text style={styles.th}>{t('league.detail.colLowNet')}</Text>
+                    <Text style={[styles.th, styles.thLowNetLabel]}>{t('league.detail.colLowNet')}</Text>
                     <Pressable
                       style={styles.infoBtn}
                       onPress={() => setLowNetInfoOpen(true)}
@@ -905,13 +905,16 @@ const styles = StyleSheet.create({
   colGross: { width: 48, textAlign: 'right', flexShrink: 0 },
   thLowNetRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     justifyContent: 'flex-end',
     gap: 4,
   },
+  /** Same line box as the other header labels, so the icon can center on it without dropping the text. */
+  thLowNetLabel: { lineHeight: 13, includeFontPadding: false },
   infoBtn: {
     width: 18,
     height: 18,
+    marginTop: -2.5,
     borderRadius: 9,
     alignItems: 'center',
     justifyContent: 'center',

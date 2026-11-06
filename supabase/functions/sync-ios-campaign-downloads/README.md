@@ -56,3 +56,12 @@ supabase functions deploy sync-ios-campaign-downloads
 
 Query `public.channel_attribution_report`. The iOS column is deliberately named
 `ios_downloads_asc_bucket_not_a_user_join` — it is **not** a per-user join to signups.
+
+The same run upserts first-time downloads into `public.ios_downloads_by_source`
+from **App Downloads Standard** (Source Type is on that report, and it is not
+row-thresholded). Detailed reports omit slices under 5 users, which left the
+table stuck on the one day that cleared the threshold. `source_info` stays `''`
+because that column exists only on the detailed report.
+
+Apple republishes overlapping dates on later `processingDate` instances. The job
+keeps the latest processing date for each key instead of summing every instance.

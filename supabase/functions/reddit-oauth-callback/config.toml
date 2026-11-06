@@ -1,0 +1,3 @@
+[functions.reddit-oauth-callback]
+# Reddit's browser redirect has no Supabase JWT.
+verify_jwt = false

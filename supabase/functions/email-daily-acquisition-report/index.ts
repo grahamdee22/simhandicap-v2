@@ -1,7 +1,9 @@
 /**
- * Daily Reddit + email acquisition email (marketing forwardable).
- * Same Resend path as daily-report. Scheduled via pg_cron
- * `email-daily-acquisition-report-daily` at 0 11 * * * (11:00 UTC).
+ * Outreach acquisition email (reddit + email combined).
+ * Same Resend path as daily-report. pg_cron job
+ * email-daily-acquisition-report-daily at 18:00 UTC (10:00am PST).
+ * pg_cron here is UTC-only. During PDT this fires at 11:00am Pacific
+ * unless the cron is moved to 17:00 UTC.
  */
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
@@ -16,7 +18,9 @@ type ReportRow = {
   get_redirects: number | null
   android_signups: number | null
   first_rounds_posted: number | null
+  android_downloads: number | null
   ios_downloads: number | null
+  total_downloads: number | null
 }
 
 function cell(n: number | null | undefined): string {
@@ -52,16 +56,19 @@ Deno.serve(async () => {
 
     const rows = (data ?? []) as ReportRow[]
 
-    const today = new Date().toLocaleDateString('en-US', {
+    const today = new Date().toLocaleString('en-US', {
       weekday: 'long',
       month: 'long',
       day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
       timeZone: 'UTC',
+      hour12: false,
     })
 
     const tableRows =
       rows.length === 0
-        ? `<tr><td colspan="6" style="padding:8px;">No reddit/email activity in the last 14 days.</td></tr>`
+        ? `<tr><td colspan="8" style="padding:8px;">No outreach activity or downloads in the last 14 days.</td></tr>`
         : rows
             .map(
               (r) => `
@@ -71,7 +78,9 @@ Deno.serve(async () => {
         <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${cell(r.get_redirects)}</td>
         <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${cell(r.android_signups)}</td>
         <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${cell(r.first_rounds_posted)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${cell(r.android_downloads)}</td>
         <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${cell(r.ios_downloads)}</td>
+        <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">${cell(r.total_downloads)}</td>
       </tr>`,
             )
             .join('')
@@ -79,8 +88,11 @@ Deno.serve(async () => {
     const html = `
       <p style="font-family:sans-serif;font-size:14px;color:#333;max-width:720px;">
         <b>Note:</b> Android signups and iOS downloads are separate, non-comparable metrics — don’t combine them into a conversion rate.
+        Android downloads (all sources) and iOS downloads (all sources) are both total app-wide installs that day, not outreach-attributed.
+        Android’s figure comes from the install-referrer event log across every channel, same non-attribution caveat as the iOS number.
+        Total downloads just sums the two for a quick glance, not a measure of outreach performance.
       </p>
-      <h2 style="font-family:sans-serif;">Reddit / Email acquisition — last 14 days (UTC) — ${escapeHtml(today)}</h2>
+      <h2 style="font-family:sans-serif;">Outreach (Reddit + email) — last 14 days — ${escapeHtml(today)} UTC</h2>
       <table style="border-collapse:collapse;font-family:sans-serif;font-size:14px;">
         <thead>
           <tr>
@@ -89,7 +101,9 @@ Deno.serve(async () => {
             <th style="padding:8px;border-bottom:2px solid #ccc;text-align:right;">Get redirects</th>
             <th style="padding:8px;border-bottom:2px solid #ccc;text-align:right;">Android signups</th>
             <th style="padding:8px;border-bottom:2px solid #ccc;text-align:right;">First rounds</th>
-            <th style="padding:8px;border-bottom:2px solid #ccc;text-align:right;">iOS downloads (ASC)</th>
+            <th style="padding:8px;border-bottom:2px solid #ccc;text-align:right;">Android downloads (all sources)</th>
+            <th style="padding:8px;border-bottom:2px solid #ccc;text-align:right;">iOS downloads (all sources)</th>
+            <th style="padding:8px;border-bottom:2px solid #ccc;text-align:right;">Total downloads</th>
           </tr>
         </thead>
         <tbody>
@@ -97,8 +111,10 @@ Deno.serve(async () => {
         </tbody>
       </table>
       <p style="font-family:sans-serif;font-size:12px;color:#666;margin-top:16px;">
-        Get redirects = sim-cap.com/get hits. Android signups / first rounds = per-user attribution.
-        iOS downloads = App Store Connect Analytics campaign bucket (privacy threshold may suppress small days).
+        One row per day. Get redirects, Android signups, and first rounds sum Reddit and email together.
+        Android downloads count install-referrer events for every channel, excluding flagged duplicates.
+        iOS downloads sum every source type in the App Store report for that day.
+        Total downloads adds those two, treating a missing side as zero.
       </p>
     `
 
@@ -111,7 +127,7 @@ Deno.serve(async () => {
       body: JSON.stringify({
         from: 'SimCap <onboarding@resend.dev>',
         to: 'simcapadmin@gmail.com',
-        subject: `SimCap Reddit/Email acquisition — ${today}`,
+        subject: `SimCap outreach acquisition — ${today} UTC`,
         html,
       }),
     })

@@ -1,0 +1,4 @@
+[functions.sync-reddit-ads]
+# Live schedule is pg_cron job sync-reddit-ads-daily (10:45 UTC),
+# after the iOS download sync and before the acquisition email.
+schedule = "45 10 * * *"
